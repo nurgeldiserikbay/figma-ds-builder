@@ -14,7 +14,7 @@ jobs:
       - id: chrome
         uses: browser-actions/setup-chrome@v1
         with: { chrome-version: stable }
-      - run: npm run setup
+      - run: npm run setup && npm --prefix packages/bench install
       - run: cd packages/bench && node src/run.js --only hackrpi-thankyou --runs 1 | tail -8
         env: { CHROME_PATH: '${{ steps.chrome.outputs.chrome-path }}' }
       - uses: actions/upload-artifact@v4
