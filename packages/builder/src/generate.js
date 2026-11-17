@@ -1,19 +1,13 @@
 // Генерация HTML/CSS из дерева блоков.
 import { buildBox, placements, isTransformed } from './layout.js';
+import { analyzeSemantics, className, SEMANTIC_RESET } from './semantic.js';
 import {
   px, r2, fillsToCss, strokesToCss, effectsToCss, radiusToCss, segmentCss, declarations, mergeShadows,
 } from './css.js';
 
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
-function slug(s) {
-  const t = String(s || 'node')
-    .toLowerCase()
-    .replace(/[^a-z0-9а-яё]+/gi, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 32);
-  return /^[a-z]/.test(t) ? t : 'n-' + (t || 'node');
-}
+const slug = (s) => className(s);
 
 function hash(str) {
   let h = 2166136261;
@@ -144,9 +138,23 @@ function textHtml(node, ctx) {
   return `<span class="${inner}">${spans}</span>`;
 }
 
-function emit(box, place, ctx, depth) {
+const PHRASING = new Set(['button', 'a', 'span', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p']);
+
+function emit(box, place, ctx, depth, inPhrasing = false) {
   const pad = '  '.repeat(depth);
   const node = box.node;
+  const sem = node && box.kind === 'node' && ctx.semantic ? ctx.semantic.get(node.id) : null;
+  let tag = sem?.tag || 'div';
+  if (ctx.downgrade?.has(node?.id)) tag = 'div';
+  // внутри button/a/h*/p допустимы только строчные элементы: вложенная кнопка или ссылка
+  // заставила бы HTML-парсер закрыть внешнюю и перестроить дерево
+  if (inPhrasing) tag = 'span';
+  // список, разложенный по рядам через обёртки, остаётся div (li должны быть прямыми детьми ul)
+  if (tag === 'ul' && (box.children || []).some((c) => c.kind !== 'node')) {
+    tag = 'div';
+    (box.children || []).forEach((c) => c.node && ctx.downgrade.add(c.node.id));
+  }
+  const childPhrasing = inPhrasing || ['button', 'a', 'span'].includes(tag) || /^h[1-6]$|^p$/.test(tag);
   const rotated = node && box.kind === 'node' && isTransformed(node);
   let baseDecl;
   if (box.kind === 'mask') baseDecl = maskCss(node, ctx);
@@ -198,31 +206,40 @@ function emit(box, place, ctx, depth) {
     inner = svgImg(node, ctx);
   }
   if (!inner) {
-    children.forEach((c, i) => parts.push(emit(c, places[i], ctx, depth + 1)));
+    children.forEach((c, i) => parts.push(emit(c, places[i], ctx, depth + 1, childPhrasing)));
     for (const a of box.absChildren || []) {
-      parts.push(emit(a, { position: 'absolute', left: a.rect.x - box.rect.x, top: a.rect.y - box.rect.y }, ctx, depth + 1));
+      parts.push(emit(a, { position: 'absolute', left: a.rect.x - box.rect.x, top: a.rect.y - box.rect.y }, ctx, depth + 1, childPhrasing));
     }
     inner = parts.length ? '\n' + parts.join('\n') + '\n' + pad : '';
   }
 
-  const decl = declarations({ ...baseDecl, ...flow });
-  const cls = ctx.styles.classFor(node ? (box.kind === 'mask' ? node.name + '-mask' : node.name) : 'group', decl);
+  const all = { ...baseDecl, ...flow };
+  if (tag !== 'div' && !all.display) all.display = 'block'; // span/a/button/h* ведут себя как блок макета
+  const decl = declarations(all);
+  const base = box.kind === 'mask' ? (sem?.name || node.name) + '-mask' : sem?.name || (node ? node.name : 'group');
+  const cls = ctx.styles.classFor(base, decl);
   const attrs = [`class="${cls}"`];
   const st = placementStyle(place);
   if (st) attrs.push(`style="${st}"`);
+  for (const [k, v] of Object.entries(sem?.attrs || {})) if (tag !== 'div' || k === 'role' || k === 'aria-label') attrs.push(`${k}="${esc(v)}"`);
   if (node) attrs.push(`data-figma-id="${esc(node.id)}"`, `data-name="${esc(node.name)}"`);
-  return `${pad}<div ${attrs.join(' ')}>${inner}</div>`;
+  return `${pad}<${tag} ${attrs.join(' ')}>${inner}</${tag}>`;
 }
 
 /**
  * Генерирует страницу для одного фрейма.
  * @returns {{ html: string, css: string, stats: object }}
  */
-export function generateFrame(tree, { mode = 'flow', tokens, assetUrl, title, extraCss = [] }) {
+export function generateFrame(tree, { mode = 'flow', tokens, assetUrl, title, extraCss = [], semantic = true, names = null }) {
   const styles = new StyleRegistry();
-  const ctx = { styles, tokens, assetUrl };
+  const sem = semantic ? analyzeSemantics(tree) : null;
+  // имена от ИИ (если включён) — только для безликих слоёв; теги остаются алгоритмическими
+  if (sem && names) for (const [id, name] of names) { const e = sem.get(id); if (e) e.name = className(name); }
+  const ctx = { styles, tokens, assetUrl, semantic: sem, downgrade: new Set() };
   const root = buildBox(tree, { mode });
   const body = emit(root, null, ctx, 1);
+  const tagStats = {};
+  for (const m of body.matchAll(/<(h[1-6]|p|button|a|nav|header|footer|section|ul|li|span) /g)) tagStats[m[1]] = (tagStats[m[1]] || 0) + 1;
 
   const stats = { nodes: 0, abs: 0, col: 0, row: 0, figma: 0, classes: styles.rules.length };
   (function walk(b) {
@@ -232,11 +249,13 @@ export function generateFrame(tree, { mode = 'flow', tokens, assetUrl, title, ex
     (b.absChildren || []).forEach(walk);
   })(root);
   stats.classes = styles.rules.length;
+  stats.tags = tagStats;
 
   const css = [
     '/* Сгенерировано figma-ds-builder. Слой токенов — tokens.css */',
     '*, *::before, *::after { margin: 0; padding: 0; }',
     'html, body { margin: 0; -webkit-font-smoothing: antialiased; text-rendering: geometricPrecision; }',
+    ...(semantic ? [SEMANTIC_RESET] : []),
     ...styles.rules,
     '',
   ].join('\n');

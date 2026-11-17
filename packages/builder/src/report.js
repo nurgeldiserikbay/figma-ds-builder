@@ -20,7 +20,7 @@ export function buildReport({ file, threshold, textThreshold, results }) {
   <header><h2>${esc(r.name)}</h2>${badge}</header>
   <p class="meta">${r.width}×${r.height} · раскладка: <b>${esc(r.mode)}</b> ·
     блоков: ${r.stats.nodes} · flex Auto Layout: ${r.stats.figma || 0} · колонок/строк по геометрии: ${(r.stats.col || 0) + (r.stats.row || 0)} ·
-    absolute: ${r.stats.abs || 0} · классов: ${r.stats.classes}
+    absolute: ${r.stats.abs || 0} · классов: ${r.stats.classes}${r.stats.tags ? ' · теги: ' + Object.entries(r.stats.tags).map(([t, n]) => `${t} ${n}`).join(', ') : ''}
     · <a href="${esc(r.dir)}/index.html">открыть вёрстку</a></p>
   ${geo}
   ${r.refine ? `<p class="meta">Автодоработка: ${r.refine.before.toFixed(3)}% → ${r.refine.after.toFixed(3)}%, поправок: ${r.refine.patches.length} (${r.refine.patches.map((p) => esc(p.name)).join(', ')})</p>` : ''}

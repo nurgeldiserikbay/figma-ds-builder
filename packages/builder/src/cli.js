@@ -13,6 +13,8 @@ import { buildReport } from './report.js';
 import { checkGeometry } from './geometry.js';
 import { attributeDiff } from './attribute.js';
 import { refinePage, patchesCss } from './refine.js';
+import { suggestNames, aiConfig } from './ai.js';
+import { analyzeSemantics } from './semantic.js';
 import { analyzeDesignSystem } from './ds/analyze.js';
 import { exportFiles, toTokens } from './ds/export.js';
 import { familiesOf, ensureFonts, buildFontsCss, defaultCacheDir } from './fonts.js';
@@ -40,13 +42,17 @@ ds-build build <пакет | пакет.zip> [опции]
   --css <файл>         подключить дополнительный CSS ко всем страницам (например, свои @font-face)
   --open               открыть отчёт в браузере после сборки
   --no-refine          не подбирать поправки после сверки с эталоном
+  --no-semantic        без семантических тегов (только div)
+  --ai                 понятные имена классов от ИИ для слоёв с безликими именами (Frame 237…).
+                       OpenAI-совместимый сервер: DS_AI_URL (по умолчанию Ollama, http://localhost:11434/v1),
+                       DS_AI_MODEL, DS_AI_KEY. Результат проверяется так же; без сервера — сборка без ИИ
   --no-verify          не рендерить и не сравнивать
 
 Переменные окружения: CHROME_PATH — путь к Chrome, если он не найден автоматически.
 `;
 
 function parseArgs(argv) {
-  const a = { _: [], frames: [], css: [], layout: 'auto', threshold: 0.1, textThreshold: 0.5, out: 'out', verify: true, refine: true, analyze: true, fonts: 'auto' };
+  const a = { _: [], frames: [], css: [], layout: 'auto', threshold: 0.1, textThreshold: 0.5, out: 'out', verify: true, refine: true, analyze: true, fonts: 'auto', semantic: true, ai: false };
   for (let i = 0; i < argv.length; i++) {
     const k = argv[i];
     if (k === '--out') a.out = argv[++i];
@@ -58,6 +64,8 @@ function parseArgs(argv) {
     else if (k === '--no-verify') a.verify = false;
     else if (k === '--no-refine') a.refine = false;
     else if (k === '--no-analyze') a.analyze = false;
+    else if (k === '--no-semantic') a.semantic = false;
+    else if (k === '--ai') a.ai = true;
     else if (k === '--fonts') a.fonts = argv[++i];
     else if (k === '--open') a.open = true;
     else if (k === '--delta-e') a.deltaE = parseFloat(argv[++i]);
@@ -174,10 +182,18 @@ async function build(args) {
       const hasRef = args.verify && f.pngPath && fs.existsSync(f.pngPath);
       if (hasRef) fs.copyFileSync(f.pngPath, path.join(fdir, 'reference.png'));
 
+      // ИИ-имена (по флагу): только для безликих слоёв; ошибки сервера не ломают сборку
+      let names = null;
+      if (args.ai && args.semantic) {
+        const r = await suggestNames(tree, analyzeSemantics(tree), { cfg: aiConfig(), cacheDir: defaultCacheDir(), log: (m) => console.log(m) });
+        if (r.error) console.log(`  ИИ недоступен (${r.error}) — имена по алгоритму`);
+        else if (r.asked) console.log(`  ИИ: имена для ${r.used} из ${r.asked} безликих слоёв`);
+        names = r.names;
+      }
       const attempts = [];
       let chosen = null;
       for (const mode of modes) {
-        const gen = generateFrame(tree, { mode, tokens, assetUrl: (rel) => `../assets/${rel}`, title: f.name, extraCss });
+        const gen = generateFrame(tree, { mode, tokens, assetUrl: (rel) => `../assets/${rel}`, title: f.name, extraCss, semantic: args.semantic, names });
         // пробные варианты — рядом с папкой фрейма (та же глубина, пути к assets не меняются)
         const attemptDir = modes.length > 1 ? path.join(out, `${dirName}.try-${mode}`) : fdir;
         fs.mkdirSync(attemptDir, { recursive: true });
