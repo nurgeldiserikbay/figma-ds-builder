@@ -13,9 +13,17 @@ import { buildReport } from './report.js';
 import { checkGeometry } from './geometry.js';
 import { attributeDiff } from './attribute.js';
 import { refinePage, patchesCss } from './refine.js';
+import { analyzeDesignSystem } from './ds/analyze.js';
+import { exportFiles, toTokens } from './ds/export.js';
 
 const HELP = `
+ds-build analyze <пакет | пакет.zip> [--out папка] [--delta-e 3] [--min-uses 2]
+  Дизайн-система по всем фреймам пакета: tokens.json (W3C), variables.css, _tokens.scss,
+  tailwind.config.js, design-system.md (с аудитом), analysis.json. По умолчанию — в ./out/design-system.
+
 ds-build build <пакет | пакет.zip> [опции]
+  Вёрстка всех фреймов + проверка с эталонами. Если в пакете нет tokens.json, дизайн-система
+  строится автоматически (как analyze) и цвета в вёрстке подставляются как var(--color-…).
 
   --out <папка>        куда положить результат (по умолчанию ./out)
   --layout <режим>     auto (по умолчанию) | flow | absolute
@@ -34,7 +42,7 @@ ds-build build <пакет | пакет.zip> [опции]
 `;
 
 function parseArgs(argv) {
-  const a = { _: [], frames: [], css: [], layout: 'auto', threshold: 0.1, textThreshold: 0.5, out: 'out', verify: true, refine: true };
+  const a = { _: [], frames: [], css: [], layout: 'auto', threshold: 0.1, textThreshold: 0.5, out: 'out', verify: true, refine: true, analyze: true };
   for (let i = 0; i < argv.length; i++) {
     const k = argv[i];
     if (k === '--out') a.out = argv[++i];
@@ -45,6 +53,9 @@ function parseArgs(argv) {
     else if (k === '--css') a.css.push(argv[++i]);
     else if (k === '--no-verify') a.verify = false;
     else if (k === '--no-refine') a.refine = false;
+    else if (k === '--no-analyze') a.analyze = false;
+    else if (k === '--delta-e') a.deltaE = parseFloat(argv[++i]);
+    else if (k === '--min-uses') a.minUses = parseInt(argv[++i], 10);
     else if (k === '-h' || k === '--help') a.help = true;
     else a._.push(k);
   }
@@ -80,12 +91,41 @@ const pixelOk = (diff, args) => {
 
 const safe = (s) => String(s).replace(/[^a-zA-Z0-9а-яА-ЯёЁ_-]+/g, '_').replace(/^_+|_+$/g, '') || 'frame';
 
+function runAnalysis(pkg, args, outDir) {
+  const opts = {};
+  if (args.deltaE) opts.deltaE = args.deltaE;
+  if (args.minUses) opts.minUses = args.minUses;
+  const ds = analyzeDesignSystem(pkg.frames.map((f) => ({ name: f.name, tree: f.tree() })), opts);
+  fs.mkdirSync(outDir, { recursive: true });
+  for (const [name, data] of Object.entries(exportFiles(ds, pkg.manifest.file))) fs.writeFileSync(path.join(outDir, name), data);
+  return ds;
+}
+
+async function analyze(args) {
+  const pkg = loadPackage(resolvePackageDir(args._[1]));
+  const outDir = path.resolve(args.out === 'out' ? 'out/design-system' : args.out);
+  const ds = runAnalysis(pkg, args, outDir);
+  console.log(`Дизайн-система: ${pkg.manifest.file}`);
+  console.log(`  цвета: ${ds.colors.mergedFrom} → ${ds.colors.tokens.length} токенов; семантика: ${ds.colors.semantic.map((s) => `${s.role}=${s.hex}`).join(', ')}`);
+  console.log(`  текст: ${ds.typography.styles.map((s) => `${s.name} ${s.size}`).join(', ')}`);
+  console.log(`  отступы (база ${ds.spacing.base}): ${ds.spacing.tokens.map((s) => s.value).join(', ')}`);
+  console.log(`  аудит: ${ds.audit.score}/100 — ${ds.audit.issues.map((i) => i.text).join('; ') || 'замечаний нет'}`);
+  console.log(`Файлы: ${outDir}`);
+}
+
 async function build(args) {
   const pkgDir = resolvePackageDir(args._[1]);
   const pkg = loadPackage(pkgDir);
-  const tokens = loadTokens(pkg.tokens);
   const out = path.resolve(args.out);
   fs.mkdirSync(out, { recursive: true });
+  // токены: из плагина, иначе — собственный анализ дизайн-системы
+  let tokenJson = pkg.tokens;
+  if (!tokenJson && args.analyze) {
+    const ds = runAnalysis(pkg, args, path.join(out, 'design-system'));
+    tokenJson = toTokens(ds);
+    console.log(`Дизайн-система построена: ${ds.colors.tokens.length} цветов, ${ds.typography.styles.length} стилей текста, аудит ${ds.audit.score}/100 → design-system/`);
+  }
+  const tokens = loadTokens(tokenJson);
   copyAssets(pkg, out);
   fs.writeFileSync(path.join(out, 'tokens.css'), tokens.css() || '/* токенов нет */\n');
   const extraCss = args.css.map((f, i) => {
@@ -202,11 +242,11 @@ async function build(args) {
 }
 
 const args = parseArgs(process.argv.slice(2));
-if (args.help || args._[0] !== 'build' || !args._[1]) {
+if (args.help || !['build', 'analyze'].includes(args._[0]) || !args._[1]) {
   console.log(HELP);
   process.exit(args.help ? 0 : 1);
 }
-build(args).catch((e) => {
+(args._[0] === 'analyze' ? analyze(args) : build(args)).catch((e) => {
   console.error('Ошибка:', e.message);
   process.exit(1);
 });

@@ -1,6 +1,13 @@
 {
   "comment": "Открытые макеты с GitHub для проверки генератора. reference — PNG, выгруженные авторами из Figma (настоящие эталоны).",
-  "fonts": ["montserrat", "roboto", "alata", "ibm-plex-sans", "poppins", "krona-one"],
+  "fonts": [
+    "montserrat",
+    "roboto",
+    "alata",
+    "ibm-plex-sans",
+    "poppins",
+    "krona-one"
+  ],
   "sources": [
     {
       "id": "hackrpi-thankyou",
@@ -11,13 +18,46 @@
         "v3": "website/PostEvent-ThankYouPage/HackRPI_PostEvent_ThankYouPage_v3.png"
       }
     },
-    { "id": "hackrpi-team", "repo": "hack-rpi/Figma-Designs-2023", "fig": "website/MeetTheTeam Page.fig" },
-    { "id": "hackrpi-practice", "repo": "hack-rpi/Figma-Designs-2023", "fig": "website/Untitled (4).fig" },
-    { "id": "hackrpi-discord", "repo": "hack-rpi/Figma-Designs-2023", "fig": "discord/Skeleton Mockup.fig" },
+    {
+      "id": "hackrpi-team",
+      "repo": "hack-rpi/Figma-Designs-2023",
+      "fig": "website/MeetTheTeam Page.fig"
+    },
+    {
+      "id": "hackrpi-practice",
+      "repo": "hack-rpi/Figma-Designs-2023",
+      "fig": "website/Untitled (4).fig"
+    },
+    {
+      "id": "hackrpi-discord",
+      "repo": "hack-rpi/Figma-Designs-2023",
+      "fig": "discord/Skeleton Mockup.fig"
+    },
     {
       "id": "physionic",
       "repo": "figmaland/Physionic--Doctor-Appointment-Website-Template-HTML-FIGMA-",
-      "fig": "figma-file/Physionic- Doctor Appointment Website Template (HTML + FIGMA).fig"
+      "fig": "figma-file/Physionic- Doctor Appointment Website Template (HTML + FIGMA).fig",
+      "expect": {
+        "comment": "SCSS-переменные автора шаблона (assets/sass/abstract/_variables.scss). #2091F9 ($primary-color) в самом макете не используется — дизайнер везде применил #23A6F0.",
+        "semantic": {
+          "background": "#FFFFFF",
+          "surface": "#FAFAFA",
+          "text-primary": "#252B42",
+          "text-secondary": "#737373",
+          "primary": "#23A6F0",
+          "accent": "#2DC071"
+        },
+        "palette": [
+          "#2DC071",
+          "#252B42",
+          "#737373",
+          "#FFFFFF",
+          "#8EC2F2",
+          "#BDBDBD",
+          "#FAFAFA"
+        ],
+        "spacingBase": 5
+      }
     }
   ]
 }
