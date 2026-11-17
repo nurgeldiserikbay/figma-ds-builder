@@ -27,8 +27,11 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
 
+      # на macOS Chromium из setup-chrome падает (MachPortRendezvous: дочерние процессы не стартуют, страница виснет);
+      # там берём уже установленный в образе Google Chrome — как у пользователя (channel: chrome, без CHROME_PATH)
       - name: Chrome
         id: chrome
+        if: runner.os != 'macOS'
         uses: browser-actions/setup-chrome@v1
         with:
           chrome-version: stable
@@ -41,8 +44,6 @@ jobs:
         timeout-minutes: 15
         env:
           CHROME_PATH: ${{ steps.chrome.outputs.chrome-path }}
-          # на macOS тест зависал без вывода — подробный журнал браузера, чтобы видеть, где
-          DEBUG: ${{ runner.os == 'macOS' && 'pw:browser,pw:api' || '' }}
 
       - name: Сборка из zip (путь с пробелами и тире, как называет плагин)
         shell: bash
