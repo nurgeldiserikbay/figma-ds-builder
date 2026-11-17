@@ -6,3 +6,6 @@ out/
 *.zip
 .bench/
 packages/bench/fonts-cache/
+# создаются командами: npm test (тестовый макет), npm run setup (сборка плагина)
+packages/builder/fixtures/sample/
+packages/plugin/dist/
