@@ -23,6 +23,10 @@ import { preparePages, exportReact, exportVue, renderReact, renderVue, checkPage
 import { groupFrames, writeResponsive, textsOf } from './responsive.js';
 
 const HELP = `
+ds-build ui [--port 0] [--home папка] [--no-open]
+  Окно программы в браузере: выбрать архив из плагина, отметить опции, смотреть ход сборки и отчёты.
+  Сборки сохраняются в ~/ds-build (или --home, DS_BUILD_HOME). Работает только на этом компьютере.
+
 ds-build analyze <пакет | пакет.zip> [--out папка] [--delta-e 3] [--min-uses 2]
   Дизайн-система по всем фреймам пакета: tokens.json (W3C), variables.css, _tokens.scss,
   tailwind.config.js, design-system.md (с аудитом), analysis.json. По умолчанию — в ./out/design-system.
@@ -35,7 +39,8 @@ ds-build build <пакет | пакет.zip> [опции]
   --layout <режим>     auto (по умолчанию) | flow | absolute
                          flow     — flex по Auto Layout и геометрии (чистый код)
                          absolute — абсолютное позиционирование (запасной, максимально точный)
-                         auto     — сначала flow; если не проходит порог, пробует absolute
+                         auto     — сначала flow; если не проходит, закрепляет координаты только у блоков
+                                    с расхождением (уровень за уровнем), absolute целиком — в крайнем случае
   --threshold <%>      допустимая доля несовпадающих пикселей вне текста, по умолчанию 0.1
   --text-threshold <%> допуск для пикселей текста (растеризация шрифтов в Figma и браузере различается),
                        по умолчанию 0.5; положение текстовых блоков всё равно проверяется геометрией ±0.5px
@@ -81,6 +86,9 @@ function parseArgs(argv) {
     else if (k === '--fonts') a.fonts = argv[++i];
     else if (k === '--open') a.open = true;
     else if (k === '--no-responsive') a.responsive = false;
+    else if (k === '--port') a.port = Number(argv[++i]);
+    else if (k === '--home') a.home = path.resolve(argv[++i]);
+    else if (k === '--no-open') a.noOpen = true;
     else if (k === '--group') { const [n, list] = argv[++i].split('='); a.groups[n.trim()] = (list || '').split(',').map((x) => x.trim()).filter(Boolean); }
     else if (k === '--framework') a.frameworks.push(...argv[++i].split(',').map((x) => x.trim().toLowerCase()).filter(Boolean));
     else if (k === '--delta-e') a.deltaE = parseFloat(argv[++i]);
@@ -417,11 +425,15 @@ async function build(args) {
 }
 
 const args = parseArgs(process.argv.slice(2));
-if (args.help || !['build', 'analyze'].includes(args._[0]) || !args._[1]) {
+if (args._[0] === 'ui') {
+  const { startUi } = await import('./ui.js');
+  await startUi({ port: args.port || 0, open: args.noOpen !== true, home: args.home || undefined });
+} else if (args.help || !['build', 'analyze'].includes(args._[0]) || !args._[1]) {
   console.log(HELP);
   process.exit(args.help ? 0 : 1);
+} else {
+  (args._[0] === 'analyze' ? analyze(args) : build(args)).catch((e) => {
+    console.error('Ошибка:', e.message);
+    process.exit(1);
+  });
 }
-(args._[0] === 'analyze' ? analyze(args) : build(args)).catch((e) => {
-  console.error('Ошибка:', e.message);
-  process.exit(1);
-});

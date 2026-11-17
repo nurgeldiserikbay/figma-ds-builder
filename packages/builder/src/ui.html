@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ds-build</title>
+<style>
+  :root {
+    --canvas: #FFFFFF;
+    --ink: #1A2033;
+    --muted: #5F6577;
+    --rule: #E3E5EB;
+    --panel: #F5F6F8;
+    --select: #0D99FF;
+    --redline: #E2401C;
+    --ok: #157347;
+    --code-bg: #1A2033;
+    --code-ink: #E8EBF3;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--canvas); color: var(--ink); font: 400 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  button, input, select { font: inherit; color: inherit; }
+  :focus-visible { outline: 2px solid var(--select); outline-offset: 2px; }
+  a { color: #0A63C9; text-underline-offset: 3px; }
+
+  header { display: flex; align-items: baseline; gap: 16px; padding: 18px 28px; border-bottom: 1px solid var(--rule); }
+  header h1 { margin: 0; font-size: 17px; font-weight: 650; letter-spacing: -0.01em; }
+  header .home { color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  header .home button { border: 0; background: none; padding: 0; color: #0A63C9; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+
+  main { display: grid; grid-template-columns: 380px 1fr; min-height: calc(100vh - 58px); }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+
+  .new { padding: 24px 28px; border-right: 1px solid var(--rule); background: var(--panel); }
+  .new h2, .side h2 { margin: 0 0 14px; font-size: 15px; font-weight: 650; }
+
+  /* выбор файла — как рамка выделения в Figma */
+  .drop { position: relative; display: grid; place-items: center; text-align: center; min-height: 168px; padding: 20px;
+    background: var(--canvas); border: 1px dashed #B9BECB; cursor: pointer; transition: border-color .12s; }
+  .drop input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+  .drop .h { position: absolute; width: 7px; height: 7px; background: #fff; border: 1px solid var(--select); opacity: 0; }
+  .drop .h.tl { left: -4px; top: -4px; } .drop .h.tr { right: -4px; top: -4px; } .drop .h.bl { left: -4px; bottom: -4px; } .drop .h.br { right: -4px; bottom: -4px; }
+  .drop.over, .drop.has, .drop:focus-within { border: 1px solid var(--select); }
+  .drop.over .h, .drop.has .h, .drop:focus-within .h { opacity: 1; }
+  .drop .size { position: absolute; bottom: -22px; left: 50%; transform: translateX(-50%); background: var(--select); color: #fff;
+    font-size: 11px; padding: 1px 6px; border-radius: 2px; white-space: nowrap; display: none; }
+  .drop.has .size { display: block; }
+  .drop b { display: block; font-weight: 600; word-break: break-word; }
+  .drop span { color: var(--muted); font-size: 13px; }
+
+  fieldset { border: 0; margin: 34px 0 0; padding: 0; }
+  legend { font-weight: 600; font-size: 13px; color: var(--muted); margin-bottom: 8px; padding: 0; }
+  label.opt { display: flex; gap: 10px; align-items: flex-start; padding: 7px 0; cursor: pointer; }
+  label.opt input { margin: 3px 0 0; accent-color: var(--select); }
+  label.opt small { display: block; color: var(--muted); font-size: 13px; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 4px; }
+  .row label { font-size: 13px; color: var(--muted); }
+  .row input, .row select { width: 100%; margin-top: 4px; padding: 6px 8px; border: 1px solid var(--rule); border-radius: 4px; background: #fff; }
+  details.more { margin-top: 18px; }
+  details.more summary { cursor: pointer; font-size: 13px; color: var(--muted); }
+
+  .run { width: 100%; margin-top: 24px; padding: 11px 16px; border: 0; border-radius: 6px; background: var(--ink); color: #fff; font-weight: 600; cursor: pointer; }
+  .run:disabled { opacity: .45; cursor: not-allowed; }
+  .err { color: var(--redline); font-size: 13px; margin-top: 10px; min-height: 1.5em; }
+
+  .side { padding: 24px 28px; min-width: 0; }
+  .job { margin-bottom: 36px; }
+  .job[hidden] { display: none; }
+  .bar { height: 4px; background: var(--rule); margin: 8px 0 12px; overflow: hidden; }
+  .bar i { display: block; height: 100%; width: 0; background: var(--select); transition: width .3s; }
+  .job.fail .bar i { background: var(--redline); }
+  .job.done:not(.fail) .bar i { background: var(--ok); }
+  .status { font-size: 14px; }
+  pre.log { margin: 0; max-height: 340px; overflow: auto; padding: 14px 16px; background: var(--code-bg); color: var(--code-ink);
+    font: 12.5px/1.55 ui-monospace, "JetBrains Mono", Menlo, Consolas, monospace; white-space: pre-wrap; border-radius: 6px; }
+  pre.log .bad { color: #FF8A70; } pre.log .good { color: #7EE0A8; }
+
+  .builds { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--rule); }
+  .builds li { display: grid; grid-template-columns: 1fr auto; gap: 4px 16px; padding: 14px 0; border-bottom: 1px solid var(--rule); }
+  .builds .t { font-weight: 600; word-break: break-word; }
+  .builds .m { color: var(--muted); font-size: 13px; }
+  .builds .verdict { grid-row: span 2; align-self: center; font-size: 13px; font-weight: 600; white-space: nowrap; }
+  .verdict.ok { color: var(--ok); } .verdict.bad { color: var(--redline); }
+  .links { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 13px; }
+  .links button { border: 0; background: none; padding: 0; color: #0A63C9; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; font-size: 13px; }
+  .empty { color: var(--muted); padding: 14px 0; }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>ds-build</h1>
+  <div class="home">Сборки сохраняются в <span id="home">__HOME__</span> · <button type="button" data-open=".">открыть папку</button></div>
+</header>
+<main>
+  <section class="new" aria-labelledby="new-title">
+    <h2 id="new-title">Новая сборка</h2>
+    <form id="form">
+      <div class="drop" id="drop">
+        <i class="h tl"></i><i class="h tr"></i><i class="h bl"></i><i class="h br"></i>
+        <input type="file" id="file" accept=".zip,application/zip" aria-label="Архив из плагина (ds-package.zip)">
+        <div id="dropText"><b>Перетащите архив из плагина</b><span>или нажмите, чтобы выбрать «… — ds-package.zip»</span></div>
+        <div class="size" id="size"></div>
+      </div>
+
+      <fieldset>
+        <legend>Что собрать</legend>
+        <label class="opt"><input type="checkbox" name="react"><span>React<small>проект на Vite с компонентами</small></span></label>
+        <label class="opt"><input type="checkbox" name="vue"><span>Vue<small>проект на Vite с компонентами</small></span></label>
+        <label class="opt"><input type="checkbox" name="responsive" checked><span>Адаптивные страницы<small>Desktop и Mobile одной страницы — в одну</small></span></label>
+        <label class="opt"><input type="checkbox" name="semantic" checked><span>Семантические теги<small>header, nav, button, h1… вместо div</small></span></label>
+        <label class="opt"><input type="checkbox" name="ai"><span>Имена классов от ИИ<small>Ollama, затем бесплатные API, если заданы ключи</small></span></label>
+      </fieldset>
+
+      <details class="more">
+        <summary>Допуски и раскладка</summary>
+        <div class="row">
+          <label>Пиксели, %<input name="threshold" type="number" step="0.05" min="0" value="0.1"></label>
+          <label>Текст, %<input name="textThreshold" type="number" step="0.1" min="0" value="0.5"></label>
+        </div>
+        <div class="row">
+          <label>Раскладка<select name="layout"><option value="auto">авто</option><option value="flow">flow</option><option value="absolute">absolute</option></select></label>
+        </div>
+      </details>
+
+      <button class="run" id="run" type="submit" disabled>Собрать и проверить</button>
+      <div class="err" id="err" role="alert"></div>
+    </form>
+  </section>
+
+  <section class="side">
+    <div class="job" id="job" hidden aria-live="polite">
+      <h2 id="jobTitle">Сборка</h2>
+      <div class="status" id="status"></div>
+      <div class="bar"><i id="bar"></i></div>
+      <pre class="log" id="log"></pre>
+    </div>
+    <h2>Сборки</h2>
+    <ul class="builds" id="builds"></ul>
+  </section>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const form = $('form'), fileInput = $('file'), drop = $('drop');
+let file = null, running = false;
+
+function pickFile(f) {
+  file = f && /\.zip$/i.test(f.name) ? f : null;
+  $('err').textContent = f && !file ? 'Нужен zip-архив, который выгружает плагин.' : '';
+  drop.classList.toggle('has', !!file);
+  $('dropText').innerHTML = file ? `<b></b><span>нажмите, чтобы выбрать другой</span>` : `<b>Перетащите архив из плагина</b><span>или нажмите, чтобы выбрать «… — ds-package.zip»</span>`;
+  if (file) { $('dropText').querySelector('b').textContent = file.name; $('size').textContent = `${(file.size / 1048576).toFixed(1)} МБ`; }
+  $('run').disabled = !file || running;
+}
+fileInput.addEventListener('change', () => pickFile(fileInput.files[0]));
+['dragenter', 'dragover'].forEach((e) => drop.addEventListener(e, (ev) => { ev.preventDefault(); drop.classList.add('over'); }));
+['dragleave', 'drop'].forEach((e) => drop.addEventListener(e, () => drop.classList.remove('over')));
+drop.addEventListener('drop', (ev) => { ev.preventDefault(); pickFile(ev.dataTransfer.files[0]); });
+
+function options() {
+  const o = {};
+  for (const el of form.elements) {
+    if (!el.name) continue;
+    o[el.name] = el.type === 'checkbox' ? el.checked : el.value;
+  }
+  return o;
+}
+
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+form.addEventListener('submit', async (ev) => {
+  ev.preventDefault();
+  if (!file || running) return;
+  running = true; $('run').disabled = true; $('err').textContent = '';
+  const job = $('job'); job.hidden = false; job.className = 'job';
+  $('jobTitle').textContent = file.name; $('log').textContent = ''; $('bar').style.width = '2%';
+  $('status').textContent = 'Загрузка архива…';
+  let res;
+  try {
+    res = await fetch(`/api/build?file=${encodeURIComponent(file.name)}&opts=${encodeURIComponent(JSON.stringify(options()))}`, { method: 'POST', body: file });
+  } catch (e) { res = { ok: false, json: async () => ({ error: 'программа не отвечает — она запущена?' }) }; }
+  const data = await res.json();
+  if (!res.ok) { $('err').textContent = data.error; running = false; pickFile(file); job.hidden = true; return; }
+  follow(data.id);
+});
+
+function follow(id) {
+  const log = $('log');
+  let total = 0, frames = 0;
+  $('status').textContent = 'Сборка идёт…';
+  const es = new EventSource(`/api/jobs/${id}/events`);
+  es.onmessage = (m) => {
+    const line = JSON.parse(m.data);
+    const t = /фреймов: (\d+)/.exec(line); if (t) total = +t[1];
+    if (/^  \S.*: (flow|absolute|hybrid).*· (OK|FAIL)?/.test(line) || /^  .+: flow, координаты/.test(line)) frames++;
+    const span = document.createElement('span');
+    if (/FAIL|Ошибка|✗|ОТЛИЧ|РАСХОЖДЕН/.test(line)) span.className = 'bad';
+    else if (/ OK$|совпадает/.test(line)) span.className = 'good';
+    span.textContent = line + '\n';
+    const stick = log.scrollTop + log.clientHeight >= log.scrollHeight - 4;
+    log.append(span);
+    if (stick) log.scrollTop = log.scrollHeight;
+    if (total) { $('bar').style.width = `${Math.max(4, Math.min(96, (frames / total) * 92))}%`; $('status').textContent = `Свёрстано фреймов: ${frames} из ${total}`; }
+  };
+  es.addEventListener('done', (m) => {
+    es.close();
+    const d = JSON.parse(m.data), s = d.summary;
+    const job = $('job'); job.classList.add('done');
+    $('bar').style.width = '100%';
+    if (d.code === 1 || !s) { job.classList.add('fail'); $('status').textContent = 'Сборка остановилась с ошибкой — причина в журнале.'; }
+    else {
+      if (s.failed) job.classList.add('fail');
+      $('status').innerHTML = `${s.failed ? `Не прошли проверку: ${s.failed} из ${s.frames}.` : `Все фреймы прошли проверку (${s.frames}).`} <a href="/out/${encodeURIComponent(d.name)}/report.html" target="_blank" rel="noopener">Открыть отчёт</a>`;
+    }
+    running = false; pickFile(file); loadBuilds();
+  });
+  es.onerror = () => { if (running) $('status').textContent = 'Связь с программой прервалась. Если окно терминала закрыто — запустите ds-build ui снова.'; };
+}
+
+async function loadBuilds() {
+  const r = await fetch('/api/builds').then((x) => x.json());
+  const ul = $('builds');
+  if (!r.builds.length) { ul.innerHTML = '<li class="empty">Здесь появятся готовые сборки.</li>'; return; }
+  ul.innerHTML = r.builds.map((b) => {
+    const base = `/out/${encodeURIComponent(b.name)}`;
+    const when = new Date(b.when).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+    const verdict = b.failed ? `<span class="verdict bad">не прошли ${b.failed} из ${b.frames}</span>` : b.passed ? `<span class="verdict ok">${b.passed} из ${b.frames} ✓</span>` : `<span class="verdict">${b.frames} фреймов</span>`;
+    return `<li><div class="t">${esc(b.file)}</div>${verdict}
+      <div><div class="m">${esc(when)}</div><div class="links">
+        <a href="${base}/report.html" target="_blank" rel="noopener">отчёт</a>
+        ${b.ds ? `<a href="${base}/design-system/design-system.md" target="_blank" rel="noopener">дизайн-система</a>` : ''}
+        <button type="button" data-open="${esc(b.name)}">папка</button>
+        ${b.react ? `<button type="button" data-open="${esc(b.name)}/react">React</button>` : ''}
+        ${b.vue ? `<button type="button" data-open="${esc(b.name)}/vue">Vue</button>` : ''}
+      </div></div></li>`;
+  }).join('');
+}
+document.addEventListener('click', (ev) => {
+  const b = ev.target.closest('[data-open]');
+  if (b) fetch(`/api/open?path=${encodeURIComponent(b.dataset.open)}`, { method: 'POST' });
+});
+loadBuilds();
+</script>
+</body>
+</html>
