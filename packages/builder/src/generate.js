@@ -178,13 +178,19 @@ function svgImg(node, ctx, box) {
 function textEl(node, ctx) {
   const t = node.text || { characters: '', segments: [] };
   const chars = t.characters || '';
-  const segs = t.segments?.length ? t.segments : [{ start: 0, end: chars.length }];
+  // пустой текст: у Figma нет сегментов — берём шрифт самого слоя (иначе font-family "undefined")
+  const segs = t.segments?.length ? t.segments : [{ start: 0, end: chars.length, ...(t.style || {}) }];
   const spans = segs.map((s) => ({ tag: 'span', cls: ctx.styles.classFor('t', declarations(segmentCss(s, ctx))), text: chars.slice(s.start, s.end), attrs: [], inline: true }));
+  // «стойка» строки — шрифт и интерлиньяж первого сегмента: иначе блок берёт их от body (16px, normal),
+  // и строка с интерлиньяжем меньше ~18px становится выше, а текст сдвигается вниз на 2–3px
+  const first = segmentCss(segs[0], ctx);
+  const strut = first['font-size'] && !/NaN/.test(first['font-size'])
+    ? { 'font-family': first['font-family'], 'font-size': first['font-size'], 'line-height': first['line-height'] } : {};
   const align = { LEFT: 'left', CENTER: 'center', RIGHT: 'right', JUSTIFIED: 'justify' }[t.align] || 'left';
   const noWrap = t.autoResize === 'WIDTH_AND_HEIGHT';
   const inner = ctx.styles.classFor(
     'text',
-    declarations({ display: 'block', width: '100%', 'text-align': align, 'white-space': noWrap ? 'pre' : 'pre-wrap', 'overflow-wrap': 'break-word' }),
+    declarations({ display: 'block', width: '100%', 'text-align': align, 'white-space': noWrap ? 'pre' : 'pre-wrap', 'overflow-wrap': 'break-word', ...strut }),
   );
   return { tag: 'span', cls: inner, attrs: [], children: spans, inline: true, kind: 'text' };
 }

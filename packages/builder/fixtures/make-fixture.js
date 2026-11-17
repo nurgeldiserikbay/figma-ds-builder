@@ -8,6 +8,7 @@
 // а не расхождения рендера Figma и браузера.
 import fs from 'node:fs';
 import path from 'node:path';
+import { PNG } from 'pngjs';
 import { fileURLToPath } from 'node:url';
 import { generateFrame } from '../src/generate.js';
 import { loadTokens } from '../src/tokens.js';
@@ -135,13 +136,18 @@ const mobile = frame('Landing / Mobile', 0, 0, 390, 820, [
   text('m/footer', 20, 712, 350, 24, '© 2026 Acme.', { size: 14, lh: 24, color: MUTED }),
   // «грязный» макет: у ряда тегов Auto Layout с gap 8, но теги потом раздвинули руками до 16 —
   // flex по Auto Layout ставит их не туда; точечный запасной режим закрепляет координаты только у этого ряда
+  // мелкий текст (12/14: интерлиньяж меньше «стойки» body), пустой текст и пунктирная рамка, как у загрузки логотипа
+  text('m/caption', 200, 24, 110, 14, 'Шрифт 12 на 14', { size: 12, lh: 14, style: 'Medium', color: MUTED }),
+  { ...text('m/empty', 200, 40, 110, 14, '', { size: 12, lh: 14 }), text: { characters: '', align: 'LEFT', verticalAlign: 'TOP', autoResize: 'NONE', segments: [],
+    style: { fontFamily: 'Inter', fontStyle: 'Regular', fontSize: 12, lineHeight: { unit: 'PIXELS', value: 14 } } } },
+  { ...rect('m/logo-upload', 330, 12, 40, 40, { radius: 10 }), strokes: solid(INK), strokeWeight: 1, strokeAlign: 'INSIDE', dashPattern: [4, 4] },
   frame('tags', 20, 760, 296, 32, [
     ['HTML', 20, 72], ['CSS', 108, 64], ['React', 188, 80], ['Vue', 284, 32],
   ].slice(0, 3).map(([t, x, w]) => frame(`tag/${t}`, x, 760, w, 32, [
     text('label', x + 12, 764, w - 24, 24, t, { size: 14, lh: 24, style: 'Medium', align: 'CENTER', color: INK }),
   ], { radius: 16, fills: solid('#e4e4e7'), layout: { mode: 'HORIZONTAL', gap: 0, padding: [4, 12, 4, 12], primaryAlign: 'CENTER', counterAlign: 'CENTER' } })),
   { layout: { mode: 'HORIZONTAL', gap: 8, padding: [0, 0, 0, 0], primaryAlign: 'MIN', counterAlign: 'MIN' } }),
-], { fills: solid('#fafafa'), clip: true });
+], { fills: [], clip: true });
 mobile.id = '2:1';
 
 const tokens = {
@@ -185,7 +191,14 @@ for (const [tree, file, w, h] of [[root, '1_1', 1280, 900], [mobile, '2_1', 390,
   fs.writeFileSync(path.join(tmp, 'index.html'), gen.html.replace('../tokens.css', 'tokens.css').replace('<link rel="stylesheet" href="tokens.css">', '<link rel="stylesheet" href="fonts.css">\n<link rel="stylesheet" href="tokens.css">'));
   fs.writeFileSync(path.join(tmp, 'styles.css'), gen.css);
   fs.writeFileSync(path.join(tmp, 'tokens.css'), loadTokens(tokens).css());
-  await renderPage(browser, path.join(tmp, 'index.html'), { width: w, height: h, out: path.join(dir, 'frames', `${file}.png`) });
+  const png = path.join(dir, 'frames', `${file}.png`);
+  await renderPage(browser, path.join(tmp, 'index.html'), { width: w, height: h, out: png });
+  // фрейм без заливки Figma выгружает с прозрачным фоном — так же и эталон
+  if (!tree.fills?.length) {
+    const img = PNG.sync.read(fs.readFileSync(png));
+    for (let i = 0; i < img.data.length; i += 4) if (img.data[i] === 255 && img.data[i + 1] === 255 && img.data[i + 2] === 255) img.data[i + 3] = 0;
+    fs.writeFileSync(png, PNG.sync.write(img));
+  }
   fs.rmSync(tmp, { recursive: true, force: true });
 }
 await browser.close();

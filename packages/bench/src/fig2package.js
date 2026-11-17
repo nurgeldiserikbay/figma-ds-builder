@@ -288,6 +288,7 @@ function build(n, G, parentAbs, origin, ctx, inst) {
       ? [n.borderTopWeight || 0, n.borderRightWeight || 0, n.borderBottomWeight || 0, n.borderLeftWeight || 0]
       : n.strokeWeight || 0;
     o.strokeAlign = n.strokeAlign || 'INSIDE';
+    if (n.dashPattern?.length) o.dashPattern = [...n.dashPattern];
   }
   o.radius = radius(n);
   o.effects = effects(n);

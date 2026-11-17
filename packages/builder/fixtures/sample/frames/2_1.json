@@ -6,17 +6,7 @@
   "y": 0,
   "w": 390,
   "h": 820,
-  "fills": [
-    {
-      "type": "SOLID",
-      "color": {
-        "r": 0.9803921568627451,
-        "g": 0.9803921568627451,
-        "b": 0.9803921568627451,
-        "a": 1
-      }
-    }
-  ],
+  "fills": [],
   "children": [
     {
       "id": "1:142",
@@ -434,7 +424,103 @@
       }
     },
     {
-      "id": "1:159",
+      "id": "1:153",
+      "name": "m/caption",
+      "type": "TEXT",
+      "x": 200,
+      "y": 24,
+      "w": 110,
+      "h": 14,
+      "text": {
+        "characters": "Шрифт 12 на 14",
+        "align": "LEFT",
+        "verticalAlign": "TOP",
+        "autoResize": "NONE",
+        "segments": [
+          {
+            "start": 0,
+            "end": 14,
+            "fontFamily": "Inter",
+            "fontStyle": "Medium",
+            "fontSize": 12,
+            "lineHeight": {
+              "unit": "PIXELS",
+              "value": 14
+            },
+            "letterSpacing": {
+              "unit": "PIXELS",
+              "value": 0
+            },
+            "fills": [
+              {
+                "type": "SOLID",
+                "color": {
+                  "r": 0.3215686274509804,
+                  "g": 0.3215686274509804,
+                  "b": 0.3568627450980392,
+                  "a": 1
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "1:154",
+      "name": "m/empty",
+      "type": "TEXT",
+      "x": 200,
+      "y": 40,
+      "w": 110,
+      "h": 14,
+      "text": {
+        "characters": "",
+        "align": "LEFT",
+        "verticalAlign": "TOP",
+        "autoResize": "NONE",
+        "segments": [],
+        "style": {
+          "fontFamily": "Inter",
+          "fontStyle": "Regular",
+          "fontSize": 12,
+          "lineHeight": {
+            "unit": "PIXELS",
+            "value": 14
+          }
+        }
+      }
+    },
+    {
+      "id": "1:155",
+      "name": "m/logo-upload",
+      "type": "RECTANGLE",
+      "x": 330,
+      "y": 12,
+      "w": 40,
+      "h": 40,
+      "fills": [],
+      "radius": 10,
+      "strokes": [
+        {
+          "type": "SOLID",
+          "color": {
+            "r": 0.09411764705882353,
+            "g": 0.09411764705882353,
+            "b": 0.10588235294117647,
+            "a": 1
+          }
+        }
+      ],
+      "strokeWeight": 1,
+      "strokeAlign": "INSIDE",
+      "dashPattern": [
+        4,
+        4
+      ]
+    },
+    {
+      "id": "1:162",
       "name": "tags",
       "type": "FRAME",
       "x": 20,
@@ -444,7 +530,7 @@
       "fills": [],
       "children": [
         {
-          "id": "1:154",
+          "id": "1:157",
           "name": "tag/HTML",
           "type": "FRAME",
           "x": 20,
@@ -465,7 +551,7 @@
           "radius": 16,
           "children": [
             {
-              "id": "1:153",
+              "id": "1:156",
               "name": "label",
               "type": "TEXT",
               "x": 32,
@@ -523,7 +609,7 @@
           }
         },
         {
-          "id": "1:156",
+          "id": "1:159",
           "name": "tag/CSS",
           "type": "FRAME",
           "x": 108,
@@ -544,7 +630,7 @@
           "radius": 16,
           "children": [
             {
-              "id": "1:155",
+              "id": "1:158",
               "name": "label",
               "type": "TEXT",
               "x": 120,
@@ -602,7 +688,7 @@
           }
         },
         {
-          "id": "1:158",
+          "id": "1:161",
           "name": "tag/React",
           "type": "FRAME",
           "x": 188,
@@ -623,7 +709,7 @@
           "radius": 16,
           "children": [
             {
-              "id": "1:157",
+              "id": "1:160",
               "name": "label",
               "type": "TEXT",
               "x": 200,

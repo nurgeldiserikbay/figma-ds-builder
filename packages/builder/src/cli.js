@@ -241,7 +241,7 @@ async function build(args) {
           if (hasRef) {
             att.diff = comparePng(path.join(fdir, 'reference.png'), path.join(attemptDir, 'render.png'), path.join(attemptDir, 'diff.png'));
             att.percent = att.diff.percent;
-            if (att.diff.mismatched) att.diff.sources = attributeDiff(tree, path.join(attemptDir, 'diff.png'), { scale: pkg.scale });
+            if (att.diff.mismatched) att.diff.sources = attributeDiff(tree, path.join(attemptDir, 'diff.png'), { scale: pkg.scale, top: 30 });
             // автодоработка: подбор поправок для слоёв с наибольшим расхождением
             // запускаем и при прохождении порога: сдвиг строки на 1–2px укладывается в допуск для текста,
             // но исправляется поправкой
@@ -252,7 +252,10 @@ async function build(args) {
                 width: f.width, height: f.height, scale: pkg.scale,
               });
               if (patches.length) {
-                fs.appendFileSync(path.join(attemptDir, 'styles.css'), patchesCss(patches));
+                const cssFile = path.join(attemptDir, 'styles.css');
+                const cssBefore = fs.readFileSync(cssFile, 'utf8');
+                const saved = { diff: att.diff, percent: att.percent, geometry: att.geometry, png: fs.readFileSync(path.join(attemptDir, 'render.png')), diffPng: fs.readFileSync(path.join(attemptDir, 'diff.png')) };
+                fs.appendFileSync(cssFile, patchesCss(patches));
                 const re = await renderPage(browser, path.join(attemptDir, 'index.html'), {
                   width: f.width, height: f.height, scale: pkg.scale, out: path.join(attemptDir, 'render.png'),
                 });
@@ -261,7 +264,15 @@ async function build(args) {
                 att.diff = comparePng(path.join(fdir, 'reference.png'), path.join(attemptDir, 'render.png'), path.join(attemptDir, 'diff.png'));
                 att.percent = att.diff.percent;
                 if (att.diff.mismatched) att.diff.sources = attributeDiff(tree, path.join(attemptDir, 'diff.png'), { scale: pkg.scale });
-                att.refine = { before, after: att.percent, patches };
+                // поправки вместе сделали хуже (или сдвинули блоки) — откат
+                if (att.percent > before || (att.geometry?.failed || 0) > (saved.geometry?.failed || 0)) {
+                  fs.writeFileSync(cssFile, cssBefore);
+                  fs.writeFileSync(path.join(attemptDir, 'render.png'), saved.png);
+                  fs.writeFileSync(path.join(attemptDir, 'diff.png'), saved.diffPng);
+                  Object.assign(att, { diff: saved.diff, percent: saved.percent, geometry: saved.geometry });
+                } else {
+                  att.refine = { before, after: att.percent, patches };
+                }
               }
             }
           }

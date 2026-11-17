@@ -10,7 +10,8 @@ export async function openBrowser() {
   const executablePath = process.env.CHROME_PATH;
   try {
     // sRGB без управления цветом: скриншоты одинаковы на любом мониторе и совпадают с Figma
-    const args = ['--force-color-profile=srgb', '--disable-lcd-text', '--font-render-hinting=none'];
+    const args = ['--force-color-profile=srgb', '--disable-lcd-text', '--font-render-hinting=none',
+      ...(process.env.DS_CHROME_ARGS || '').split(/\s+/).filter(Boolean)];
     return await chromium.launch(executablePath ? { executablePath, args } : { channel: 'chrome', args });
   } catch (e) {
     throw new Error(

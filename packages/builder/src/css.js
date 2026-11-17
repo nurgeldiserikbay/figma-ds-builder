@@ -79,6 +79,19 @@ export function strokesToCss(node, ctx) {
     return sh.length ? { _shadows: sh } : {};
   }
   if (!w) return {};
+  // пунктир: outline dashed в браузере рисует свои штрихи, поэтому — SVG-рамка с тем же dasharray фоном элемента
+  const dash = (node.dashPattern || []).filter((d) => d > 0);
+  if (dash.length && node.w > 0 && node.h > 0 && (node.strokeAlign || 'INSIDE') !== 'OUTSIDE') {
+    const c = p.color, a = (p.opacity ?? 1) * (c.a ?? 1);
+    const rgb = `rgb(${Math.round(c.r * 255)},${Math.round(c.g * 255)},${Math.round(c.b * 255)})`;
+    const inset = w / 2;
+    const rad = Array.isArray(node.radius) ? node.radius[0] : node.radius || 0;
+    const W = r2(node.w), H = r2(node.h);
+    const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='${W}' height='${H}' viewBox='0 0 ${W} ${H}' preserveAspectRatio='none'>`
+      + `<rect x='${r2(inset)}' y='${r2(inset)}' width='${r2(W - w)}' height='${r2(H - w)}' rx='${r2(Math.max(0, rad - inset))}' fill='none' `
+      + `stroke='${rgb}' stroke-opacity='${r2(a)}' stroke-width='${r2(w)}' stroke-dasharray='${dash.map(r2).join(' ')}'/></svg>`;
+    return { _dash: `url("data:image/svg+xml,${encodeURIComponent(svg).replace(/'/g, '%27')}")` };
+  }
   const offset = { INSIDE: -w, CENTER: -w / 2, OUTSIDE: 0 }[node.strokeAlign || 'INSIDE'];
   return { outline: `${px(w)} solid ${color}`, 'outline-offset': px(offset) };
 }
@@ -124,11 +137,10 @@ export function fontWeight(seg) {
 }
 
 export function segmentCss(seg, ctx) {
-  const o = {
-    'font-family': `"${seg.fontFamily}", sans-serif`,
-    'font-size': px(seg.fontSize),
-    'font-weight': String(fontWeight(seg)),
-  };
+  const o = {};
+  if (seg.fontFamily) o['font-family'] = `"${seg.fontFamily}", sans-serif`;
+  if (Number.isFinite(seg.fontSize)) o['font-size'] = px(seg.fontSize);
+  if (seg.fontFamily || seg.fontWeight) o['font-weight'] = String(fontWeight(seg));
   if (/italic|oblique/i.test(seg.fontStyle || '')) o['font-style'] = 'italic';
   const lh = seg.lineHeight;
   if (lh && lh.unit === 'PIXELS') o['line-height'] = px(lh.value);
@@ -148,6 +160,19 @@ export function segmentCss(seg, ctx) {
 /** Объект объявлений → строка CSS (служебные ключи вида _x склеиваются отдельно). */
 export function declarations(obj) {
   const o = { ...obj };
+  if (o._dash) {
+    // пунктирная рамка — верхний слой фона, заливки — под ней
+    const d = o._dash;
+    if (o.background) { o['background-color'] = o.background; delete o.background; }
+    const imgs = o['background-image'] ? o['background-image'] : null;
+    const n = imgs ? (imgs.match(/(?:url|gradient)\(/g) || []).length : 0;
+    const list = (k, v, def) => [v, ...(o[k] ? [o[k]] : n ? [Array(n).fill(def).join(', ')] : [])].join(', ');
+    o['background-size'] = list('background-size', '100% 100%', 'auto');
+    o['background-position'] = list('background-position', '0 0', '0% 0%');
+    o['background-repeat'] = list('background-repeat', 'no-repeat', 'repeat');
+    o['background-image'] = imgs ? `${d}, ${imgs}` : d;
+  }
+  delete o._dash;
   if (o._shadows?.length) o['box-shadow'] = o._shadows.join(', ');
   delete o._shadows;
   return Object.entries(o)

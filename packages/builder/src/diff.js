@@ -4,6 +4,23 @@ import { PNG } from 'pngjs';
 import pixelmatch from 'pixelmatch';
 
 /**
+ * Пиксели RGBA → наложенные на белое. Фрейм без заливки Figma выгружает прозрачным, а страница в браузере
+ * стоит на белом фоне: сравнивать нужно то, что видно (иначе весь пустой фон считался бы расхождением).
+ */
+export function flattenWhite(d) {
+  const o = Buffer.from(d);
+  for (let i = 0; i < o.length; i += 4) {
+    const al = o[i + 3] / 255;
+    if (al === 1) continue;
+    o[i] = Math.round(o[i] * al + 255 * (1 - al));
+    o[i + 1] = Math.round(o[i + 1] * al + 255 * (1 - al));
+    o[i + 2] = Math.round(o[i + 2] * al + 255 * (1 - al));
+    o[i + 3] = 255;
+  }
+  return o;
+}
+
+/**
  * @returns {{ percent: number, mismatched: number, total: number, sizeMismatch: boolean, bbox: object|null }}
  */
 export function comparePng(refPath, actualPath, diffPath, { threshold = 0.1 } = {}) {
@@ -20,8 +37,10 @@ export function comparePng(refPath, actualPath, diffPath, { threshold = 0.1 } = 
     PNG.bitblt(img, out, 0, 0, img.width, img.height, 0, 0);
     return out.data;
   };
-  const a = pad(ref);
-  const b = pad(act);
+  // Фрейм без заливки Figma выгружает прозрачным, а страница в браузере стоит на белом фоне: сравниваем
+  // оба изображения, наложенные на белое (иначе весь пустой фон считался бы расхождением)
+  const a = flattenWhite(pad(ref));
+  const b = flattenWhite(pad(act));
   const diff = new PNG({ width: w, height: h });
   const mismatched = pixelmatch(a, b, diff.data, w, h, { threshold, includeAA: false, alpha: 0.2 });
   fs.writeFileSync(diffPath, PNG.sync.write(diff));

@@ -93,8 +93,18 @@ function textData(node, ctx) {
     f.uses++;
     f.sizes[s.fontSize] = true;
   });
+  // пустой текст: сегментов нет — шрифт слоя целиком (для пустой строки нужна её высота)
+  var style = null;
+  if (!segs.length && !isMixed(node.fontName) && !isMixed(node.fontSize)) {
+    var lh = isMixed(node.lineHeight) ? { unit: 'AUTO' } : node.lineHeight;
+    style = {
+      fontFamily: node.fontName.family, fontStyle: node.fontName.style, fontSize: node.fontSize,
+      lineHeight: lh.unit === 'AUTO' ? { unit: 'AUTO' } : { unit: lh.unit, value: lh.value },
+    };
+  }
   return {
     characters: node.characters,
+    style: style,
     align: node.textAlignHorizontal,
     verticalAlign: node.textAlignVertical,
     autoResize: node.textAutoResize,
@@ -154,6 +164,7 @@ function serialize(node, ox, oy, ctx) {
     o.strokes = paints(node.strokes, ctx);
     o.strokeWeight = strokeWeight(node);
     o.strokeAlign = node.strokeAlign;
+    if (node.dashPattern && node.dashPattern.length) o.dashPattern = node.dashPattern.slice();
   }
   o.radius = radius(node);
   o.effects = effects(node);

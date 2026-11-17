@@ -12,6 +12,7 @@ import fs from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { PNG } from 'pngjs';
 import pixelmatch from 'pixelmatch';
+import { flattenWhite } from './diff.js';
 
 function crop(png, x, y, w, h) {
   const out = new PNG({ width: w, height: h });
@@ -19,8 +20,9 @@ function crop(png, x, y, w, h) {
   return out;
 }
 
-export async function refinePage(browser, htmlPath, { refPath, tree, sources, width, height, scale = 1, maxNodes = 8, minPixels = 150 }) {
+export async function refinePage(browser, htmlPath, { refPath, tree, sources, width, height, scale = 1, maxNodes = 16, minPixels = 150 }) {
   const ref = PNG.sync.read(fs.readFileSync(refPath));
+  ref.data = flattenWhite(ref.data); // прозрачный фон эталона = белый фон страницы
   const nodes = new Map();
   (function walk(n) { nodes.set(n.id, n); (n.children || []).forEach(walk); })(tree);
 
@@ -44,7 +46,7 @@ export async function refinePage(browser, htmlPath, { refPath, tree, sources, wi
       const buf = await page.screenshot({ clip: { x, y, width: w, height: h } });
       const img = PNG.sync.read(buf);
       if (img.width !== refCrop.width || img.height !== refCrop.height) return Infinity;
-      return pixelmatch(refCrop.data, img.data, null, img.width, img.height, { threshold: 0.1, includeAA: false });
+      return pixelmatch(refCrop.data, flattenWhite(img.data), null, img.width, img.height, { threshold: 0.1, includeAA: false });
     };
 
     const base = await page.evaluate((id) => {
@@ -97,6 +99,47 @@ export async function refinePage(browser, htmlPath, { refPath, tree, sources, wi
       await apply(0, 0);
     }
   }
+  // Сдвиг базовой линии зависит от кегля и интерлиньяжа, а не от слоя: если у текстов одного стиля
+  // нашёлся один и тот же сдвиг, пробуем его для всех текстов этого стиля и оставляем, если вся страница ближе
+  const fullScore = async () => {
+    const img = PNG.sync.read(await page.screenshot({ clip: { x: 0, y: 0, width: Math.ceil(width), height: Math.ceil(height) } }));
+    if (img.width !== ref.width || img.height !== ref.height) return Infinity;
+    return pixelmatch(ref.data, flattenWhite(img.data), null, img.width, img.height, { threshold: 0.1, includeAA: false });
+  };
+  const styleOf = (id) => page.evaluate((id) => {
+    const s = document.querySelector(`[data-figma-id="${CSS.escape(id)}"] > span > span`);
+    return s ? s.className : null;
+  }, id);
+  const byStyle = new Map();
+  for (const p of patches) {
+    if (!p.dy) continue;
+    const cls = await styleOf(p.id);
+    if (!cls) continue;
+    if (!byStyle.has(cls)) byStyle.set(cls, []);
+    byStyle.get(cls).push(p.dy);
+  }
+  let total = byStyle.size ? await fullScore() : 0;
+  for (const [cls, dys] of byStyle) {
+    if (dys.some((d) => d !== dys[0])) continue; // тексты стиля не согласны — оставляем поправки по слоям
+    const dy = dys[0];
+    const set = (v) => page.evaluate(({ cls, v }) => {
+      for (const s of document.querySelectorAll(`.${CSS.escape(cls)}:first-child`)) {
+        const inner = s.parentElement;
+        if (!inner.parentElement?.hasAttribute('data-figma-id')) continue;
+        inner.style.position = 'relative';
+        inner.style.top = v === null ? inner.dataset.top0 ?? '' : `${v}px`;
+      }
+    }, { cls, v });
+    await page.evaluate((cls) => { for (const s of document.querySelectorAll(`.${CSS.escape(cls)}:first-child`)) s.parentElement.dataset.top0 = s.parentElement.style.top; }, cls);
+    await set(dy);
+    const t = await fullScore();
+    if (t < total) {
+      total = t;
+      patches.push({ style: cls, dy, name: `все тексты стиля ${cls}` });
+    } else {
+      await set(null);
+    }
+  }
   await page.close();
   return patches;
 }
@@ -106,6 +149,10 @@ export function patchesCss(patches) {
   if (!patches.length) return '';
   const L = ['', '/* Поправки после сверки с эталоном Figma (ds-build refine) */'];
   for (const p of patches) {
+    if (p.style) {
+      L.push(`[data-figma-id] > span:has(> .${p.style}:first-child) { position: relative; top: ${p.dy}px; } /* ${p.name} */`);
+      continue;
+    }
     const sel = `[data-figma-id="${p.id}"]`;
     p.letterSpacing.forEach((ls, i) => L.push(`${sel} > span > span:nth-child(${i + 1}) { letter-spacing: ${ls}px;${p.wordSpacing ? ` word-spacing: ${p.wordSpacing}px;` : ''} } /* ${p.name} */`));
     if (p.dy) L.push(`${sel} > span { position: relative; top: ${p.dy}px; }`);
