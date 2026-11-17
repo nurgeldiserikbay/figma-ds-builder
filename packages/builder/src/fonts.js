@@ -3,7 +3,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, execSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 
 export const slugOf = (family) => family.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
@@ -27,6 +27,16 @@ export function defaultCacheDir() {
 }
 
 /** Скачивает недостающие @fontsource-пакеты. Возвращает найденные и ненайденные семейства. */
+// npm без shell: на Windows npm — это npm.cmd, а .cmd без shell не запускается, shell с массивом аргументов
+// Node считает небезопасным (DEP0190). Поэтому — сам npm-cli.js через текущий node; не нашёлся — строка для shell.
+function runNpm(args, opts) {
+  const cands = [process.env.npm_execpath, path.join(path.dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js')];
+  const cli = cands.find((c) => c && /npm-cli\.js$/.test(c) && fs.existsSync(c));
+  if (cli) return execFileSync(process.execPath, [cli, ...args], opts);
+  if (process.platform !== 'win32') return execFileSync('npm', args, opts);
+  return execSync(['npm', ...args].map((a) => (/^[\w@./:=-]+$/.test(a) ? a : `"${a}"`)).join(' '), opts);
+}
+
 export function ensureFonts(families, cacheDir, { log = () => {} } = {}) {
   const dir = path.join(cacheDir, 'fonts');
   fs.mkdirSync(dir, { recursive: true });
@@ -41,8 +51,7 @@ export function ensureFonts(families, cacheDir, { log = () => {} } = {}) {
     if (notOnNpm.has(slug)) { missing.push(fam); continue; }
     try {
       log(`  скачиваю шрифт ${fam}…`);
-      execFileSync(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['install', '--silent', '--no-audit', '--no-fund', `@fontsource/${slug}`],
-        { cwd: dir, stdio: 'ignore', timeout: 300000, shell: process.platform === 'win32' });
+      runNpm(['install', '--silent', '--no-audit', '--no-fund', `@fontsource/${slug}`], { cwd: dir, stdio: 'ignore', timeout: 300000 });
       found.push(fam);
     } catch {
       notOnNpm.add(slug);
