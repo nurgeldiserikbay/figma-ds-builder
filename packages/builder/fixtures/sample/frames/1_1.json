@@ -1222,6 +1222,154 @@
           }
         ]
       }
+    },
+    {
+      "id": "1:135",
+      "name": "stamp",
+      "type": "FRAME",
+      "x": 1038.24,
+      "y": 839.48,
+      "w": 99.52,
+      "h": 45.05,
+      "fills": [
+        {
+          "type": "SOLID",
+          "color": {
+            "r": 0.08627450980392157,
+            "g": 0.6392156862745098,
+            "b": 0.2901960784313726,
+            "a": 1
+          }
+        }
+      ],
+      "radius": 8,
+      "children": [
+        {
+          "id": "1:134",
+          "name": "stamp/text",
+          "type": "TEXT",
+          "x": 1038.24,
+          "y": 839.48,
+          "w": 99.52,
+          "h": 45.05,
+          "text": {
+            "characters": "beta",
+            "align": "CENTER",
+            "verticalAlign": "CENTER",
+            "autoResize": "NONE",
+            "segments": [
+              {
+                "start": 0,
+                "end": 4,
+                "fontFamily": "Inter",
+                "fontStyle": "Semi Bold",
+                "fontSize": 14,
+                "lineHeight": {
+                  "unit": "PIXELS",
+                  "value": 20
+                },
+                "letterSpacing": {
+                  "unit": "PIXELS",
+                  "value": 0
+                },
+                "fills": [
+                  {
+                    "type": "SOLID",
+                    "color": {
+                      "r": 1,
+                      "g": 1,
+                      "b": 1,
+                      "a": 1
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "transform": [
+            [
+              0.9902680687415704,
+              0.13917310096006544,
+              1038.2403630850436
+            ],
+            [
+              -0.13917310096006544,
+              0.9902680687415704,
+              852.836019746218
+            ]
+          ],
+          "size": {
+            "w": 96,
+            "h": 32
+          },
+          "rotation": 8
+        }
+      ],
+      "clipsContent": false,
+      "transform": [
+        [
+          0.9902680687415704,
+          0.13917310096006544,
+          1038.2403630850436
+        ],
+        [
+          -0.13917310096006544,
+          0.9902680687415704,
+          852.836019746218
+        ]
+      ],
+      "size": {
+        "w": 96,
+        "h": 32
+      },
+      "rotation": 8
+    },
+    {
+      "id": "1:136",
+      "name": "avatar",
+      "type": "GROUP",
+      "x": 1160,
+      "y": 836,
+      "w": 48,
+      "h": 48,
+      "children": [
+        {
+          "id": "1:137",
+          "name": "avatar/mask",
+          "type": "ELLIPSE",
+          "x": 1160,
+          "y": 836,
+          "w": 48,
+          "h": 48,
+          "fills": [
+            {
+              "type": "SOLID",
+              "color": {
+                "r": 0,
+                "g": 0,
+                "b": 0,
+                "a": 1
+              }
+            }
+          ],
+          "isMask": true
+        },
+        {
+          "id": "1:138",
+          "name": "avatar/photo",
+          "type": "RECTANGLE",
+          "x": 1150,
+          "y": 826,
+          "w": 68,
+          "h": 68,
+          "fills": [
+            {
+              "type": "GRADIENT_LINEAR",
+              "css": "linear-gradient(135deg, #f97316 0%, #db2777 100%)"
+            }
+          ]
+        }
+      ]
     }
   ],
   "clipsContent": true

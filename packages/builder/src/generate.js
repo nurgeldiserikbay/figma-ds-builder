@@ -1,5 +1,5 @@
 // Генерация HTML/CSS из дерева блоков.
-import { buildBox, placements } from './layout.js';
+import { buildBox, placements, isTransformed } from './layout.js';
 import {
   px, r2, fillsToCss, strokesToCss, effectsToCss, radiusToCss, segmentCss, declarations, mergeShadows,
 } from './css.js';
@@ -97,9 +97,32 @@ function nodeVisualCss(node, ctx) {
   if (node.blendMode && !['NORMAL', 'PASS_THROUGH'].includes(node.blendMode)) {
     o['mix-blend-mode'] = node.blendMode.toLowerCase().replace(/_/g, '-');
   }
-  if (node.rotation) o.transform = `rotate(${r2(-node.rotation)}deg)`;
   const strokes = node.svg || node.type === 'TEXT' ? {} : strokesToCss(node, ctx);
   return mergeShadows(o, strokes, effectsToCss(node, ctx));
+}
+
+/** Внешний блок повёрнутого слоя: видимая рамка, участвует в раскладке, без оформления. */
+function outerCss(rect) {
+  return { position: 'relative', 'box-sizing': 'border-box', width: px(rect.w), height: px(rect.h), 'flex-shrink': '0' };
+}
+
+/** Маска: обрезка по форме маски (прямоугольник со скруглением, эллипс, SVG). */
+function maskCss(m, ctx) {
+  const o = { ...outerCss(m), overflow: 'hidden' };
+  if (m.type === 'ELLIPSE') o['border-radius'] = '50%';
+  else Object.assign(o, radiusToCss(m));
+  if (m.svg) {
+    const url = `url("${ctx.assetUrl(m.svg)}")`;
+    Object.assign(o, { overflow: 'visible', 'mask-image': url, '-webkit-mask-image': url, 'mask-size': '100% 100%', '-webkit-mask-size': '100% 100%', 'mask-repeat': 'no-repeat', '-webkit-mask-repeat': 'no-repeat' });
+  }
+  return o;
+}
+
+function svgImg(node, ctx, box) {
+  const b = box || node.svgBox;
+  return b
+    ? `<img src="${esc(ctx.assetUrl(node.svg))}" alt="" style="position:absolute;left:${px(b.x)};top:${px(b.y)};width:${px(b.w)};height:${px(b.h)};max-width:none">`
+    : `<img src="${esc(ctx.assetUrl(node.svg))}" alt="" style="display:block;width:100%;height:100%">`;
 }
 
 function textHtml(node, ctx) {
@@ -124,9 +147,12 @@ function textHtml(node, ctx) {
 function emit(box, place, ctx, depth) {
   const pad = '  '.repeat(depth);
   const node = box.node;
-  let baseDecl = node ? nodeVisualCss(node, ctx) : {
-    position: 'relative', 'box-sizing': 'border-box', width: px(box.rect.w), height: px(box.rect.h), 'flex-shrink': '0',
-  };
+  const rotated = node && box.kind === 'node' && isTransformed(node);
+  let baseDecl;
+  if (box.kind === 'mask') baseDecl = maskCss(node, ctx);
+  else if (rotated) baseDecl = outerCss(box.rect);
+  else if (node) baseDecl = nodeVisualCss(node, ctx);
+  else baseDecl = outerCss(box.rect);
 
   if (box.bg) {
     // фон, вобранный из нижнего прямоугольника
@@ -142,26 +168,45 @@ function emit(box, place, ctx, depth) {
   if (gap) flow.gap = px(gap);
 
   let inner = '';
-  if (node?.type === 'TEXT') {
+  const parts = [];
+  if (rotated) {
+    // сам слой — внутри рамки, с точной матрицей Figma (поворот, отражение)
+    const t = node.transform, size = node.size || { w: node.w, h: node.h };
+    const local = { ...node, w: size.w, h: size.h };
+    const vis = nodeVisualCss(local, ctx);
+    delete vis.transform;
+    vis.position = 'absolute';
+    vis.left = px(t[0][2] - box.rect.x);
+    vis.top = px(t[1][2] - box.rect.y);
+    vis.transform = `matrix(${[t[0][0], t[1][0], t[0][1], t[1][1]].map((v) => Math.round(v * 1e5) / 1e5).join(', ')}, 0, 0)`;
+    vis['transform-origin'] = '0 0';
+    let content = '';
+    if (node.type === 'TEXT') {
+      const va = { TOP: 'flex-start', CENTER: 'center', BOTTOM: 'flex-end' }[node.text?.verticalAlign] || 'flex-start';
+      Object.assign(vis, { display: 'flex', 'flex-direction': 'column', 'justify-content': va });
+      content = textHtml(node, ctx);
+    } else if (node.svg && node.svgSpace !== 'box') content = svgImg(node, ctx);
+    const icls = ctx.styles.classFor((node.name || 'layer') + '-shape', declarations(vis));
+    parts.push(`${pad}  <div class="${icls}">${content}</div>`);
+    // SVG, отрисованный Figma уже с поворотом, — по рамке
+    if (node.svg && node.svgSpace === 'box') parts.push(`${pad}  ${svgImg(node, ctx, node.svgBox || { x: 0, y: 0, w: box.rect.w, h: box.rect.h })}`);
+  } else if (node?.type === 'TEXT' && box.kind === 'node') {
     const va = { TOP: 'flex-start', CENTER: 'center', BOTTOM: 'flex-end' }[node.text?.verticalAlign] || 'flex-start';
     Object.assign(flow, { display: 'flex', 'flex-direction': 'column', 'justify-content': va });
     inner = textHtml(node, ctx);
-  } else if (node?.svg) {
-    const b = node.svgBox;
-    inner = b
-      ? `<img src="${esc(ctx.assetUrl(node.svg))}" alt="" style="position:absolute;left:${px(b.x)};top:${px(b.y)};width:${px(b.w)};height:${px(b.h)};max-width:none">`
-      : `<img src="${esc(ctx.assetUrl(node.svg))}" alt="" style="display:block;width:100%;height:100%">`;
-  } else {
-    const parts = children.map((c, i) => emit(c, places[i], ctx, depth + 1));
+  } else if (node?.svg && box.kind === 'node') {
+    inner = svgImg(node, ctx);
+  }
+  if (!inner) {
+    children.forEach((c, i) => parts.push(emit(c, places[i], ctx, depth + 1)));
     for (const a of box.absChildren || []) {
       parts.push(emit(a, { position: 'absolute', left: a.rect.x - box.rect.x, top: a.rect.y - box.rect.y }, ctx, depth + 1));
     }
     inner = parts.length ? '\n' + parts.join('\n') + '\n' + pad : '';
   }
 
-  // Ячейки внутри Auto Layout с FILL: растягиваем по главной оси
   const decl = declarations({ ...baseDecl, ...flow });
-  const cls = ctx.styles.classFor(node ? node.name : 'group', decl);
+  const cls = ctx.styles.classFor(node ? (box.kind === 'mask' ? node.name + '-mask' : node.name) : 'group', decl);
   const attrs = [`class="${cls}"`];
   const st = placementStyle(place);
   if (st) attrs.push(`style="${st}"`);

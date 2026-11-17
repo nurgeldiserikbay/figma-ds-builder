@@ -41,7 +41,8 @@ function figmaPaint(p) {
 function mockNode(t, parent) {
   const n = {
     id: t.id, name: t.name, type: t.type, parent, visible: t.visible !== false, opacity: t.opacity ?? 1, blendMode: t.blendMode || 'PASS_THROUGH',
-    absoluteTransform: [[1, 0, t.x], [0, 1, t.y]], width: t.w, height: t.h, rotation: 0,
+    absoluteTransform: t.transform ? [[t.transform[0][0], t.transform[0][1], t.transform[0][2]], [t.transform[1][0], t.transform[1][1], t.transform[1][2]]] : [[1, 0, t.x], [0, 1, t.y]],
+    width: t.size ? t.size.w : t.w, height: t.size ? t.size.h : t.h, rotation: t.rotation || 0,
     absoluteBoundingBox: { x: t.x, y: t.y, width: t.w, height: t.h },
     absoluteRenderBounds: { x: t.x, y: t.y, width: t.w, height: t.h },
     fills: (t.fills || []).map(figmaPaint).filter(Boolean),
@@ -50,7 +51,7 @@ function mockNode(t, parent) {
     effects: (t.effects || []).map((e) => (e.type.endsWith('SHADOW')
       ? { type: e.type, visible: true, offset: { x: e.x, y: e.y }, radius: e.blur, spread: e.spread, color: e.color }
       : { type: e.type, visible: true, radius: e.radius })),
-    clipsContent: !!t.clipsContent,
+    clipsContent: !!t.clipsContent, isMask: !!t.isMask,
     layoutMode: t.layout ? t.layout.mode : 'NONE',
     layoutPositioning: t.layoutPositioning || 'AUTO',
     async exportAsync(o) {

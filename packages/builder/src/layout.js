@@ -78,15 +78,41 @@ function isBackgroundRect(child, parent) {
     near(child.x, parent.x) && near(child.y, parent.y) && near(child.w, parent.w) && near(child.h, parent.h);
 }
 
-const hasAutoLayout =(n) => n.layout && (n.layout.mode === 'HORIZONTAL' || n.layout.mode === 'VERTICAL');
+const isIdentity = (t) => !t || (Math.abs(t[0][0] - 1) < 1e-4 && Math.abs(t[1][0]) < 1e-4 && Math.abs(t[0][1]) < 1e-4 && Math.abs(t[1][1] - 1) < 1e-4);
+/** Слой повёрнут или отражён: x,y,w,h — видимая рамка, size — исходный размер, transform — матрица от фрейма. */
+export const isTransformed = (n) => !!n.transform && !isIdentity(n.transform);
+
+/** Маска в Figma обрезает слои, лежащие над ней в том же родителе. */
+function groupMasks(kids) {
+  const out = [];
+  for (let i = 0; i < kids.length; i++) {
+    const k = kids[i];
+    if (k.isMask) {
+      out.push({ mask: k, members: kids.slice(i + 1) });
+      break;
+    }
+    out.push(k);
+  }
+  return out;
+}
+
+const hasAutoLayout = (n) => n.layout && (n.layout.mode === 'HORIZONTAL' || n.layout.mode === 'VERTICAL');
 
 /** Строит дерево блоков для узла. */
 export function buildBox(node, opts) {
   const box = { kind: 'node', node, rect: rectOf(node), flow: 'col', children: [], absChildren: [] };
   if (node.type === 'TEXT' || node.svg) return box; // листья
-  const kids = (node.children || []).filter(isVisible).filter((k) => !k.isMask);
+  const kids = (node.children || []).filter(isVisible);
   if (!kids.length) return box;
-  const childBoxes = kids.map((k) => buildBox(k, opts));
+  const childBoxes = groupMasks(kids).map((k) => (k.mask
+    ? { kind: 'mask', node: k.mask, rect: rectOf(k.mask), flow: 'abs', children: k.members.map((m) => buildBox(m, opts)), absChildren: [] }
+    : buildBox(k, opts)));
+  // повёрнутый контейнер: дети несут свои абсолютные матрицы — кладём их в рамку как есть
+  if (isTransformed(node)) {
+    box.flow = 'abs';
+    box.children = childBoxes;
+    return box;
+  }
 
   if (opts.mode !== 'absolute' && hasAutoLayout(node)) {
     box.flow = 'figma';

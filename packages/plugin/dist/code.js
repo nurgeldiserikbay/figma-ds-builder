@@ -112,24 +112,36 @@ function textData(node, ctx) {
   };
 }
 
-/** Геометрия относительно корневого фрейма. Для повёрнутых слоёв — без учёта поворота (x,y — точка начала). */
+function isIdentityTransform(t) {
+  return Math.abs(t[0][0] - 1) < 1e-4 && Math.abs(t[1][0]) < 1e-4 && Math.abs(t[0][1]) < 1e-4 && Math.abs(t[1][1] - 1) < 1e-4;
+}
+
+/**
+ * Геометрия относительно корневого фрейма.
+ * Повёрнутый или отражённый слой: x,y,w,h — видимая рамка, size — исходный размер, transform — матрица от фрейма.
+ */
 function geometry(node, ox, oy) {
   var t = node.absoluteTransform;
-  var rot = 'rotation' in node ? node.rotation || 0 : 0;
-  if (Math.abs(rot) < 0.01) {
+  if (isIdentityTransform(t)) {
     return { x: num(t[0][2] - ox), y: num(t[1][2] - oy), w: num(node.width), h: num(node.height), rotation: 0 };
   }
-  var bb = node.absoluteBoundingBox;
-  return { x: num(bb.x - ox), y: num(bb.y - oy), w: num(node.width), h: num(node.height), rotation: num(rot) };
+  var bb = node.absoluteBoundingBox || { x: t[0][2], y: t[1][2], width: node.width, height: node.height };
+  return {
+    x: num(bb.x - ox), y: num(bb.y - oy), w: num(bb.width), h: num(bb.height),
+    rotation: num('rotation' in node ? node.rotation || 0 : 0),
+    size: { w: num(node.width), h: num(node.height) },
+    transform: [[t[0][0], t[0][1], num(t[0][2] - ox)], [t[1][0], t[1][1], num(t[1][2] - oy)]],
+  };
 }
 
 function serialize(node, ox, oy, ctx) {
   ctx.count++;
   var g = geometry(node, ox, oy);
-  var rot = g.rotation;
+  var transformed = !!g.transform;
   var o = {
     id: node.id, name: node.name, type: node.type,
     x: g.x, y: g.y, w: g.w, h: g.h, rotation: g.rotation,
+    size: g.size, transform: g.transform,
     visible: node.visible !== false,
     opacity: 'opacity' in node ? num(node.opacity, 1) : 1,
     blendMode: 'blendMode' in node ? node.blendMode : 'NORMAL',
@@ -162,11 +174,12 @@ function serialize(node, ox, oy, ctx) {
   if (EXPORT_VECTOR_TYPES[node.type]) {
     o.svg = 'vectors/' + fileId(node.id) + '.svg';
     ctx.vectors.push(node);
-    // SVG рисуется по границам рендера (обводки снаружи, тени): рамка относительно слоя
+    // SVG рисуется по границам рендера (обводки снаружи, тени) и уже с поворотом: рамка относительно видимой рамки слоя
     var rb = node.absoluteRenderBounds;
-    if (rb && Math.abs(rot) < 0.01) {
-      var bx = rb.x - node.absoluteTransform[0][2], by = rb.y - node.absoluteTransform[1][2];
-      if (Math.abs(bx) > 0.5 || Math.abs(by) > 0.5 || Math.abs(rb.width - node.width) > 0.5 || Math.abs(rb.height - node.height) > 0.5) {
+    if (transformed) o.svgSpace = 'box';
+    if (rb) {
+      var bx = rb.x - (g.x + ox), by = rb.y - (g.y + oy);
+      if (Math.abs(bx) > 0.5 || Math.abs(by) > 0.5 || Math.abs(rb.width - g.w) > 0.5 || Math.abs(rb.height - g.h) > 0.5) {
         o.svgBox = { x: num(bx), y: num(by), w: num(rb.width), h: num(rb.height) };
       }
     }

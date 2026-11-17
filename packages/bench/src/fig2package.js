@@ -256,14 +256,24 @@ function build(n, G, parentAbs, origin, ctx, inst) {
   const rot = Math.atan2(abs.m10, abs.m00) * 180 / Math.PI;
   ctx.count++;
 
+  // повёрнутый/отражённый слой: видимая рамка + исходный размер + матрица от фрейма
+  const ident = Math.abs(abs.m00 - 1) < 1e-4 && Math.abs(abs.m10) < 1e-4 && Math.abs(abs.m01) < 1e-4 && Math.abs(abs.m11 - 1) < 1e-4;
+  let box = { x: abs.m02 - origin.x, y: abs.m12 - origin.y, w, h };
+  if (!ident) {
+    const pts = [[0, 0], [w, 0], [0, h], [w, h]].map(([x, y]) => [abs.m00 * x + abs.m01 * y + abs.m02 - origin.x, abs.m10 * x + abs.m11 * y + abs.m12 - origin.y]);
+    const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
+    box = { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) };
+  }
+
   const o = {
     // внутри инстансов один и тот же мастер-слой встречается много раз: id = слой + цепочка инстансов
     id: gid(n.guid) + (inst ? '@' + inst.chain.join('/') : ''),
     name: n.name || n.type,
     // группы хранятся в .fig как FRAME с resizeToFit
     type: n.type === 'FRAME' && n.resizeToFit ? 'GROUP' : TYPE[n.type] || n.type,
-    x: r2(abs.m02 - origin.x), y: r2(abs.m12 - origin.y), w: r2(w), h: r2(h),
+    x: r2(box.x), y: r2(box.y), w: r2(box.w), h: r2(box.h),
     rotation: Math.abs(rot) < 0.01 ? 0 : r2(-rot),
+    ...(ident ? {} : { size: { w: r2(w), h: r2(h) }, transform: [[abs.m00, abs.m01, r2(abs.m02 - origin.x)], [abs.m10, abs.m11, r2(abs.m12 - origin.y)]] }),
     visible: n.visible !== false,
     opacity: n.opacity ?? 1,
     blendMode: n.blendMode || 'NORMAL',

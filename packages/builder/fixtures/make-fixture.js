@@ -43,6 +43,18 @@ function text(name, x, y, w, h, characters, s = {}) {
   };
 }
 
+// повёрнутый слой: transform от фрейма, size — исходный размер, x/y/w/h — видимая рамка (считается здесь независимо)
+function rotate(node, deg) {
+  const a = (deg * Math.PI) / 180, cos = Math.cos(a), sin = Math.sin(a);
+  const w = node.w, h = node.h, cx = node.x + w / 2, cy = node.y + h / 2;
+  const tx = cx - (cos * w / 2 - sin * h / 2), ty = cy - (sin * w / 2 + cos * h / 2);
+  const pts = [[0, 0], [w, 0], [0, h], [w, h]].map(([x, y]) => [cos * x - sin * y + tx, sin * x + cos * y + ty]);
+  const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
+  const r = (v) => Math.round(v * 100) / 100;
+  return { ...node, transform: [[cos, -sin, tx], [sin, cos, ty]], size: { w, h }, rotation: -deg,
+    x: r(Math.min(...xs)), y: r(Math.min(...ys)), w: r(Math.max(...xs) - Math.min(...xs)), h: r(Math.max(...ys) - Math.min(...ys)) };
+}
+
 const BLUE = '#3b82f6', INK = '#18181b', MUTED = '#52525b', LINE = '#e4e4e7';
 
 // Кнопка, собранная группой «прямоугольник + текст» (без Auto Layout)
@@ -99,6 +111,14 @@ const root = frame('Landing / Desktop', 0, 0, 1280, 900, [
   card(456, 520, 'Компоненты', 'Повторяющиеся блоки становятся компонентами.', '#ddd6fe'),
   card(848, 520, 'Pixel diff', 'Каждая страница сверяется с эталоном из Figma.', '#bbf7d0'),
   text('footer', 64, 852, 600, 24, '© 2026 Acme. Тестовый макет для figma-ds-builder.', { size: 14, lh: 24, color: MUTED }),
+  // повёрнутый бейдж (−8°) и аватар под круглой маской
+  rotate(frame('stamp', 1040, 846, 96, 32, [
+    rotate(text('stamp/text', 1040, 846, 96, 32, 'beta', { size: 14, lh: 20, style: 'Semi Bold', align: 'CENTER', va: 'CENTER', color: '#ffffff' }), -8),
+  ], { radius: 8, fills: solid('#16a34a') }), -8),
+  { id: id(), name: 'avatar', type: 'GROUP', x: 1160, y: 836, w: 48, h: 48, children: [
+    { ...rect('avatar/mask', 1160, 836, 48, 48, { fills: solid('#000000') }), type: 'ELLIPSE', isMask: true },
+    rect('avatar/photo', 1150, 826, 68, 68, { fills: [{ type: 'GRADIENT_LINEAR', css: 'linear-gradient(135deg, #f97316 0%, #db2777 100%)' }] }),
+  ] },
 ], { fills: solid('#fafafa'), clip: true });
 root.id = '1:1';
 

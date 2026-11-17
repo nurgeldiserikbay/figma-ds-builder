@@ -13,7 +13,7 @@ export function checkGeometry(tree, boxes, { tolerance = 0.5 } = {}) {
   let maxDelta = 0;
   for (const b of boxes) {
     const n = nodes.get(b.id);
-    if (!n || n.rotation) continue;
+    if (!n) continue;
     const d = Math.max(Math.abs(b.x - n.x), Math.abs(b.y - n.y), Math.abs(b.w - n.w), Math.abs(b.h - n.h));
     maxDelta = Math.max(maxDelta, d);
     if (d > tolerance) {

@@ -57,12 +57,17 @@ ID узлов Figma содержат `:` и `;` — в именах файлов
   "type": "FRAME",            // FRAME | GROUP | SECTION | COMPONENT | INSTANCE | RECTANGLE |
                               // ELLIPSE | LINE | VECTOR | BOOLEAN_OPERATION | STAR | POLYGON | TEXT
   "x": 120, "y": 640, "w": 160, "h": 48,
-  "rotation": 0,              // градусы; ≠0 → программа ставит слой absolute
+  "rotation": 0,              // градусы, справочно
+  // повёрнутый или отражённый слой (матрица не единичная):
+  //   x,y,w,h — видимая рамка (по ней раскладка и проверка геометрии),
+  //   "size": { "w": 96, "h": 32 } — исходный размер,
+  //   "transform": [[a, c, tx], [b, d, ty]] — матрица Figma (absoluteTransform) относительно фрейма.
+  //   Дети повёрнутого слоя несут свои абсолютные матрицы.
   "visible": true,
   "opacity": 1,
   "blendMode": "NORMAL",
   "clipsContent": false,
-  "isMask": false,
+  "isMask": false,            // маска обрезает слои, лежащие над ней в том же родителе (форма, скругление или SVG)
 
   "fills":   [ /* Paint, снизу вверх, как в Figma */ ],
   "strokes": [ /* Paint */ ],
@@ -107,7 +112,8 @@ ID узлов Figma содержат `:` и `;` — в именах файлов
   },
 
   "svg": "vectors/12_41.svg", // для векторов, булевых операций и иконок
-  "svgBox": { "x": -2, "y": -2, "w": 28, "h": 28 }, // рамка SVG относительно слоя, если рисунок шире слоя (обводки снаружи)
+  "svgBox": { "x": -2, "y": -2, "w": 28, "h": 28 }, // рамка SVG относительно видимой рамки слоя, если рисунок шире (обводки снаружи)
+  "svgSpace": "box",          // "box" — SVG уже отрисован с поворотом (плагин); по умолчанию — в системе координат слоя
   "component": { "name": "Button", "mainId": "5:10", "variant": { "State": "Default" } },
   "children": []
 }

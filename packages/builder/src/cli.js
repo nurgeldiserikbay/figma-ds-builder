@@ -130,11 +130,12 @@ async function build(args) {
   const out = path.resolve(args.out);
   fs.mkdirSync(out, { recursive: true });
   // токены: из плагина, иначе — собственный анализ дизайн-системы
+  // дизайн-система строится всегда; готовые токены из пакета (если есть) — приоритетнее для переменных в CSS
   let tokenJson = pkg.tokens;
-  if (!tokenJson && args.analyze) {
+  if (args.analyze) {
     const ds = runAnalysis(pkg, args, path.join(out, 'design-system'));
-    tokenJson = toTokens(ds);
-    console.log(`Дизайн-система построена: ${ds.colors.tokens.length} цветов, ${ds.typography.styles.length} стилей текста, аудит ${ds.audit.score}/100 → design-system/`);
+    if (!tokenJson) tokenJson = toTokens(ds);
+    console.log(`Дизайн-система: ${ds.colors.tokens.length} цветов, ${ds.typography.styles.length} стилей текста, аудит ${ds.audit.score}/100 → design-system/`);
   }
   const tokens = loadTokens(tokenJson);
   copyAssets(pkg, out);
