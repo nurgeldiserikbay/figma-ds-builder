@@ -1,0 +1,16 @@
+{
+  "name": "figma-ds-builder",
+  "private": true,
+  "description": "Figma → дизайн-система → вёрстка с проверкой pixel perfect",
+  "type": "module",
+  "scripts": {
+    "setup": "npm --prefix packages/builder install && npm --prefix packages/plugin run build",
+    "ds": "node packages/builder/src/cli.js",
+    "test": "npm --prefix packages/builder test && npm --prefix packages/plugin test",
+    "bench": "npm --prefix packages/bench install && npm --prefix packages/bench run bench"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT"
+}

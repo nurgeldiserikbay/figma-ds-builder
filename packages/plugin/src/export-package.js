@@ -188,6 +188,7 @@ async function buildLayoutPackage(frames, opts) {
   var manifestFrames = [];
   var images = {};
   var fonts = {};
+  var warnings = [];
   var progress = opts.onProgress || function () {};
 
   for (var i = 0; i < frames.length; i++) {
@@ -200,9 +201,16 @@ async function buildLayoutPackage(frames, opts) {
     files.push({ path: 'frames/' + fid + '.json', data: JSON.stringify(tree) });
 
     // эталон: рендер Figma
-    // ровно в границах фрейма, даже если содержимое выступает за них
-    var png = await f.exportAsync({ format: 'PNG', constraint: { type: 'SCALE', value: scale }, useAbsoluteBounds: true });
-    files.push({ path: 'frames/' + fid + '.png', data: png });
+    // ровно в границах фрейма, даже если содержимое выступает за них.
+    // Очень большие фреймы Figma может не отрендерить — тогда фрейм идёт без эталона (только проверка геометрии).
+    var pngOk = true;
+    try {
+      var png = await f.exportAsync({ format: 'PNG', constraint: { type: 'SCALE', value: scale }, useAbsoluteBounds: true });
+      files.push({ path: 'frames/' + fid + '.png', data: png });
+    } catch (e) {
+      pngOk = false;
+      warnings.push('Нет PNG для «' + f.name + '» (' + Math.round(f.width) + '×' + Math.round(f.height) + '): ' + (e && e.message ? e.message : e));
+    }
 
     for (var v = 0; v < ctx.vectors.length; v++) {
       try {
@@ -213,7 +221,7 @@ async function buildLayoutPackage(frames, opts) {
     manifestFrames.push({
       id: f.id, name: f.name, page: f.parent && f.parent.type === 'PAGE' ? f.parent.name : (figma.currentPage.name),
       width: num(f.width), height: num(f.height),
-      tree: 'frames/' + fid + '.json', png: 'frames/' + fid + '.png', layers: ctx.count,
+      tree: 'frames/' + fid + '.json', png: pngOk ? 'frames/' + fid + '.png' : undefined, layers: ctx.count,
     });
   }
 
@@ -248,9 +256,10 @@ async function buildLayoutPackage(frames, opts) {
     tokens: opts.tokens ? 'tokens.json' : undefined,
     fonts: 'fonts.json', variables: 'variables.json', styles: 'styles.json',
     frames: manifestFrames,
+    warnings: warnings.length ? warnings : undefined,
   };
   files.unshift({ path: 'manifest.json', data: JSON.stringify(manifest, null, 2) });
-  return { manifest: manifest, files: files };
+  return { manifest: manifest, files: files, warnings: warnings };
 }
 
 /** Локальные переменные файла: коллекции, режимы, значения (алиасы — ссылкой на имя). */

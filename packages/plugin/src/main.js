@@ -1,7 +1,7 @@
 // Основной поток плагина: выбор фреймов, экспорт PNG и пакета, передача файлов в интерфейс.
 // Склеивается с export-package.js в dist/code.js (см. build.js).
 
-figma.showUI(__html__, { width: 360, height: 420, themeColors: true });
+figma.showUI(__html__, { width: 360, height: 560, themeColors: true });
 
 function isFrameLike(n) {
   return n.type === 'FRAME' || n.type === 'COMPONENT' || n.type === 'COMPONENT_SET' || n.type === 'INSTANCE';
@@ -61,8 +61,12 @@ async function exportPngs(frames, scale) {
     var k = 2;
     while (used[name]) name = base + ' (' + (k++) + ')';
     used[name] = true;
-    var png = await f.exportAsync({ format: 'PNG', constraint: { type: 'SCALE', value: scale }, useAbsoluteBounds: true });
-    files.push({ path: name + (scale !== 1 ? '@' + scale + 'x' : '') + '.png', data: png });
+    try {
+      var png = await f.exportAsync({ format: 'PNG', constraint: { type: 'SCALE', value: scale }, useAbsoluteBounds: true });
+      files.push({ path: name + (scale !== 1 ? '@' + scale + 'x' : '') + '.png', data: png });
+    } catch (e) {
+      figma.ui.postMessage({ type: 'warning', text: 'Не удалось выгрузить «' + f.name + '»: ' + (e && e.message ? e.message : e) });
+    }
   }
   return files;
 }
@@ -72,6 +76,17 @@ figma.ui.onmessage = async function (msg) {
     if (msg.type === 'count') {
       var fr = await collectFrames(msg.scope);
       figma.ui.postMessage({ type: 'count', count: fr.length });
+      return;
+    }
+    if (msg.type === 'import-tokens') {
+      var json;
+      try { json = JSON.parse(msg.text); } catch (e) { throw new Error('Это не JSON: выберите tokens.json из папки design-system'); }
+      var r = await importTokens(json, { paintStyles: !!msg.paintStyles, onProgress: progress });
+      var text = 'Создано/обновлено: переменных ' + r.variables + ', текстовых стилей ' + r.textStyles + ', стилей теней ' + r.effectStyles +
+        (r.paintStyles ? ', цветовых стилей ' + r.paintStyles : '') +
+        (r.skippedFonts.length ? '. Нет шрифтов в Figma: ' + r.skippedFonts.join(', ') + ' — текстовые стили для них не созданы' : '');
+      figma.ui.postMessage({ type: 'imported', text: text });
+      figma.notify(text.split('.')[0]);
       return;
     }
     if (msg.type !== 'export') return;
@@ -87,6 +102,7 @@ figma.ui.onmessage = async function (msg) {
     } else {
       var pkg = await buildLayoutPackage(frames, { scale: scale, onProgress: progress });
       send(pkg.files, fileBase + ' — ds-package.zip');
+      if (pkg.warnings.length) figma.ui.postMessage({ type: 'warning', text: pkg.warnings.join('\n') });
     }
     figma.notify('Готово: фреймов ' + frames.length);
   } catch (e) {

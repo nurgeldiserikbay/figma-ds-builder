@@ -15,6 +15,7 @@ import { attributeDiff } from './attribute.js';
 import { refinePage, patchesCss } from './refine.js';
 import { analyzeDesignSystem } from './ds/analyze.js';
 import { exportFiles, toTokens } from './ds/export.js';
+import { familiesOf, ensureFonts, buildFontsCss, defaultCacheDir } from './fonts.js';
 
 const HELP = `
 ds-build analyze <пакет | пакет.zip> [--out папка] [--delta-e 3] [--min-uses 2]
@@ -34,7 +35,10 @@ ds-build build <пакет | пакет.zip> [опции]
   --text-threshold <%> допуск для пикселей текста (растеризация шрифтов в Figma и браузере различается),
                        по умолчанию 0.5; положение текстовых блоков всё равно проверяется геометрией ±0.5px
   --frame <имя|id>     собрать только этот фрейм (можно несколько раз)
-  --css <файл>         подключить дополнительный CSS ко всем страницам (например, @font-face шрифтов)
+  --fonts <режим>      auto (по умолчанию) — бесплатные шрифты макета скачиваются из npm (@fontsource);
+                       none — только шрифты, установленные в системе
+  --css <файл>         подключить дополнительный CSS ко всем страницам (например, свои @font-face)
+  --open               открыть отчёт в браузере после сборки
   --no-refine          не подбирать поправки после сверки с эталоном
   --no-verify          не рендерить и не сравнивать
 
@@ -42,7 +46,7 @@ ds-build build <пакет | пакет.zip> [опции]
 `;
 
 function parseArgs(argv) {
-  const a = { _: [], frames: [], css: [], layout: 'auto', threshold: 0.1, textThreshold: 0.5, out: 'out', verify: true, refine: true, analyze: true };
+  const a = { _: [], frames: [], css: [], layout: 'auto', threshold: 0.1, textThreshold: 0.5, out: 'out', verify: true, refine: true, analyze: true, fonts: 'auto' };
   for (let i = 0; i < argv.length; i++) {
     const k = argv[i];
     if (k === '--out') a.out = argv[++i];
@@ -54,6 +58,8 @@ function parseArgs(argv) {
     else if (k === '--no-verify') a.verify = false;
     else if (k === '--no-refine') a.refine = false;
     else if (k === '--no-analyze') a.analyze = false;
+    else if (k === '--fonts') a.fonts = argv[++i];
+    else if (k === '--open') a.open = true;
     else if (k === '--delta-e') a.deltaE = parseFloat(argv[++i]);
     else if (k === '--min-uses') a.minUses = parseInt(argv[++i], 10);
     else if (k === '-h' || k === '--help') a.help = true;
@@ -88,6 +94,11 @@ const pixelOk = (diff, args) => {
   const p = pixelSplit(diff);
   return !p || (p.otherPct <= args.threshold && p.textPct <= args.textThreshold);
 };
+
+function openFile(file) {
+  const [cmd, a] = process.platform === 'darwin' ? ['open', [file]] : process.platform === 'win32' ? ['cmd', ['/c', 'start', '', file]] : ['xdg-open', [file]];
+  try { execFileSync(cmd, a, { stdio: 'ignore' }); } catch { /* нет графической среды */ }
+}
 
 const safe = (s) => String(s).replace(/[^a-zA-Z0-9а-яА-ЯёЁ_-]+/g, '_').replace(/^_+|_+$/g, '') || 'frame';
 
@@ -128,11 +139,21 @@ async function build(args) {
   const tokens = loadTokens(tokenJson);
   copyAssets(pkg, out);
   fs.writeFileSync(path.join(out, 'tokens.css'), tokens.css() || '/* токенов нет */\n');
-  const extraCss = args.css.map((f, i) => {
+  // шрифты макета: бесплатные — из npm, остальные должны быть установлены в системе
+  const fontFiles = [];
+  if (args.fonts !== 'none') {
+    const fams = familiesOf(pkg);
+    const res = ensureFonts(fams, defaultCacheDir(), { log: (m) => console.log(m) });
+    const css = buildFontsCss(res.dir, res.found);
+    if (css) { fs.writeFileSync(path.join(out, 'fonts.css'), css); fontFiles.push('fonts.css'); }
+    console.log(`Шрифты: ${res.found.length ? res.found.join(', ') + ' — подключены' : 'из npm не нужны'}` +
+      (res.missing.length ? `; не найдены в npm (установите в систему): ${res.missing.join(', ')}` : ''));
+  }
+  const extraCss = [...fontFiles, ...args.css.map((f, i) => {
     const name = `extra-${i + 1}.css`;
     fs.copyFileSync(f, path.join(out, name));
     return name;
-  });
+  })];
 
   let frames = pkg.frames;
   if (args.frames.length) frames = frames.filter((f) => args.frames.includes(f.name) || args.frames.includes(f.id));
@@ -237,6 +258,7 @@ async function build(args) {
   fs.writeFileSync(path.join(out, 'report.json'), JSON.stringify({ file: pkg.manifest.file, threshold: args.threshold,
     results: results.map(({ stats, ...r }) => ({ ...r, stats })) }, null, 2));
   console.log(`Отчёт: ${path.join(out, 'report.html')}`);
+  if (args.open) openFile(path.join(out, 'report.html'));
   const failed = results.filter((r) => r.pass === false).length;
   if (failed) process.exitCode = 2;
 }

@@ -9,7 +9,7 @@ const src = path.join(here, 'src');
 const dist = path.join(here, 'dist');
 fs.mkdirSync(dist, { recursive: true });
 
-const parts = ['export-package.js', 'main.js'].map((f) => `// ---- ${f} ----\n` + fs.readFileSync(path.join(src, f), 'utf8'));
+const parts = ['export-package.js', 'import-tokens.js', 'main.js'].map((f) => `// ---- ${f} ----\n` + fs.readFileSync(path.join(src, f), 'utf8'));
 const code = parts.join('\n');
 // песочница Figma отклоняет код с «import» + «(» подряд, даже в строках и комментариях
 if (/import\s*\(/.test(code)) throw new Error('В коде есть «import(» — Figma его не загрузит');

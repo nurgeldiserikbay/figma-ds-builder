@@ -1,13 +1,5 @@
 {
   "comment": "Открытые макеты с GitHub для проверки генератора. reference — PNG, выгруженные авторами из Figma (настоящие эталоны).",
-  "fonts": [
-    "montserrat",
-    "roboto",
-    "alata",
-    "ibm-plex-sans",
-    "poppins",
-    "krona-one"
-  ],
   "sources": [
     {
       "id": "hackrpi-thankyou",

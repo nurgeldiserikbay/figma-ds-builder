@@ -39,6 +39,14 @@
   <button id="pkg" class="primary">Пакет для вёрстки</button>
 </div>
 <p class="hint">Пакет: PNG-эталоны, дерево слоёв, векторы, картинки, используемые шрифты, переменные и стили. Открывается программой <code>ds-build</code>.</p>
+
+<h1 style="margin-top:18px">Дизайн-система → Figma</h1>
+<p class="hint" style="margin-top:0">Выберите <code>tokens.json</code> из папки <code>design-system</code>, которую построила платформа (<code>ds-build</code>). Будут созданы коллекции переменных DS · Primitives / Semantic / Typography, текстовые стили и стили теней. Повторный импорт обновляет, а не дублирует.</p>
+<label><input type="checkbox" id="paintStyles"> Также цветовые стили (привязаны к переменным)</label>
+<div class="row" style="margin-top:8px">
+  <label style="flex:1;margin:0"><input type="file" id="tokensFile" accept=".json,application/json" style="width:100%"></label>
+</div>
+<div class="row" style="margin-top:8px"><button id="importBtn" disabled>Создать переменные и стили</button></div>
 <div id="status"></div>
 
 <script>
@@ -69,7 +77,17 @@ function zip(files) {
 
 var files = [], status = document.getElementById('status');
 function val(name) { return document.querySelector('input[name="' + name + '"]:checked').value; }
-function busy(b) { document.getElementById('png').disabled = b; document.getElementById('pkg').disabled = b; }
+function busy(b) { document.getElementById('png').disabled = b; document.getElementById('pkg').disabled = b; document.getElementById('importBtn').disabled = b || !tokensText; }
+var tokensText = null;
+document.getElementById('tokensFile').onchange = function (e) {
+  var f = e.target.files[0];
+  if (!f) return;
+  f.text().then(function (t) { tokensText = t; document.getElementById('importBtn').disabled = false; status.textContent = 'Файл выбран: ' + f.name; });
+};
+document.getElementById('importBtn').onclick = function () {
+  busy(true); status.textContent = 'Импортирую…';
+  parent.postMessage({ pluginMessage: { type: 'import-tokens', text: tokensText, paintStyles: document.getElementById('paintStyles').checked } }, '*');
+};
 function run(what) { busy(true); status.textContent = 'Готовлю…'; parent.postMessage({ pluginMessage: { type: 'export', what: what, scope: val('scope'), scale: Number(val('scale')) } }, '*'); }
 document.getElementById('png').onclick = function () { run('png'); };
 document.getElementById('pkg').onclick = function () { run('pkg'); };
@@ -82,6 +100,8 @@ onmessage = function (e) {
   if (!m) return;
   if (m.type === 'count') document.getElementById('count').textContent = 'Фреймов: ' + m.count;
   else if (m.type === 'progress') status.textContent = m.text;
+  else if (m.type === 'imported') { status.textContent = m.text; busy(false); }
+  else if (m.type === 'warning') { var w = document.createElement('div'); w.className = 'err'; w.style.whiteSpace = 'pre-wrap'; w.textContent = m.text; status.appendChild(w); }
   else if (m.type === 'begin') files = [];
   else if (m.type === 'file') files.push({ path: m.path, data: typeof m.data === 'string' ? new TextEncoder().encode(m.data) : m.data });
   else if (m.type === 'done') {

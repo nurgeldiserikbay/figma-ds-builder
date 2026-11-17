@@ -8,7 +8,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { buildFontsCss } from './fonts.js';
+
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const benchDir = path.resolve(here, '..');
@@ -34,19 +34,6 @@ function fetchFile(repo, file) {
   return full;
 }
 
-// 2. шрифты из npm (@fontsource)
-function fonts() {
-  const cache = path.join(work, 'fonts');
-  fs.mkdirSync(cache, { recursive: true });
-  if (!fs.existsSync(path.join(cache, 'package.json'))) fs.writeFileSync(path.join(cache, 'package.json'), '{"name":"bench-fonts","private":true}');
-  const missing = cfg.fonts.filter((f) => !fs.existsSync(path.join(cache, 'node_modules/@fontsource', f)));
-  if (missing.length) sh('npm', ['install', '--silent', '--no-audit', '--no-fund', ...missing.map((f) => `@fontsource/${f}`)], { cwd: cache, timeout: 600000 });
-  const css = path.join(work, 'fonts.css');
-  fs.writeFileSync(css, buildFontsCss(cache));
-  return css;
-}
-
-const fontsCss = fonts();
 const rows = [];
 const dsChecks = [];
 const sources = cfg.sources.filter((s) => !only || s.id === only);
@@ -62,7 +49,7 @@ for (const src of sources) {
     const out = path.join(work, 'out', src.id + (runs > 1 ? `-run${r}` : ''));
     fs.rmSync(out, { recursive: true, force: true });
     try {
-      sh('node', [builderCli, 'build', pkg, '--out', out, '--css', fontsCss], { timeout: 1800000 });
+      sh('node', [builderCli, 'build', pkg, '--out', out], { timeout: 1800000, env: { ...process.env, DS_BUILD_CACHE: path.join(work, 'cache') } });
     } catch (e) {
       if (e.status !== 2) throw e; // 2 — есть фреймы, не прошедшие проверку
     }

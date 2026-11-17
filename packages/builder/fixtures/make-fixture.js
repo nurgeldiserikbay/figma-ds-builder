@@ -12,6 +12,7 @@ import { fileURLToPath } from 'node:url';
 import { generateFrame } from '../src/generate.js';
 import { loadTokens } from '../src/tokens.js';
 import { openBrowser, renderPage } from '../src/render.js';
+import { ensureFonts, buildFontsCss, defaultCacheDir } from '../src/fonts.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const dir = path.join(here, 'sample');
@@ -124,7 +125,10 @@ fs.writeFileSync(path.join(dir, 'manifest.json'), JSON.stringify({
 const tmp = path.join(dir, '.ref');
 fs.mkdirSync(tmp, { recursive: true });
 const gen = generateFrame(root, { mode: 'absolute', tokens: loadTokens(tokens), assetUrl: (r) => r });
-fs.writeFileSync(path.join(tmp, 'index.html'), gen.html.replace('../tokens.css', 'tokens.css'));
+// шрифт — тот же, что подключит ds-build (Inter из npm), чтобы тест не зависел от шрифтов системы
+const fonts = ensureFonts(['Inter'], defaultCacheDir());
+fs.writeFileSync(path.join(tmp, 'fonts.css'), buildFontsCss(fonts.dir, fonts.found));
+fs.writeFileSync(path.join(tmp, 'index.html'), gen.html.replace('../tokens.css', 'tokens.css').replace('<link rel="stylesheet" href="tokens.css">', '<link rel="stylesheet" href="fonts.css">\n<link rel="stylesheet" href="tokens.css">'));
 fs.writeFileSync(path.join(tmp, 'styles.css'), gen.css);
 fs.writeFileSync(path.join(tmp, 'tokens.css'), loadTokens(tokens).css());
 const browser = await openBrowser();

@@ -66,6 +66,7 @@ export function buildReport({ file, threshold, textThreshold, results }) {
 </style></head>
 <body><main>
 <h1>Pixel diff: ${esc(file)}</h1>
+<p class="summary"><a href="design-system/design-system.md">Дизайн-система</a> · <a href="design-system/tokens.json">tokens.json</a> (импорт в Figma — кнопкой в плагине)</p>
 <p class="summary">Критерий: геометрия каждого элемента ±0.5px; несовпадающих пикселей вне текста не больше ${threshold}%, в тексте — не больше ${textThreshold}% · прошли ${passed} из ${results.length} фреймов</p>
 ${cards}
 </main>
