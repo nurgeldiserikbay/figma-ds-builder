@@ -1,0 +1,19 @@
+{
+  "format": "ds-package",
+  "version": 1,
+  "file": "Sample landing (fixture)",
+  "createdAt": "2026-11-17T08:01:12.403Z",
+  "scale": 1,
+  "tokens": "tokens.json",
+  "frames": [
+    {
+      "id": "1:1",
+      "name": "Landing / Desktop",
+      "page": "Landing",
+      "width": 1280,
+      "height": 900,
+      "tree": "frames/1_1.json",
+      "png": "frames/1_1.png"
+    }
+  ]
+}

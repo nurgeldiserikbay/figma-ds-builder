@@ -1,0 +1,22 @@
+{
+  "name": "@figma-ds-builder/builder",
+  "version": "0.1.0",
+  "description": "Локальная программа: пакет из плагина Figma → HTML/CSS → рендер → pixel diff против эталона.",
+  "type": "module",
+  "bin": {
+    "ds-build": "src/cli.js"
+  },
+  "scripts": {
+    "fixture": "node fixtures/make-fixture.js",
+    "test": "node fixtures/make-fixture.js && node src/cli.js build fixtures/sample --out out/sample"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "pixelmatch": "^7.1.0",
+    "playwright-core": "^1.56.0",
+    "pngjs": "^7.0.0"
+  },
+  "license": "MIT"
+}
