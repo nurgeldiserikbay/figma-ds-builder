@@ -1,0 +1,17 @@
+{
+  "name": "@figma-ds-builder/bench",
+  "version": "1.0.0",
+  "description": "Прогон генератора на открытых .fig-макетах с GitHub",
+  "type": "module",
+  "scripts": {
+    "bench": "node src/run.js --runs 2",
+    "fig2package": "node src/fig2package.js"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "fflate": "^0.8.3",
+    "fzstd": "^0.1.1",
+    "kiwi-schema": "^0.5.0"
+  },
+  "private": true
+}

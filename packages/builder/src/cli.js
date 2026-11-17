@@ -11,6 +11,8 @@ import { openBrowser, renderPage } from './render.js';
 import { comparePng } from './diff.js';
 import { buildReport } from './report.js';
 import { checkGeometry } from './geometry.js';
+import { attributeDiff } from './attribute.js';
+import { refinePage, patchesCss } from './refine.js';
 
 const HELP = `
 ds-build build <пакет | пакет.zip> [опции]
@@ -20,22 +22,29 @@ ds-build build <пакет | пакет.zip> [опции]
                          flow     — flex по Auto Layout и геометрии (чистый код)
                          absolute — абсолютное позиционирование (запасной, максимально точный)
                          auto     — сначала flow; если не проходит порог, пробует absolute
-  --threshold <%>      допустимая доля несовпадающих пикселей, по умолчанию 0.1
+  --threshold <%>      допустимая доля несовпадающих пикселей вне текста, по умолчанию 0.1
+  --text-threshold <%> допуск для пикселей текста (растеризация шрифтов в Figma и браузере различается),
+                       по умолчанию 0.5; положение текстовых блоков всё равно проверяется геометрией ±0.5px
   --frame <имя|id>     собрать только этот фрейм (можно несколько раз)
+  --css <файл>         подключить дополнительный CSS ко всем страницам (например, @font-face шрифтов)
+  --no-refine          не подбирать поправки после сверки с эталоном
   --no-verify          не рендерить и не сравнивать
 
 Переменные окружения: CHROME_PATH — путь к Chrome, если он не найден автоматически.
 `;
 
 function parseArgs(argv) {
-  const a = { _: [], frames: [], layout: 'auto', threshold: 0.1, out: 'out', verify: true };
+  const a = { _: [], frames: [], css: [], layout: 'auto', threshold: 0.1, textThreshold: 0.5, out: 'out', verify: true, refine: true };
   for (let i = 0; i < argv.length; i++) {
     const k = argv[i];
     if (k === '--out') a.out = argv[++i];
     else if (k === '--layout') a.layout = argv[++i];
     else if (k === '--threshold') a.threshold = parseFloat(argv[++i]);
+    else if (k === '--text-threshold') a.textThreshold = parseFloat(argv[++i]);
     else if (k === '--frame') a.frames.push(argv[++i]);
+    else if (k === '--css') a.css.push(argv[++i]);
     else if (k === '--no-verify') a.verify = false;
+    else if (k === '--no-refine') a.refine = false;
     else if (k === '-h' || k === '--help') a.help = true;
     else a._.push(k);
   }
@@ -57,6 +66,18 @@ function resolvePackageDir(input) {
   return sub || dir;
 }
 
+/** Доли несовпадающих пикселей: текст отдельно от остального. */
+function pixelSplit(diff) {
+  if (!diff) return null;
+  const total = diff.total || 1;
+  const text = diff.sources?.byType?.['текст'] || 0;
+  return { textPct: (text / total) * 100, otherPct: ((diff.mismatched - text) / total) * 100 };
+}
+const pixelOk = (diff, args) => {
+  const p = pixelSplit(diff);
+  return !p || (p.otherPct <= args.threshold && p.textPct <= args.textThreshold);
+};
+
 const safe = (s) => String(s).replace(/[^a-zA-Z0-9а-яА-ЯёЁ_-]+/g, '_').replace(/^_+|_+$/g, '') || 'frame';
 
 async function build(args) {
@@ -67,6 +88,11 @@ async function build(args) {
   fs.mkdirSync(out, { recursive: true });
   copyAssets(pkg, out);
   fs.writeFileSync(path.join(out, 'tokens.css'), tokens.css() || '/* токенов нет */\n');
+  const extraCss = args.css.map((f, i) => {
+    const name = `extra-${i + 1}.css`;
+    fs.copyFileSync(f, path.join(out, name));
+    return name;
+  });
 
   let frames = pkg.frames;
   if (args.frames.length) frames = frames.filter((f) => args.frames.includes(f.name) || args.frames.includes(f.id));
@@ -89,12 +115,11 @@ async function build(args) {
       const attempts = [];
       let chosen = null;
       for (const mode of modes) {
-        const gen = generateFrame(tree, { mode, tokens, assetUrl: (rel) => `../assets/${rel}`, title: f.name });
-        const attemptDir = modes.length > 1 ? path.join(fdir, `.${mode}`) : fdir;
+        const gen = generateFrame(tree, { mode, tokens, assetUrl: (rel) => `../assets/${rel}`, title: f.name, extraCss });
+        // пробные варианты — рядом с папкой фрейма (та же глубина, пути к assets не меняются)
+        const attemptDir = modes.length > 1 ? path.join(out, `${dirName}.try-${mode}`) : fdir;
         fs.mkdirSync(attemptDir, { recursive: true });
-        // assets лежат на уровень выше папки фрейма; для вложенной попытки — на два
-        const html = modes.length > 1 ? gen.html.replace(/\.\.\/(assets|tokens\.css)/g, '../../$1') : gen.html;
-        fs.writeFileSync(path.join(attemptDir, 'index.html'), html);
+        fs.writeFileSync(path.join(attemptDir, 'index.html'), gen.html);
         fs.writeFileSync(path.join(attemptDir, 'styles.css'), gen.css);
         const att = { mode, gen, dir: attemptDir, percent: NaN };
         if (browser) {
@@ -106,14 +131,39 @@ async function build(args) {
           if (hasRef) {
             att.diff = comparePng(path.join(fdir, 'reference.png'), path.join(attemptDir, 'render.png'), path.join(attemptDir, 'diff.png'));
             att.percent = att.diff.percent;
+            if (att.diff.mismatched) att.diff.sources = attributeDiff(tree, path.join(attemptDir, 'diff.png'), { scale: pkg.scale });
+            // автодоработка: подбор поправок для слоёв с наибольшим расхождением
+            // запускаем и при прохождении порога: сдвиг строки на 1–2px укладывается в допуск для текста,
+            // но исправляется поправкой
+            const textMiss = att.diff.sources?.top.some((t) => t.type === 'TEXT' && t.pixels >= 150);
+            if (args.refine && att.diff.sources && (!pixelOk(att.diff, args) || textMiss)) {
+              const patches = await refinePage(browser, path.join(attemptDir, 'index.html'), {
+                refPath: path.join(fdir, 'reference.png'), tree, sources: att.diff.sources,
+                width: f.width, height: f.height, scale: pkg.scale,
+              });
+              if (patches.length) {
+                fs.appendFileSync(path.join(attemptDir, 'styles.css'), patchesCss(patches));
+                const re = await renderPage(browser, path.join(attemptDir, 'index.html'), {
+                  width: f.width, height: f.height, scale: pkg.scale, out: path.join(attemptDir, 'render.png'),
+                });
+                att.geometry = checkGeometry(tree, re.boxes);
+                const before = att.percent;
+                att.diff = comparePng(path.join(fdir, 'reference.png'), path.join(attemptDir, 'render.png'), path.join(attemptDir, 'diff.png'));
+                att.percent = att.diff.percent;
+                if (att.diff.mismatched) att.diff.sources = attributeDiff(tree, path.join(attemptDir, 'diff.png'), { scale: pkg.scale });
+                att.refine = { before, after: att.percent, patches };
+              }
+            }
           }
         }
         attempts.push(att);
-        att.ok = (!att.geometry || att.geometry.failed === 0) && (!hasRef || att.percent <= args.threshold);
+        if (attemptDir !== fdir && hasRef) fs.copyFileSync(path.join(fdir, 'reference.png'), path.join(attemptDir, 'reference.png'));
+        att.ok = (!att.geometry || att.geometry.failed === 0) && (!hasRef || pixelOk(att.diff, args));
         if (att.ok || (!hasRef && !att.geometry)) { chosen = att; break; }
       }
+      // чистая раскладка (первая попытка) остаётся, если запасная не лучше заметно (на 20%)
       const score = (a) => (a.geometry?.failed || 0) * 1000 + (Number.isNaN(a.percent) ? 0 : a.percent);
-      if (!chosen) chosen = attempts.reduce((a, b) => (score(b) < score(a) ? b : a));
+      if (!chosen) chosen = attempts.reduce((a, b) => (score(b) < score(a) * 0.8 ? b : a));
       chosen.chosen = true;
 
       // выбранный вариант кладём в папку фрейма
@@ -121,9 +171,7 @@ async function build(args) {
         for (const name of ['index.html', 'styles.css', 'render.png', 'diff.png']) {
           const src = path.join(chosen.dir, name);
           if (!fs.existsSync(src)) continue;
-          let data = fs.readFileSync(src);
-          if (name === 'index.html') data = data.toString().replace(/\.\.\/\.\.\/(assets|tokens\.css)/g, '../$1');
-          fs.writeFileSync(path.join(fdir, name), data);
+          fs.copyFileSync(src, path.join(fdir, name));
         }
       }
       for (const a of attempts) if (a.dir !== fdir) fs.rmSync(a.dir, { recursive: true, force: true });
@@ -131,19 +179,21 @@ async function build(args) {
       const pass = browser ? !!chosen.ok : null;
       results.push({
         name: f.name, id: f.id, width: f.width, height: f.height, dir: dirName,
-        mode: chosen.mode, stats: chosen.gen.stats, fonts: chosen.fonts, diff: chosen.diff, geometry: chosen.geometry, pass,
+        mode: chosen.mode, stats: chosen.gen.stats, fonts: chosen.fonts, diff: chosen.diff, geometry: chosen.geometry, refine: chosen.refine, pixels: pixelSplit(chosen.diff), pass,
         attempts: attempts.map((a) => ({ mode: a.mode, percent: a.percent, geometryFailed: a.geometry?.failed ?? null, chosen: a.chosen })),
       });
       const geo = chosen.geometry ? `геометрия ${chosen.geometry.checked - chosen.geometry.failed}/${chosen.geometry.checked} (макс. ${chosen.geometry.maxDelta}px)` : '';
-      const pix = hasRef ? `pixel diff ${chosen.percent.toFixed(3)}%` : 'без эталона';
-      const status = `${pix} · ${geo} · ${pass === null ? '' : pass ? 'OK' : 'FAIL'}`;
+      const sp = pixelSplit(chosen.diff);
+      const pix = hasRef ? `pixel diff ${chosen.percent.toFixed(3)}% (текст ${sp.textPct.toFixed(3)}%, остальное ${sp.otherPct.toFixed(3)}%)` : 'без эталона';
+      const ref = chosen.refine ? ` (до автодоработки ${chosen.refine.before.toFixed(3)}%, поправок ${chosen.refine.patches.length})` : '';
+      const status = `${pix}${ref} · ${geo} · ${pass === null ? '' : pass ? 'OK' : 'FAIL'}`;
       console.log(`  ${f.name}: ${chosen.mode} · ${status}`);
     }
   } finally {
     await browser?.close();
   }
 
-  fs.writeFileSync(path.join(out, 'report.html'), buildReport({ file: pkg.manifest.file, threshold: args.threshold, results }));
+  fs.writeFileSync(path.join(out, 'report.html'), buildReport({ file: pkg.manifest.file, threshold: args.threshold, textThreshold: args.textThreshold, results }));
   fs.writeFileSync(path.join(out, 'report.json'), JSON.stringify({ file: pkg.manifest.file, threshold: args.threshold,
     results: results.map(({ stats, ...r }) => ({ ...r, stats })) }, null, 2));
   console.log(`Отчёт: ${path.join(out, 'report.html')}`);

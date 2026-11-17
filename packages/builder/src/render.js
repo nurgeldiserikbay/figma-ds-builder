@@ -9,7 +9,9 @@ import { pathToFileURL } from 'node:url';
 export async function openBrowser() {
   const executablePath = process.env.CHROME_PATH;
   try {
-    return await chromium.launch(executablePath ? { executablePath } : { channel: 'chrome' });
+    // sRGB без управления цветом: скриншоты одинаковы на любом мониторе и совпадают с Figma
+    const args = ['--force-color-profile=srgb', '--disable-lcd-text', '--font-render-hinting=none'];
+    return await chromium.launch(executablePath ? { executablePath, args } : { channel: 'chrome', args });
   } catch (e) {
     throw new Error(
       'Не удалось запустить Chrome. Установите Google Chrome или укажите путь в переменной CHROME_PATH.\n' + e.message,

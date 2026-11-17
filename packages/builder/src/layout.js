@@ -72,6 +72,9 @@ const noPaint = (n) => !(n.fills || []).some((f) => f.visible !== false) && !(n.
 function isBackgroundRect(child, parent) {
   return child && (child.type === 'RECTANGLE' || child.type === 'ELLIPSE') && !child.children?.length && !child.svg &&
     !child.rotation && (child.opacity ?? 1) === 1 && noPaint(parent) && !parent.radius &&
+    // размытие слоя нельзя переносить на контейнер: размоется и содержимое
+    !(child.effects || []).some((e) => e.type === 'LAYER_BLUR' || e.type === 'BACKGROUND_BLUR') &&
+    (!child.blendMode || ['NORMAL', 'PASS_THROUGH'].includes(child.blendMode)) &&
     near(child.x, parent.x) && near(child.y, parent.y) && near(child.w, parent.w) && near(child.h, parent.h);
 }
 

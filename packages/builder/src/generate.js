@@ -147,7 +147,10 @@ function emit(box, place, ctx, depth) {
     Object.assign(flow, { display: 'flex', 'flex-direction': 'column', 'justify-content': va });
     inner = textHtml(node, ctx);
   } else if (node?.svg) {
-    inner = `<img src="${esc(ctx.assetUrl(node.svg))}" alt="" style="display:block;width:100%;height:100%">`;
+    const b = node.svgBox;
+    inner = b
+      ? `<img src="${esc(ctx.assetUrl(node.svg))}" alt="" style="position:absolute;left:${px(b.x)};top:${px(b.y)};width:${px(b.w)};height:${px(b.h)};max-width:none">`
+      : `<img src="${esc(ctx.assetUrl(node.svg))}" alt="" style="display:block;width:100%;height:100%">`;
   } else {
     const parts = children.map((c, i) => emit(c, places[i], ctx, depth + 1));
     for (const a of box.absChildren || []) {
@@ -170,7 +173,7 @@ function emit(box, place, ctx, depth) {
  * Генерирует страницу для одного фрейма.
  * @returns {{ html: string, css: string, stats: object }}
  */
-export function generateFrame(tree, { mode = 'flow', tokens, assetUrl, title }) {
+export function generateFrame(tree, { mode = 'flow', tokens, assetUrl, title, extraCss = [] }) {
   const styles = new StyleRegistry();
   const ctx = { styles, tokens, assetUrl };
   const root = buildBox(tree, { mode });
@@ -199,7 +202,7 @@ export function generateFrame(tree, { mode = 'flow', tokens, assetUrl, title }) 
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${esc(title || tree.name)}</title>
-<link rel="stylesheet" href="../tokens.css">
+${extraCss.map((c) => `<link rel="stylesheet" href="../${c}">\n`).join('')}<link rel="stylesheet" href="../tokens.css">
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>

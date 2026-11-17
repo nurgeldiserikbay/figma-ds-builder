@@ -86,6 +86,12 @@ function autoLayout(node) {
 
 function textData(node, ctx) {
   var segs = node.getStyledTextSegments(['fontName', 'fontSize', 'fontWeight', 'lineHeight', 'letterSpacing', 'fills', 'textDecoration', 'textCase']);
+  segs.forEach(function (s) {
+    var k = s.fontName.family + '|' + s.fontName.style;
+    var f = ctx.fonts[k] || (ctx.fonts[k] = { family: s.fontName.family, style: s.fontName.style, weight: s.fontWeight, sizes: {}, uses: 0 });
+    f.uses++;
+    f.sizes[s.fontSize] = true;
+  });
   return {
     characters: node.characters,
     align: node.textAlignHorizontal,
@@ -119,6 +125,7 @@ function geometry(node, ox, oy) {
 function serialize(node, ox, oy, ctx) {
   ctx.count++;
   var g = geometry(node, ox, oy);
+  var rot = g.rotation;
   var o = {
     id: node.id, name: node.name, type: node.type,
     x: g.x, y: g.y, w: g.w, h: g.h, rotation: g.rotation,
@@ -154,6 +161,14 @@ function serialize(node, ox, oy, ctx) {
   if (EXPORT_VECTOR_TYPES[node.type]) {
     o.svg = 'vectors/' + fileId(node.id) + '.svg';
     ctx.vectors.push(node);
+    // SVG рисуется по границам рендера (обводки снаружи, тени): рамка относительно слоя
+    var rb = node.absoluteRenderBounds;
+    if (rb && Math.abs(rot) < 0.01) {
+      var bx = rb.x - node.absoluteTransform[0][2], by = rb.y - node.absoluteTransform[1][2];
+      if (Math.abs(bx) > 0.5 || Math.abs(by) > 0.5 || Math.abs(rb.width - node.width) > 0.5 || Math.abs(rb.height - node.height) > 0.5) {
+        o.svgBox = { x: num(bx), y: num(by), w: num(rb.width), h: num(rb.height) };
+      }
+    }
     return o;
   }
   if ('children' in node) {
@@ -172,19 +187,21 @@ async function buildLayoutPackage(frames, opts) {
   var files = [];
   var manifestFrames = [];
   var images = {};
+  var fonts = {};
   var progress = opts.onProgress || function () {};
 
   for (var i = 0; i < frames.length; i++) {
     var f = frames[i];
     progress('Фрейм ' + (i + 1) + ' из ' + frames.length + ': ' + f.name);
     var t = f.absoluteTransform;
-    var ctx = { images: images, vectors: [], instances: [], count: 0 };
+    var ctx = { images: images, vectors: [], instances: [], count: 0, fonts: fonts };
     var tree = serialize(f, t[0][2], t[1][2], ctx);
     var fid = fileId(f.id);
     files.push({ path: 'frames/' + fid + '.json', data: JSON.stringify(tree) });
 
     // эталон: рендер Figma
-    var png = await f.exportAsync({ format: 'PNG', constraint: { type: 'SCALE', value: scale } });
+    // ровно в границах фрейма, даже если содержимое выступает за них
+    var png = await f.exportAsync({ format: 'PNG', constraint: { type: 'SCALE', value: scale }, useAbsoluteBounds: true });
     files.push({ path: 'frames/' + fid + '.png', data: png });
 
     for (var v = 0; v < ctx.vectors.length; v++) {
@@ -210,6 +227,16 @@ async function buildLayoutPackage(frames, opts) {
     } catch (e) { /* недоступная картинка */ }
   }
 
+  // шрифты, которые реально используются в выгруженных макетах
+  var fontList = Object.keys(fonts).map(function (k) {
+    var f = fonts[k];
+    return { family: f.family, style: f.style, weight: f.weight, uses: f.uses, sizes: Object.keys(f.sizes).map(Number).sort(function (a, b) { return a - b; }) };
+  }).sort(function (a, b) { return b.uses - a.uses; });
+  files.push({ path: 'fonts.json', data: JSON.stringify(fontList, null, 2) });
+  try {
+    files.push({ path: 'variables.json', data: JSON.stringify(await exportVariables(), null, 2) });
+    files.push({ path: 'styles.json', data: JSON.stringify(await exportStyles(), null, 2) });
+  } catch (e) { progress('Переменные/стили не выгружены: ' + e.message); }
   if (opts.tokens) files.push({ path: 'tokens.json', data: JSON.stringify(opts.tokens, null, 2) });
   if (opts.analysis) files.push({ path: 'analysis.json', data: JSON.stringify(opts.analysis) });
 
@@ -219,8 +246,52 @@ async function buildLayoutPackage(frames, opts) {
     createdAt: new Date().toISOString(),
     scale: scale,
     tokens: opts.tokens ? 'tokens.json' : undefined,
+    fonts: 'fonts.json', variables: 'variables.json', styles: 'styles.json',
     frames: manifestFrames,
   };
   files.unshift({ path: 'manifest.json', data: JSON.stringify(manifest, null, 2) });
   return { manifest: manifest, files: files };
+}
+
+/** Локальные переменные файла: коллекции, режимы, значения (алиасы — ссылкой на имя). */
+async function exportVariables() {
+  var cols = await figma.variables.getLocalVariableCollectionsAsync();
+  var vars = await figma.variables.getLocalVariablesAsync();
+  var byId = {};
+  vars.forEach(function (v) { byId[v.id] = v; });
+  return cols.map(function (c) {
+    return {
+      name: c.name,
+      modes: c.modes.map(function (m) { return m.name; }),
+      variables: c.variableIds.map(function (id) { return byId[id]; }).filter(Boolean).map(function (v) {
+        var values = {};
+        c.modes.forEach(function (m) {
+          var val = v.valuesByMode[m.modeId];
+          if (val && val.type === 'VARIABLE_ALIAS') val = { alias: byId[val.id] ? byId[val.id].name : val.id };
+          values[m.name] = val;
+        });
+        return { name: v.name, type: v.resolvedType, values: values, scopes: v.scopes };
+      }),
+    };
+  });
+}
+
+/** Локальные стили: цвета, текст, эффекты, сетки. */
+async function exportStyles() {
+  var paint = await figma.getLocalPaintStylesAsync();
+  var text = await figma.getLocalTextStylesAsync();
+  var effect = await figma.getLocalEffectStylesAsync();
+  var ctx = { images: {} };
+  return {
+    paint: paint.map(function (s) { return { name: s.name, paints: paints(s.paints, ctx) }; }),
+    text: text.map(function (s) {
+      return { name: s.name, fontFamily: s.fontName.family, fontStyle: s.fontName.style, fontSize: s.fontSize,
+        lineHeight: s.lineHeight, letterSpacing: s.letterSpacing, textCase: s.textCase, textDecoration: s.textDecoration };
+    }),
+    effect: effect.map(function (s) { return { name: s.name, effects: s.effects.map(function (e) {
+      return e.type === 'DROP_SHADOW' || e.type === 'INNER_SHADOW'
+        ? { type: e.type, x: e.offset.x, y: e.offset.y, blur: e.radius, spread: e.spread || 0, color: colorOf(e.color) }
+        : { type: e.type, radius: e.radius };
+    }) }; }),
+  };
 }

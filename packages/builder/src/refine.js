@@ -1,0 +1,114 @@
+// Автодоработка после сверки с эталоном.
+//
+// Для слоёв, которые дают больше всего расхождений, перебираем небольшие поправки
+// и оставляем ту, что ближе к эталону в области этого слоя. Поправки не меняют
+// размеры и положение блоков, поэтому проверка геометрии остаётся в силе.
+//
+// Сейчас поправки текстовые (метрики шрифта в браузере и в Figma немного различаются):
+//   • letter-spacing — ширина строки;
+//   • сдвиг строки по вертикали — положение базовой линии.
+// Это место для будущих шагов, в том числе с ИИ: тот же цикл «предложить → проверить → оставить лучшее».
+import fs from 'node:fs';
+import { pathToFileURL } from 'node:url';
+import { PNG } from 'pngjs';
+import pixelmatch from 'pixelmatch';
+
+function crop(png, x, y, w, h) {
+  const out = new PNG({ width: w, height: h });
+  PNG.bitblt(png, out, x, y, w, h, 0, 0);
+  return out;
+}
+
+export async function refinePage(browser, htmlPath, { refPath, tree, sources, width, height, scale = 1, maxNodes = 8, minPixels = 150 }) {
+  const ref = PNG.sync.read(fs.readFileSync(refPath));
+  const nodes = new Map();
+  (function walk(n) { nodes.set(n.id, n); (n.children || []).forEach(walk); })(tree);
+
+  const page = await browser.newPage({ viewport: { width: Math.ceil(width), height: Math.ceil(height) }, deviceScaleFactor: scale });
+  await page.goto(pathToFileURL(htmlPath).href, { waitUntil: 'load' });
+  await page.evaluate(() => document.fonts.ready);
+
+  const patches = [];
+  const candidates = sources.top.filter((s) => s.pixels >= minPixels && nodes.get(s.id)?.type === 'TEXT').slice(0, maxNodes);
+
+  for (const c of candidates) {
+    const n = nodes.get(c.id);
+    // область сравнения: блок слоя с запасом
+    const pad = 6;
+    const x = Math.max(0, Math.floor(n.x - pad)), y = Math.max(0, Math.floor(n.y - pad));
+    const w = Math.min(Math.ceil(width) - x, Math.ceil(n.w + pad * 2)), h = Math.min(Math.ceil(height) - y, Math.ceil(n.h + pad * 2));
+    if (w <= 0 || h <= 0) continue;
+    const refCrop = crop(ref, Math.round(x * scale), Math.round(y * scale), Math.round(w * scale), Math.round(h * scale));
+
+    const score = async () => {
+      const buf = await page.screenshot({ clip: { x, y, width: w, height: h } });
+      const img = PNG.sync.read(buf);
+      if (img.width !== refCrop.width || img.height !== refCrop.height) return Infinity;
+      return pixelmatch(refCrop.data, img.data, null, img.width, img.height, { threshold: 0.1, includeAA: false });
+    };
+
+    const base = await page.evaluate((id) => {
+      const el = document.querySelector(`[data-figma-id="${CSS.escape(id)}"]`);
+      if (!el) return null;
+      const spans = [...el.querySelectorAll(':scope > span > span')];
+      return { ls: spans.map((s) => parseFloat(getComputedStyle(s).letterSpacing) || 0), fs: parseFloat(getComputedStyle(spans[0] || el).fontSize) || 16 };
+    }, c.id);
+    if (!base) continue;
+
+    const apply = (dls, dy, dws = 0) => page.evaluate(({ id, ls, dls, dy, dws }) => {
+      const el = document.querySelector(`[data-figma-id="${CSS.escape(id)}"]`);
+      const inner = el.querySelector(':scope > span');
+      [...el.querySelectorAll(':scope > span > span')].forEach((s, i) => { s.style.letterSpacing = `${ls[i] + dls}px`; s.style.wordSpacing = dws ? `${dws}px` : ''; });
+      inner.style.position = 'relative';
+      inner.style.top = `${dy}px`;
+    }, { id: c.id, ls: base.ls, dls, dy, dws });
+
+    const before = await score();
+    let best = { dls: 0, dy: 0, dws: 0, score: before };
+    const unit = Math.max(0.05, base.fs / 200); // шаг интервала зависит от кегля
+    // 1) интервал: грубо, затем точнее вокруг лучшего
+    for (const steps of [[-4, -2, -1, 1, 2, 4], [-0.5, 0.5], [-0.25, 0.25]]) {
+      const center = best.dls;
+      for (const k of steps) {
+        const dls = Math.round((center + k * unit) * 100) / 100;
+        await apply(dls, best.dy);
+        const s = await score();
+        if (s < best.score) best = { ...best, dls, score: s };
+      }
+    }
+    // 2) расстояние между словами (кернинг пар со пробелом заметно отличается у крупного текста)
+    for (const k of [-4, -2, -1, 1, 2, 4]) {
+      const dws = Math.round(k * unit * 2 * 100) / 100;
+      await apply(best.dls, best.dy, dws);
+      const s = await score();
+      if (s < best.score) best = { ...best, dws, score: s };
+    }
+    // 3) вертикальный сдвиг строки
+    for (const dy of [-2, -1, -0.5, 0.5, 1, 2]) {
+      await apply(best.dls, dy, best.dws);
+      const s = await score();
+      if (s < best.score) best = { ...best, dy, score: s };
+    }
+    // оставляем только заметное улучшение
+    if (best.score < before * 0.9) {
+      await apply(best.dls, best.dy, best.dws);
+      patches.push({ id: c.id, name: n.name, letterSpacing: base.ls.map((v) => Math.round((v + best.dls) * 100) / 100), wordSpacing: best.dws, dy: best.dy, before, after: best.score });
+    } else {
+      await apply(0, 0);
+    }
+  }
+  await page.close();
+  return patches;
+}
+
+/** Поправки → CSS (отдельный блок в конце styles.css, видно, что исправлено автоматически). */
+export function patchesCss(patches) {
+  if (!patches.length) return '';
+  const L = ['', '/* Поправки после сверки с эталоном Figma (ds-build refine) */'];
+  for (const p of patches) {
+    const sel = `[data-figma-id="${p.id}"]`;
+    p.letterSpacing.forEach((ls, i) => L.push(`${sel} > span > span:nth-child(${i + 1}) { letter-spacing: ${ls}px;${p.wordSpacing ? ` word-spacing: ${p.wordSpacing}px;` : ''} } /* ${p.name} */`));
+    if (p.dy) L.push(`${sel} > span { position: relative; top: ${p.dy}px; }`);
+  }
+  return L.join('\n') + '\n';
+}

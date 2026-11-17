@@ -1,0 +1,23 @@
+{
+  "comment": "Открытые макеты с GitHub для проверки генератора. reference — PNG, выгруженные авторами из Figma (настоящие эталоны).",
+  "fonts": ["montserrat", "roboto", "alata", "ibm-plex-sans", "poppins", "krona-one"],
+  "sources": [
+    {
+      "id": "hackrpi-thankyou",
+      "repo": "hack-rpi/Figma-Designs-2023",
+      "fig": "website/PostEvent-ThankYouPage/HackRPI_PostEvent_ThankYouPage.fig",
+      "reference": {
+        "v2.1": "website/PostEvent-ThankYouPage/HackRPI_PostEvent_ThankYouPage_v2.1.png",
+        "v3": "website/PostEvent-ThankYouPage/HackRPI_PostEvent_ThankYouPage_v3.png"
+      }
+    },
+    { "id": "hackrpi-team", "repo": "hack-rpi/Figma-Designs-2023", "fig": "website/MeetTheTeam Page.fig" },
+    { "id": "hackrpi-practice", "repo": "hack-rpi/Figma-Designs-2023", "fig": "website/Untitled (4).fig" },
+    { "id": "hackrpi-discord", "repo": "hack-rpi/Figma-Designs-2023", "fig": "discord/Skeleton Mockup.fig" },
+    {
+      "id": "physionic",
+      "repo": "figmaland/Physionic--Doctor-Appointment-Website-Template-HTML-FIGMA-",
+      "fig": "figma-file/Physionic- Doctor Appointment Website Template (HTML + FIGMA).fig"
+    }
+  ]
+}

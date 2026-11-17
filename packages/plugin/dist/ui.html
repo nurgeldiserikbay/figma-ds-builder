@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<style>
+  body { font: 12px/1.45 Inter, system-ui, sans-serif; margin: 0; padding: 16px; color: var(--figma-color-text, #222); background: var(--figma-color-bg, #fff); }
+  h1 { font-size: 13px; margin: 0 0 12px; }
+  fieldset { border: 0; padding: 0; margin: 0 0 12px; }
+  legend { font-weight: 600; margin-bottom: 6px; }
+  label { display: block; margin: 3px 0; cursor: pointer; }
+  .row { display: flex; gap: 8px; }
+  button { flex: 1; padding: 9px 10px; border-radius: 6px; border: 1px solid var(--figma-color-border, #ddd); background: var(--figma-color-bg, #fff); color: inherit; font: inherit; font-weight: 600; cursor: pointer; }
+  button.primary { background: var(--figma-color-bg-brand, #0d99ff); color: #fff; border-color: transparent; }
+  button:disabled { opacity: .5; cursor: default; }
+  .hint { color: var(--figma-color-text-secondary, #777); margin: 10px 0 0; }
+  #status { margin-top: 12px; min-height: 32px; }
+  .err { color: var(--figma-color-text-danger, #d22); }
+</style>
+</head>
+<body>
+<h1>Экспорт для вёрстки</h1>
+
+<fieldset>
+  <legend>Что выгружать</legend>
+  <label><input type="radio" name="scope" value="selection" checked> Выделенные фреймы / секции</label>
+  <label><input type="radio" name="scope" value="page"> Все фреймы текущей страницы</label>
+  <label><input type="radio" name="scope" value="all"> Все фреймы всех страниц</label>
+  <div class="hint" id="count"></div>
+</fieldset>
+
+<fieldset>
+  <legend>Масштаб PNG</legend>
+  <label><input type="radio" name="scale" value="1" checked> 1× — для pixel diff один к одному</label>
+  <label><input type="radio" name="scale" value="2"> 2× — для ретины</label>
+</fieldset>
+
+<div class="row">
+  <button id="png">Только PNG макетов</button>
+  <button id="pkg" class="primary">Пакет для вёрстки</button>
+</div>
+<p class="hint">Пакет: PNG-эталоны, дерево слоёв, векторы, картинки, используемые шрифты, переменные и стили. Открывается программой <code>ds-build</code>.</p>
+<div id="status"></div>
+
+<script>
+// ---------- zip (без сжатия: PNG уже сжаты) ----------
+var CRC = (function () { var t = new Uint32Array(256); for (var n = 0; n < 256; n++) { var c = n; for (var k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+function crc32(b) { var c = 0xffffffff; for (var i = 0; i < b.length; i++) c = CRC[(c ^ b[i]) & 0xff] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; }
+function zip(files) {
+  var enc = new TextEncoder(), parts = [], central = [], offset = 0;
+  files.forEach(function (f) {
+    var name = enc.encode(f.path), data = f.data, crc = crc32(data);
+    var h = new DataView(new ArrayBuffer(30));
+    h.setUint32(0, 0x04034b50, true); h.setUint16(4, 20, true); h.setUint16(6, 0x0800, true); // UTF-8 имена
+    h.setUint32(14, crc, true); h.setUint32(18, data.length, true); h.setUint32(22, data.length, true); h.setUint16(26, name.length, true);
+    parts.push(new Uint8Array(h.buffer), name, data);
+    var c = new DataView(new ArrayBuffer(46));
+    c.setUint32(0, 0x02014b50, true); c.setUint16(4, 20, true); c.setUint16(6, 20, true); c.setUint16(8, 0x0800, true);
+    c.setUint32(16, crc, true); c.setUint32(20, data.length, true); c.setUint32(24, data.length, true); c.setUint16(28, name.length, true);
+    c.setUint32(42, offset, true);
+    central.push(new Uint8Array(c.buffer), name);
+    offset += 30 + name.length + data.length;
+  });
+  var size = central.reduce(function (s, p) { return s + p.length; }, 0);
+  var e = new DataView(new ArrayBuffer(22));
+  e.setUint32(0, 0x06054b50, true); e.setUint16(8, files.length, true); e.setUint16(10, files.length, true);
+  e.setUint32(12, size, true); e.setUint32(16, offset, true);
+  return new Blob(parts.concat(central, [new Uint8Array(e.buffer)]), { type: 'application/zip' });
+}
+
+var files = [], status = document.getElementById('status');
+function val(name) { return document.querySelector('input[name="' + name + '"]:checked').value; }
+function busy(b) { document.getElementById('png').disabled = b; document.getElementById('pkg').disabled = b; }
+function run(what) { busy(true); status.textContent = 'Готовлю…'; parent.postMessage({ pluginMessage: { type: 'export', what: what, scope: val('scope'), scale: Number(val('scale')) } }, '*'); }
+document.getElementById('png').onclick = function () { run('png'); };
+document.getElementById('pkg').onclick = function () { run('pkg'); };
+document.querySelectorAll('input[name="scope"]').forEach(function (r) { r.onchange = count; });
+function count() { parent.postMessage({ pluginMessage: { type: 'count', scope: val('scope') } }, '*'); }
+count();
+
+onmessage = function (e) {
+  var m = e.data.pluginMessage;
+  if (!m) return;
+  if (m.type === 'count') document.getElementById('count').textContent = 'Фреймов: ' + m.count;
+  else if (m.type === 'progress') status.textContent = m.text;
+  else if (m.type === 'begin') files = [];
+  else if (m.type === 'file') files.push({ path: m.path, data: typeof m.data === 'string' ? new TextEncoder().encode(m.data) : m.data });
+  else if (m.type === 'done') {
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(zip(files));
+    a.download = m.zipName;
+    document.body.appendChild(a); a.click(); a.remove();
+    status.textContent = 'Скачан ' + m.zipName + ' (файлов: ' + files.length + ')';
+    busy(false);
+  } else if (m.type === 'error') { status.innerHTML = '<span class="err"></span>'; status.firstChild.textContent = m.text; busy(false); }
+};
+</script>
+</body>
+</html>

@@ -4,3 +4,5 @@ out/
 *.log
 # пакеты из Figma могут содержать клиентские макеты
 *.zip
+.bench/
+packages/bench/fonts-cache/

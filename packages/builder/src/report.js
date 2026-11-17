@@ -1,7 +1,7 @@
 // HTML-отчёт: эталон / вёрстка / разница + наложение с ползунком.
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
-export function buildReport({ file, threshold, results }) {
+export function buildReport({ file, threshold, textThreshold, results }) {
   const passed = results.filter((r) => r.pass).length;
   const cards = results
     .map((r) => {
@@ -9,7 +9,7 @@ export function buildReport({ file, threshold, results }) {
         : `<span class="badge ${r.pass ? 'ok' : 'fail'}">${r.pass ? 'pixel perfect ✓' : 'не прошло ✗'}</span>`;
       const g = r.geometry;
       const geo = g ? `<p class="meta">Геометрия: ${g.checked - g.failed} из ${g.checked} элементов совпадают с макетом (допуск ±${g.tolerance}px, макс. отклонение ${g.maxDelta}px)` +
-        (r.diff ? ` · pixel diff: ${r.diff.percent.toFixed(3)}%` : '') + '</p>' +
+        (r.diff ? ` · pixel diff: ${r.diff.percent.toFixed(3)}%` + (r.pixels ? ` (текст ${r.pixels.textPct.toFixed(3)}%, остальное ${r.pixels.otherPct.toFixed(3)}%)` : '') : '') + '</p>' +
         (g.issues.length ? '<ul class="warn">' + g.issues.slice(0, 10).map((i) => `<li>${esc(i.name)} (${esc(i.id)}): Δ ${i.delta}px — Figma ${i.figma.x},${i.figma.y} ${i.figma.w}×${i.figma.h}, вёрстка ${i.html.x},${i.html.y} ${i.html.w}×${i.html.h}</li>`).join('') + '</ul>' : '') : '';
       const tries = (r.attempts || [])
         .map((a) => `<li>${esc(a.mode)}: pixel diff ${Number.isNaN(a.percent) ? '—' : a.percent.toFixed(3) + '%'}, ошибок геометрии ${a.geometryFailed ?? '—'}${a.chosen ? ' — <b>выбран</b>' : ''}</li>`)
@@ -23,8 +23,11 @@ export function buildReport({ file, threshold, results }) {
     absolute: ${r.stats.abs || 0} · классов: ${r.stats.classes}
     · <a href="${esc(r.dir)}/index.html">открыть вёрстку</a></p>
   ${geo}
+  ${r.refine ? `<p class="meta">Автодоработка: ${r.refine.before.toFixed(3)}% → ${r.refine.after.toFixed(3)}%, поправок: ${r.refine.patches.length} (${r.refine.patches.map((p) => esc(p.name)).join(', ')})</p>` : ''}
   ${tries ? `<ul class="meta">${tries}</ul>` : ''}
   ${fonts.length ? `<p class="warn">Не найдены шрифты: ${fonts.join(', ')} — установите их, иначе текст будет отличаться.</p>` : ''}
+  ${r.diff?.sources ? `<p class="meta">Источники расхождений: ${Object.entries(r.diff.sources.byType).map(([k, v]) => `${esc(k)} ${Math.round((v / r.diff.sources.total) * 100)}%`).join(' · ')}</p>
+  <ul class="meta">${r.diff.sources.top.slice(0, 6).map((s) => `<li>${esc(s.name)} <small>(${esc(s.type)}, ${esc(s.id)})</small>: ${s.pixels} px</li>`).join('')}</ul>` : ''}
   ${r.diff?.bbox ? `<p class="meta">Область расхождений: x ${r.diff.bbox.x}, y ${r.diff.bbox.y}, ${r.diff.bbox.w}×${r.diff.bbox.h}</p>` : ''}
   ${r.diff ? `
   <div class="overlay" style="aspect-ratio:${r.width}/${r.height}">
@@ -63,7 +66,7 @@ export function buildReport({ file, threshold, results }) {
 </style></head>
 <body><main>
 <h1>Pixel diff: ${esc(file)}</h1>
-<p class="summary">Критерий: геометрия каждого элемента ±0.5px и не больше ${threshold}% несовпадающих пикселей · прошли ${passed} из ${results.length} фреймов</p>
+<p class="summary">Критерий: геометрия каждого элемента ±0.5px; несовпадающих пикселей вне текста не больше ${threshold}%, в тексте — не больше ${textThreshold}% · прошли ${passed} из ${results.length} фреймов</p>
 ${cards}
 </main>
 <script>
