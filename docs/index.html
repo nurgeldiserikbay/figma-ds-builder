@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>figma-ds-builder — из Figma в вёрстку, которая совпадает с макетом</title>
+<meta name="description" content="Плагин Figma выгружает макеты, платформа строит дизайн-систему, верстает страницы и проверяет их попиксельно против эталона из Figma.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Unbounded:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #F6F6F3;
+    --paper: #FFFFFF;
+    --ink: #111214;
+    --muted: #55585F;
+    --line: #E0E0DA;
+    --accent: #2B55F5;
+    --accent-ink: #FFFFFF;
+    --accent-soft: #E8EDFF;
+    --diff: #D6303A;
+    --ok: #17734A;
+    --code-bg: #15161A;
+    --code-ink: #E9EAEE;
+    --radius: 14px;
+    --max: 1180px;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 400 17px/1.6 Inter, system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  a { color: var(--accent); text-underline-offset: 3px; }
+  a:hover { color: #1A3BC0; }
+  h1, h2, h3 { font-family: Unbounded, Inter, sans-serif; letter-spacing: -0.02em; line-height: 1.12; margin: 0; }
+  h1 { font-size: clamp(36px, 5.4vw, 66px); font-weight: 700; }
+  h2 { font-size: clamp(28px, 3.4vw, 42px); font-weight: 600; }
+  h3 { font-size: 19px; font-weight: 600; letter-spacing: -0.01em; }
+  p { margin: 0; }
+  code, pre, .mono { font-family: "JetBrains Mono", ui-monospace, monospace; }
+  :not(pre) > code { font-size: 0.88em; background: #EBEBE5; padding: 2px 6px; border-radius: 6px; }
+  .wrap { max-width: var(--max); margin: 0 auto; padding: 0 24px; }
+  section { padding: 96px 0; }
+  .eyebrow { font: 500 13px/1 "JetBrains Mono", monospace; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin-bottom: 16px; }
+  .lead { font-size: 19px; color: var(--muted); max-width: 680px; margin-top: 20px; }
+  .head { margin-bottom: 48px; }
+
+  /* шапка */
+  header { position: sticky; top: 0; z-index: 10; background: rgba(246,246,243,.92); backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); }
+  .nav { display: flex; align-items: center; gap: 28px; min-height: 64px; flex-wrap: wrap; }
+  .logo { display: flex; align-items: center; gap: 10px; font: 600 16px/1 Unbounded, sans-serif; color: var(--ink); text-decoration: none; }
+  .logo-mark { width: 26px; height: 26px; border-radius: 7px; background: var(--ink); position: relative; }
+  .logo-mark::before { content: ""; position: absolute; inset: 6px; border: 2px solid #fff; border-radius: 3px; }
+  .logo-mark::after { content: ""; position: absolute; left: 13px; top: 13px; width: 9px; height: 9px; background: var(--accent); border-radius: 2px; }
+  .nav-links { display: flex; gap: 22px; flex-wrap: wrap; margin-left: auto; }
+  .nav-links a { color: var(--ink); text-decoration: none; font-size: 15px; }
+  .nav-links a:hover { color: var(--accent); }
+
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 48px; padding: 0 22px; border-radius: 10px; font: 600 16px/1 Inter, sans-serif; text-decoration: none; border: 1.5px solid var(--ink); color: var(--ink); background: transparent; cursor: pointer; }
+  .btn:hover { background: var(--ink); color: #fff; }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  .btn.primary:hover { background: #1A3BC0; border-color: #1A3BC0; color: #fff; }
+  .btn.small { min-height: 40px; padding: 0 16px; font-size: 14px; }
+
+  /* hero */
+  .hero { padding: 80px 0 72px; }
+  .hero-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 460px), 1fr)); gap: 56px; align-items: center; }
+  .hero h1 .accent { color: var(--accent); }
+  .hero .actions { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 32px; }
+  .shot { position: relative; background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px; box-shadow: 0 30px 60px -30px rgba(17,18,20,.28); }
+  .shot img { display: block; width: 100%; height: auto; border-radius: 8px; }
+  .shot .tag { position: absolute; font: 500 12px/1 "JetBrains Mono", monospace; background: var(--ink); color: #fff; padding: 7px 10px; border-radius: 6px; white-space: nowrap; }
+  .shot .tag.ok { background: var(--ok); }
+  .shot .t1 { top: -14px; right: 22px; }
+  .shot .t2 { bottom: 26px; left: -14px; }
+
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+  .stat { padding: 28px 24px; border-right: 1px solid var(--line); }
+  .stat:last-child { border-right: 0; }
+  .stat b { display: block; font: 600 30px/1.1 Unbounded, sans-serif; letter-spacing: -.02em; }
+  .stat span { display: block; margin-top: 10px; color: var(--muted); font-size: 15px; line-height: 1.45; }
+
+  /* как работает */
+  .flow { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 20px; counter-reset: step; }
+  .flow-item { background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius); padding: 28px; position: relative; }
+  .flow-item .num { font: 500 13px/1 "JetBrains Mono", monospace; color: var(--accent); margin-bottom: 18px; }
+  .flow-item h3 { margin-bottom: 12px; }
+  .flow-item ul { margin: 14px 0 0; padding-left: 18px; color: var(--muted); font-size: 15.5px; }
+  .flow-item li { margin: 4px 0; }
+  .flow-item .where { display: inline-block; margin-top: 18px; font: 500 12px/1 "JetBrains Mono", monospace; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 7px 11px; }
+
+  /* карточки возможностей */
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+  .card { background: var(--paper); padding: 30px 28px; }
+  .card svg { width: 28px; height: 28px; stroke: var(--accent); fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; margin-bottom: 18px; }
+  .card h3 { margin-bottom: 10px; }
+  .card p { color: var(--muted); font-size: 15.5px; }
+
+  /* pixel perfect */
+  .pp { background: var(--ink); color: #F1F1EE; }
+  .pp .eyebrow, .pp .lead { color: #A9ABB2; }
+  .pp-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); gap: 20px; }
+  .pp-box { border: 1px solid #2E3036; border-radius: var(--radius); padding: 28px; }
+  .pp-box h3 { color: #fff; margin-bottom: 12px; }
+  .pp-box p { color: #B9BBC2; font-size: 15.5px; }
+  .pp-box .big { font: 600 34px/1 Unbounded, sans-serif; color: #fff; margin-bottom: 14px; }
+  .pp-box .big .r { color: #FF6B72; }
+  .pp-note { margin-top: 28px; color: #B9BBC2; font-size: 15.5px; max-width: 820px; }
+
+  /* шаги и код */
+  .steps { display: grid; gap: 18px; }
+  .step { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 20px; background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius); padding: 26px; }
+  .step .n { width: 44px; height: 44px; border-radius: 10px; background: var(--accent-soft); color: var(--accent); display: grid; place-items: center; font: 600 17px/1 Unbounded, sans-serif; }
+  .step h3 { margin-bottom: 8px; }
+  .step p { color: var(--muted); font-size: 15.5px; }
+  .step p + p { margin-top: 8px; }
+  .code { margin-top: 14px; display: flex; flex-direction: column; background: var(--code-bg); border-radius: 10px; overflow: hidden; }
+  .code pre { order: 2; margin: 0; color: var(--code-ink); padding: 4px 20px 18px; overflow-x: auto; font-size: 14px; line-height: 1.7; }
+  .code pre .c { color: #8C90A0; }
+  .code .copy { order: 1; align-self: flex-end; margin: 8px 8px 0; min-height: 32px; padding: 0 12px; border-radius: 7px; border: 1px solid #3A3D45; background: #23252B; color: #E9EAEE; font: 500 13px/1 Inter, sans-serif; cursor: pointer; }
+  .code .copy:hover { background: #30333A; }
+  .req { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 26px; }
+  .req span { background: var(--paper); border: 1px solid var(--line); border-radius: 999px; padding: 9px 15px; font-size: 15px; }
+
+  /* таблица */
+  .table-box { overflow-x: auto; background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius); }
+  table { width: 100%; border-collapse: collapse; font-size: 15px; min-width: 760px; }
+  th, td { text-align: left; padding: 14px 18px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font: 500 12px/1.3 "JetBrains Mono", monospace; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); background: #FAFAF8; }
+  tr:last-child td { border-bottom: 0; }
+  td.num { font-family: "JetBrains Mono", monospace; white-space: nowrap; }
+  .pass { color: var(--ok); font-weight: 600; }
+  .muted { color: var(--muted); }
+  .result-note { margin-top: 18px; color: var(--muted); font-size: 15px; max-width: 900px; }
+
+  /* принципы, ограничения, FAQ */
+  .two { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr)); gap: 20px; }
+  .panel { background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius); padding: 28px; }
+  .panel h3 { margin-bottom: 14px; }
+  .panel ul { margin: 0; padding-left: 18px; color: var(--muted); font-size: 15.5px; }
+  .panel li { margin: 8px 0; }
+  .principles { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 20px; }
+  .principle { border-top: 2px solid var(--ink); padding-top: 20px; }
+  .principle h3 { margin-bottom: 10px; }
+  .principle p { color: var(--muted); font-size: 15.5px; }
+  details { background: var(--paper); border: 1px solid var(--line); border-radius: 12px; padding: 0 22px; }
+  details + details { margin-top: 10px; }
+  summary { cursor: pointer; padding: 20px 0; font-weight: 600; list-style: none; display: flex; justify-content: space-between; gap: 16px; }
+  summary::-webkit-details-marker { display: none; }
+  summary::after { content: "+"; font: 400 22px/1 Inter, sans-serif; color: var(--muted); }
+  details[open] summary::after { content: "−"; }
+  details p { padding: 0 0 20px; color: var(--muted); font-size: 15.5px; }
+
+  .cta { background: var(--accent); color: #fff; border-radius: 20px; padding: 56px 48px; display: flex; flex-wrap: wrap; gap: 28px; align-items: center; justify-content: space-between; }
+  .cta h2 { color: #fff; max-width: 620px; }
+  .cta p { color: #DCE3FF; margin-top: 12px; }
+  .cta .btn { border-color: #fff; color: #fff; }
+  .cta .btn:hover { background: #fff; color: var(--accent); }
+  .cta .btn.white { background: #fff; color: var(--accent); }
+  .cta .btn.white:hover { background: #E8EDFF; }
+
+  footer { padding: 40px 0 56px; color: var(--muted); font-size: 14px; border-top: 1px solid var(--line); }
+  footer .wrap { display: flex; flex-wrap: wrap; gap: 16px 28px; justify-content: space-between; }
+  footer a { color: var(--muted); }
+
+  @media (max-width: 720px) {
+    section { padding: 64px 0; }
+    .nav-links { display: none; }
+    .step { grid-template-columns: minmax(0, 1fr); }
+    .stat { border-right: 0; border-bottom: 1px solid var(--line); }
+    .cta { padding: 40px 26px; }
+    .shot .t2 { left: 10px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap nav">
+    <a class="logo" href="#top" aria-label="figma-ds-builder — наверх"><span class="logo-mark" aria-hidden="true"></span>figma-ds-builder</a>
+    <nav class="nav-links" aria-label="Разделы">
+      <a href="#how">Как работает</a>
+      <a href="#features">Возможности</a>
+      <a href="#install">Установка</a>
+      <a href="#usage">Работа</a>
+      <a href="#results">Результаты</a>
+      <a href="#faq">Вопросы</a>
+    </nav>
+    <a class="btn small" href="https://github.com/nurgeldiserikbay/figma-ds-builder">GitHub</a>
+  </div>
+</header>
+
+<main id="top">
+
+<!-- HERO -->
+<section class="hero">
+  <div class="wrap hero-grid">
+    <div>
+      <p class="eyebrow">Figma → дизайн-система → вёрстка</p>
+      <h1>Вёрстка, которая <span class="accent">совпадает с&nbsp;макетом</span></h1>
+      <p class="lead">Плагин выгружает макеты из Figma. Платформа на вашем компьютере строит из них дизайн-систему, верстает страницы и сверяет каждую с эталоном из Figma — по положению каждого элемента и попиксельно. Работает и на «грязных» макетах: без стилей, компонентов и Auto Layout.</p>
+      <div class="actions">
+        <a class="btn primary" href="#install">Установить</a>
+        <a class="btn" href="#how">Как это работает</a>
+      </div>
+    </div>
+    <figure class="shot" style="margin:0">
+      <img src="assets/report.jpg" width="2400" height="2200" alt="Отчёт ds-build: страница прошла проверку pixel perfect — 32 из 32 элементов совпадают с макетом, расхождение 0.000%">
+      <span class="tag ok t1">pixel perfect ✓</span>
+      <span class="tag t2">геометрия 32/32 · diff 0.000%</span>
+    </figure>
+  </div>
+</section>
+
+<div class="wrap">
+  <div class="stats">
+    <div class="stat"><b>±0.5px</b><span>положение и размер каждого элемента против слоя в Figma</span></div>
+    <div class="stat"><b>0.21–0.38%</b><span>расхождение с настоящими PNG из Figma после автодоработки</span></div>
+    <div class="stat"><b>14 / 14</b><span>совпадений дизайн-системы с SCSS-переменными автора шаблона</span></div>
+    <div class="stat"><b>0</b><span>вызовов ИИ: всё на алгоритмах, повторяемо и бесплатно</span></div>
+  </div>
+</div>
+
+<!-- КАК РАБОТАЕТ -->
+<section id="how">
+  <div class="wrap">
+    <div class="head">
+      <p class="eyebrow">Как это работает</p>
+      <h2>Плагин выгружает. Платформа делает всё остальное.</h2>
+      <p class="lead">Плагин ничего не решает за вёрстку — он отдаёт полные данные из Figma. Анализ, вёрстка, сравнение и доработка выполняются локально, макеты никуда не отправляются.</p>
+    </div>
+    <div class="flow">
+      <div class="flow-item">
+        <p class="num">01 · Figma</p>
+        <h3>Плагин выгружает пакет</h3>
+        <p class="muted">Одна кнопка — и zip со всем, что нужно для вёрстки:</p>
+        <ul>
+          <li>PNG каждого макета — эталон для сравнения</li>
+          <li>дерево слоёв: координаты, заливки, тени, Auto Layout, тексты</li>
+          <li>векторы в SVG, картинки</li>
+          <li>шрифты, переменные и стили файла</li>
+        </ul>
+        <span class="where">packages/plugin</span>
+      </div>
+      <div class="flow-item">
+        <p class="num">02 · Ваш компьютер</p>
+        <h3>Платформа верстает и проверяет</h3>
+        <p class="muted">Одна команда <code>ds-build build</code>:</p>
+        <ul>
+          <li>строит дизайн-систему: токены, семантика, шкалы, аудит</li>
+          <li>верстает каждый макет на этих токенах</li>
+          <li>рендерит в Chrome и сверяет с эталоном</li>
+          <li>сама дорабатывает места с расхождениями</li>
+        </ul>
+        <span class="where">packages/builder</span>
+      </div>
+      <div class="flow-item">
+        <p class="num">03 · Результат</p>
+        <h3>Вёрстка, отчёт и токены</h3>
+        <p class="muted">На выходе — то, с чем можно работать дальше:</p>
+        <ul>
+          <li>HTML/CSS каждой страницы</li>
+          <li>отчёт: прошло / не прошло, наложение, карта различий</li>
+          <li>tokens.json, CSS, SCSS, Tailwind-конфиг</li>
+          <li>переменные и стили обратно в Figma — кнопкой в плагине</li>
+        </ul>
+        <span class="where">out/&lt;проект&gt;</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ВОЗМОЖНОСТИ -->
+<section id="features" style="padding-top:0">
+  <div class="wrap">
+    <div class="head">
+      <p class="eyebrow">Возможности</p>
+      <h2>Что делает платформа</h2>
+    </div>
+    <div class="cards">
+      <div class="card">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="8" r="4"/><circle cx="16" cy="8" r="4"/><circle cx="12" cy="15" r="4"/></svg>
+        <h3>Дизайн-система из любого макета</h3>
+        <p>Почти одинаковые цвета склеиваются по ΔE2000, получают имена по шкале 50–950 и роли: фон, поверхность, текст, граница, фирменный. Стили текста h1…body, шаг отступов, радиусы, тени, брейкпоинты.</p>
+      </div>
+      <div class="card">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 9v12"/></svg>
+        <h3>Вёрстка без «абсолюта»</h3>
+        <p>Auto Layout переносится во flex один к одному. Где его нет, колонки и строки определяются по расположению слоёв. <code>position: absolute</code> — только там, где слои действительно перекрываются.</p>
+      </div>
+      <div class="card">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h4M17 12h4M12 3v4M12 17v4"/><rect x="8" y="8" width="8" height="8" rx="1"/></svg>
+        <h3>Проверка с эталоном</h3>
+        <p>Каждый элемент вёрстки измеряется в браузере и сверяется со своим слоем в Figma. Скриншот страницы сравнивается с PNG из Figma, расхождения раскладываются по слоям.</p>
+      </div>
+      <div class="card">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20l6-6M14 4l6 6-8 8-6-6z"/></svg>
+        <h3>Автодоработка</h3>
+        <p>Для слоёв с наибольшим расхождением программа подбирает поправки — интервалы и положение строк текста — и оставляет только те, что приближают к эталону. На реальных макетах: 1.98% → 0.38%.</p>
+      </div>
+      <div class="card">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16v12H4z"/><path d="M8 20h8M12 16v4"/><path d="M8 10l3 3 5-6"/></svg>
+        <h3>Отчёт, который видно</h3>
+        <p>По каждой странице: прошла ли проверку, наложение «макет / вёрстка» с ползунком, карта различий, какие слои дают расхождение. Плюс аудит контраста текста по WCAG.</p>
+      </div>
+      <div class="card">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7h10v10"/><path d="M17 7L7 17"/></svg>
+        <h3>Обратно в Figma</h3>
+        <p>Токены платформы импортируются в Figma кнопкой: коллекции переменных Primitives, Semantic, Typography, текстовые стили и стили теней. Повторный импорт обновляет, а не дублирует.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- PIXEL PERFECT -->
+<section class="pp">
+  <div class="wrap">
+    <div class="head">
+      <p class="eyebrow">Критерий качества</p>
+      <h2 style="color:#fff">Что значит «pixel perfect»</h2>
+      <p class="lead">Страница считается готовой, только если прошла обе проверки. Это не обещание, а цифры в отчёте по каждой странице.</p>
+    </div>
+    <div class="pp-grid">
+      <div class="pp-box">
+        <p class="big">±0.5<span class="r">px</span></p>
+        <h3>Геометрия</h3>
+        <p>Каждый элемент вёрстки связан со своим слоем Figma (<code style="background:#26282E;color:#E9EAEE">data-figma-id</code>) и совпадает с ним по x, y, ширине и высоте. Ловит ошибки раскладки даже в 1px и не зависит от того, как браузер рисует шрифты.</p>
+      </div>
+      <div class="pp-box">
+        <p class="big">0.1<span class="r">%</span> / 0.5<span class="r">%</span></p>
+        <h3>Пиксели</h3>
+        <p>Скриншот против PNG из Figma: вне текста — не больше 0.1% несовпадающих пикселей (цвета, фигуры, тени, картинки), в тексте — не больше 0.5%. Пороги настраиваются.</p>
+      </div>
+    </div>
+    <p class="pp-note">Почему для текста отдельный допуск: Figma и браузер по-разному растеризуют пары букв, полностью это не устраняется. Сдвиг текстового блока при этом не прячется — его ловит геометрия, а автодоработка возвращает строку на место.</p>
+  </div>
+</section>
+
+<!-- УСТАНОВКА -->
+<section id="install">
+  <div class="wrap">
+    <div class="head">
+      <p class="eyebrow">Установка</p>
+      <h2>Один раз, пять минут</h2>
+    </div>
+    <div class="req">
+      <span>Figma Desktop</span>
+      <span>Node.js 20+</span>
+      <span>Google Chrome</span>
+      <span>macOS · Windows · Linux</span>
+    </div>
+    <div class="steps">
+      <div class="step">
+        <div class="n">1</div>
+        <div>
+          <h3>Скачайте и подготовьте</h3>
+          <p>Установит зависимости программы и соберёт плагин.</p>
+          <div class="code"><pre><code>git clone https://github.com/nurgeldiserikbay/figma-ds-builder
+cd figma-ds-builder
+npm run setup</code></pre><button class="copy" type="button">Копировать</button></div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="n">2</div>
+        <div>
+          <h3>Подключите плагин в Figma</h3>
+          <p>Figma Desktop → <b>Plugins → Development → Import plugin from manifest…</b> → файл <code>packages/plugin/dist/manifest.json</code>. Плагин появится как «DS Builder — экспорт для вёрстки».</p>
+          <p>Локальные плагины работают только в приложении Figma для компьютера, не в браузере.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="n">3</div>
+        <div>
+          <h3>Проверьте, что всё на месте</h3>
+          <p>Необязательно: тесты программы и плагина на встроенном макете, около минуты.</p>
+          <div class="code"><pre><code>npm test</code></pre><button class="copy" type="button">Копировать</button></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- РАБОТА -->
+<section id="usage" style="padding-top:0">
+  <div class="wrap">
+    <div class="head">
+      <p class="eyebrow">Как работать</p>
+      <h2>От макета до проверенной вёрстки</h2>
+    </div>
+    <div class="steps">
+      <div class="step">
+        <div class="n">1</div>
+        <div>
+          <h3>Выгрузите макеты из Figma</h3>
+          <p>Запустите плагин, выберите область — выделенные фреймы, страницу или весь файл, масштаб 1× — и нажмите <b>«Пакет для вёрстки»</b>. Скачается <code>&lt;файл&gt; — ds-package.zip</code>.</p>
+          <p>Нужны только картинки для скриншот-тестов — кнопка <b>«Только PNG макетов»</b>.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="n">2</div>
+        <div>
+          <h3>Соберите и проверьте</h3>
+          <p>Шрифты макета скачаются сами (бесплатные Google Fonts), построится дизайн-система, каждый макет будет свёрстан и сверен с эталоном. По окончании откроется отчёт.</p>
+          <div class="code"><pre><code>npm run ds -- build "&lt;файл&gt; — ds-package.zip" --out out/my-site --open</code></pre><button class="copy" type="button">Копировать</button></div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="n">3</div>
+        <div>
+          <h3>Посмотрите отчёт и вёрстку</h3>
+          <p>В <code>out/my-site/report.html</code> — статус каждой страницы, наложение эталона и вёрстки, источники расхождений. Сама вёрстка — <code>out/my-site/&lt;фрейм&gt;/index.html</code>, обычный HTML/CSS. Дизайн-система — в <code>out/my-site/design-system/</code>.</p>
+          <div class="code"><pre><code><span class="c"># только дизайн-система, без вёрстки</span>
+npm run ds -- analyze "&lt;файл&gt; — ds-package.zip" --out out/ds</code></pre><button class="copy" type="button">Копировать</button></div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="n">4</div>
+        <div>
+          <h3>Верните дизайн-систему в Figma</h3>
+          <p>В плагине, блок <b>«Дизайн-система → Figma»</b>: выберите <code>design-system/tokens.json</code> → <b>«Создать переменные и стили»</b>. Появятся переменные DS · Primitives / Semantic / Typography, текстовые стили и стили теней.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- РЕЗУЛЬТАТЫ -->
+<section id="results" style="padding-top:0">
+  <div class="wrap">
+    <div class="head">
+      <p class="eyebrow">Проверено на открытых макетах</p>
+      <h2>Результаты</h2>
+      <p class="lead">5 открытых Figma-файлов с GitHub, 14 фреймов, около 1 300 слоёв. Для двух фреймов у авторов были PNG-экспорты из Figma — настоящие эталоны.</p>
+    </div>
+    <div class="table-box">
+      <table>
+        <thead>
+          <tr><th>Макет</th><th>Размер</th><th>Слоёв</th><th>Геометрия ±0.5px</th><th>Pixel diff: до → после автодоработки</th><th>Итог</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>HackRPI, страница «спасибо» v2.1 <span class="muted">— без Auto Layout</span></td><td class="num">1440×1024</td><td class="num">28</td><td class="num">28/28</td><td class="num">1.977% → 0.381%</td><td class="pass">✓</td></tr>
+          <tr><td>HackRPI, страница «спасибо» v3</td><td class="num">1440×1970</td><td class="num">35</td><td class="num">35/35</td><td class="num">1.679% → 0.209%</td><td class="pass">✓</td></tr>
+          <tr><td>Physionic, сайт клиники — Desktop</td><td class="num">1440×5007</td><td class="num">446</td><td class="num">446/446</td><td class="num muted">нет эталона</td><td class="pass">✓</td></tr>
+          <tr><td>Physionic — Mobile</td><td class="num">414×9806</td><td class="num">423</td><td class="num">423/423</td><td class="num muted">нет эталона</td><td class="pass">✓</td></tr>
+          <tr><td>Physionic — обзорная страница</td><td class="num">2624×2391</td><td class="num">497</td><td class="num">497/497</td><td class="num muted">нет эталона</td><td class="pass">✓</td></tr>
+          <tr><td>HackRPI — мокап Discord, команда, практика <span class="muted">(7 фреймов)</span></td><td class="num">360–1680</td><td class="num">2–45</td><td class="num">все</td><td class="num muted">нет эталона</td><td class="pass">✓</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="result-note">Дизайн-система шаблона Physionic, построенная по макету, совпала с SCSS-переменными автора в 14 из 14 проверок: фон, поверхность, оба цвета текста, акцент, палитра и шаг отступов 5. Подробности и история итераций — <a href="https://github.com/nurgeldiserikbay/figma-ds-builder/blob/main/docs/benchmark.md">docs/benchmark.md</a>; повторить прогон — <code>npm run bench</code>.</p>
+  </div>
+</section>
+
+<!-- ПРИНЦИПЫ -->
+<section style="padding-top:0">
+  <div class="wrap">
+    <div class="head">
+      <p class="eyebrow">Принципы</p>
+      <h2>На чём держится продукт</h2>
+    </div>
+    <div class="principles">
+      <div class="principle">
+        <h3>Сначала алгоритм</h3>
+        <p>Всё, что решается детерминированно — раскладка, токены, сравнение, подбор поправок — делается кодом: повторяемо, бесплатно, проверяемо. ИИ подключается только для задач «на понимание», и его результат проходит ту же проверку с откатом.</p>
+      </div>
+      <div class="principle">
+        <h3>Плагин только выгружает</h3>
+        <p>Плагин отдаёт полные данные из Figma и записывает обратно то, что построила платформа. Вся логика — в платформе, где её можно тестировать и запускать без Figma.</p>
+      </div>
+      <div class="principle">
+        <h3>Готово = прошло проверку</h3>
+        <p>Страница не считается готовой без сверки с эталоном из Figma. Что не прошло — видно в отчёте вместе с причиной.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ОГРАНИЧЕНИЯ -->
+<section style="padding-top:0">
+  <div class="wrap two">
+    <div class="panel">
+      <h3>Пока не умеет</h3>
+      <ul>
+        <li>Повёрнутые слои, маски и сложные булевы операции верстаются приближённо.</li>
+        <li>Компоненты выделяются как общие CSS-классы, без отдельных файлов React/Vue.</li>
+        <li>Нет адаптивности между брейкпоинтами: каждый макет верстается под свою ширину.</li>
+        <li>Платные шрифты нужно установить в систему самому.</li>
+        <li>Плагин проверен на имитации Figma API — первый запуск в настоящей Figma впереди.</li>
+      </ul>
+    </div>
+    <div class="panel">
+      <h3>Дальше по плану</h3>
+      <ul>
+        <li>Прогон на реальных рабочих макетах, уточнение порогов.</li>
+        <li>Точечный запасной режим: absolute только для узла с расхождением.</li>
+        <li>Компоненты в отдельные файлы, затем React/Vue.</li>
+        <li>ИИ-слой: семантические теги, имена классов, адаптивность — сначала локальная модель, затем бесплатные API.</li>
+        <li>Адаптивность по фреймам desktop / tablet / mobile одной страницы.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- FAQ -->
+<section id="faq" style="padding-top:0">
+  <div class="wrap">
+    <div class="head">
+      <p class="eyebrow">Вопросы</p>
+      <h2>Частые вопросы</h2>
+    </div>
+    <details>
+      <summary>Макеты куда-то отправляются?</summary>
+      <p>Нет. Плагин не ходит в сеть, а платформа работает на вашем компьютере. Из интернета скачиваются только бесплатные шрифты из npm — один раз, в локальный кэш.</p>
+    </details>
+    <details>
+      <summary>Нужен ли ИИ или платные сервисы?</summary>
+      <p>Нет. Сейчас в проекте нет ни одного вызова ИИ — анализ, вёрстка, проверка и доработка работают на алгоритмах. Когда появится ИИ-слой, порядок будет такой: локальная модель → бесплатные API → платные только по явному флагу.</p>
+    </details>
+    <details>
+      <summary>Что если макет сделан без стилей и Auto Layout?</summary>
+      <p>Это основной сценарий. Дизайн-система собирается из фактически использованных значений, а раскладка определяется по расположению слоёв. Масштабированные копии экранов распознаются и не засоряют шкалы.</p>
+    </details>
+    <details>
+      <summary>Почему нужен Chrome?</summary>
+      <p>Вёрстка проверяется в настоящем браузере: страница рендерится в Chrome, каждый элемент измеряется, скриншот сравнивается с эталоном. Отдельно скачивать браузер не нужно — используется установленный. Если он в нестандартном месте, путь задаётся переменной <code>CHROME_PATH</code>.</p>
+    </details>
+    <details>
+      <summary>Можно ли без Figma?</summary>
+      <p>Для проверки алгоритмов — да: <code>packages/bench</code> собирает пакет прямо из файла <code>.fig</code>. Но эталоны PNG и полные данные даёт только плагин в Figma.</p>
+    </details>
+    <details>
+      <summary>Что-то не сработало — что прислать?</summary>
+      <p>Текст ошибки из терминала, консоль плагина (Plugins → Development → Show/Hide console), <code>report.json</code> и, если можно, сам пакет или один проблемный фрейм из него.</p>
+    </details>
+  </div>
+</section>
+
+<!-- CTA -->
+<section style="padding-top:0">
+  <div class="wrap">
+    <div class="cta">
+      <div>
+        <h2>Проверьте на своём макете</h2>
+        <p>Установка, выгрузка, вёрстка и отчёт — за 10–15 минут.</p>
+      </div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap">
+        <a class="btn white" href="https://github.com/nurgeldiserikbay/figma-ds-builder/blob/main/docs/how-to-test.md">Пошаговая инструкция</a>
+        <a class="btn" href="https://github.com/nurgeldiserikbay/figma-ds-builder">Репозиторий</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>figma-ds-builder · MIT</span>
+    <span><a href="https://github.com/nurgeldiserikbay/figma-ds-builder/blob/main/docs/package-format.md">Формат пакета</a> · <a href="https://github.com/nurgeldiserikbay/figma-ds-builder/blob/main/docs/benchmark.md">Результаты</a> · <a href="https://github.com/nurgeldiserikbay/figma-ds-builder/blob/main/docs/how-to-test.md">Как проверить</a> · <a href="https://github.com/nurgeldiserikbay/figma-ds-builder">GitHub</a></span>
+  </div>
+</footer>
+
+<script>
+  document.querySelectorAll('.code .copy').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var text = btn.parentElement.querySelector('pre').innerText;
+      navigator.clipboard.writeText(text).then(function () {
+        btn.textContent = 'Скопировано';
+        setTimeout(function () { btn.textContent = 'Копировать'; }, 1600);
+      }).catch(function () { btn.textContent = 'Выделите и скопируйте'; });
+    });
+  });
+</script>
+</body>
+</html>

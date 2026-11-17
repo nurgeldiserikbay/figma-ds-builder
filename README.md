@@ -28,6 +28,9 @@ npm run setup
 npm run ds -- build "<файл> — ds-package.zip" --out out/my-site --open
 ```
 
+**Сайт проекта** — `docs/index.html` (GitHub Pages): что за продукт, как работает, установка, работа, результаты.
+Включение: *Settings → Pages → Build and deployment → Source: Deploy from a branch → `main` / `/docs` → Save*.
+
 ## Принципы
 
 1. **Сначала алгоритм, ИИ — только где без него нельзя.** Всё, что решается детерминированно
