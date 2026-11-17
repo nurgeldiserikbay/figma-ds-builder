@@ -8,7 +8,7 @@
   },
   "scripts": {
     "fixture": "node fixtures/make-fixture.js",
-    "test": "node fixtures/make-fixture.js && node src/cli.js build fixtures/sample --out out/sample --framework react,vue"
+    "test": "node test/ai-chain.js && node fixtures/make-fixture.js && node src/cli.js build fixtures/sample --out out/sample --framework react,vue"
   },
   "engines": {
     "node": ">=20"

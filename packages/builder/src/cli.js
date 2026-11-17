@@ -13,7 +13,7 @@ import { buildReport } from './report.js';
 import { checkGeometry } from './geometry.js';
 import { attributeDiff } from './attribute.js';
 import { refinePage, patchesCss } from './refine.js';
-import { suggestNames, aiConfig } from './ai.js';
+import { suggestNames, aiProviders } from './ai.js';
 import { analyzeSemantics } from './semantic.js';
 import { analyzeDesignSystem } from './ds/analyze.js';
 import { exportFiles, toTokens } from './ds/export.js';
@@ -53,8 +53,10 @@ ds-build build <пакет | пакет.zip> [опции]
   --no-refine          не подбирать поправки после сверки с эталоном
   --no-semantic        без семантических тегов (только div)
   --ai                 понятные имена классов от ИИ для слоёв с безликими именами (Frame 237…).
-                       OpenAI-совместимый сервер: DS_AI_URL (по умолчанию Ollama, http://localhost:11434/v1),
-                       DS_AI_MODEL, DS_AI_KEY. Результат проверяется так же; без сервера — сборка без ИИ
+                       Цепочка: Ollama (локально) → Groq → Gemini → OpenRouter (бесплатные планы, если задан
+                       GROQ_API_KEY / GEMINI_API_KEY / OPENROUTER_API_KEY). Свой сервер: DS_AI_URL, DS_AI_MODEL, DS_AI_KEY.
+                       Результат проверяется так же; все недоступны — сборка без ИИ
+  --ai-paid            разрешить платный провайдер в конце цепочки: DS_AI_PAID_URL, DS_AI_PAID_KEY, DS_AI_PAID_MODEL
   --no-verify          не рендерить и не сравнивать
 
 Переменные окружения: CHROME_PATH — путь к Chrome, если он не найден автоматически.
@@ -75,6 +77,7 @@ function parseArgs(argv) {
     else if (k === '--no-analyze') a.analyze = false;
     else if (k === '--no-semantic') a.semantic = false;
     else if (k === '--ai') a.ai = true;
+    else if (k === '--ai-paid') { a.ai = true; a.aiPaid = true; }
     else if (k === '--fonts') a.fonts = argv[++i];
     else if (k === '--open') a.open = true;
     else if (k === '--no-responsive') a.responsive = false;
@@ -198,7 +201,7 @@ async function build(args) {
       // ИИ-имена (по флагу): только для безликих слоёв; ошибки сервера не ломают сборку
       let names = null;
       if (args.ai && args.semantic) {
-        const r = await suggestNames(tree, analyzeSemantics(tree), { cfg: aiConfig(), cacheDir: defaultCacheDir(), log: (m) => console.log(m) });
+        const r = await suggestNames(tree, analyzeSemantics(tree), { providers: aiProviders(process.env, { paid: args.aiPaid }), cacheDir: defaultCacheDir(), log: (m) => console.log(m) });
         if (r.error) console.log(`  ИИ недоступен (${r.error}) — имена по алгоритму`);
         else if (r.asked) console.log(`  ИИ: имена для ${r.used} из ${r.asked} безликих слоёв`);
         names = r.names;
