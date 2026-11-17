@@ -161,6 +161,7 @@ function serialize(node, ox, oy, ctx) {
   if (L) o.layout = L;
   if ('layoutPositioning' in node) o.layoutPositioning = node.layoutPositioning;
   if ('layoutSizingHorizontal' in node) o.sizing = { h: node.layoutSizingHorizontal, v: node.layoutSizingVertical };
+  if ('constraints' in node && node.constraints) o.constraints = { h: node.constraints.horizontal, v: node.constraints.vertical };
 
   if (node.type === 'INSTANCE') {
     o.component = { name: node.name, variant: node.variantProperties || undefined };

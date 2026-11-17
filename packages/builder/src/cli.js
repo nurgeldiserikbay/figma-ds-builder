@@ -333,7 +333,8 @@ async function build(args) {
       for (const a of attempts) if (a.dir !== fdir) fs.rmSync(a.dir, { recursive: true, force: true });
 
       const pass = browser ? !!chosen.ok : null;
-      fwPages.push({ title: f.name, page: f.page, dir: dirName, root: chosen.gen.root, tree, width: f.width, height: f.height, result: results.length });
+      fwPages.push({ title: f.name, page: f.page, dir: dirName, root: chosen.gen.root, tree, width: f.width, height: f.height, result: results.length,
+        gen: { mode: chosen.mode === 'absolute' ? 'absolute' : 'flow', absIds: chosen.pinned.length ? new Set(chosen.pinned) : null, title: f.name, names } });
       results.push({
         name: f.name, id: f.id, width: f.width, height: f.height, dir: dirName,
         mode: chosen.mode, stats: chosen.gen.stats, fonts: chosen.fonts, diff: chosen.diff, geometry: chosen.geometry, refine: chosen.refine, pixels: pixelSplit(chosen.diff), pass,
@@ -352,28 +353,97 @@ async function build(args) {
     if (args.responsive) {
       const groups = groupFrames(fwPages.map((p) => ({ name: p.title, page: p.page, width: p.width, texts: textsOf(p.tree) })), args.groups);
       for (const g of groups) {
-        const variants = g.members.map((i) => fwPages[i]);
-        const dir = writeResponsive(out, g, variants);
-        const entry = { name: g.name, dir, widths: variants.map((v) => Math.round(v.width)), exact: [], overflow: [] };
-        if (browser) {
-          // на ширине каждого макета — точно его вёрстка
-          for (const v of variants) {
-            const png = path.join(out, dir, `render-${Math.round(v.width)}.png`);
-            const r = await renderPage(browser, path.join(out, dir, 'index.html'), { width: v.width, height: v.height, scale: pkg.scale, out: png });
-            const d = comparePng(path.join(out, v.dir, 'render.png'), png, path.join(out, dir, `diff-${Math.round(v.width)}.png`));
-            const geo = checkGeometry(v.tree, r.boxes.filter((b) => b.w > 0 || b.h > 0));
-            entry.exact.push({ width: Math.round(v.width), same: d.mismatched === 0 && geo.failed === 0, percent: d.percent });
-          }
-          // между ширинами и уже самого узкого — без горизонтальной прокрутки
-          const ws = variants.map((v) => v.width);
-          const probes = [Math.max(280, Math.round(ws[0] * 0.8)), ...ws.slice(1).map((w, i) => Math.round((w + ws[i]) / 2)), Math.round(ws[ws.length - 1] * 1.25)];
-          for (const w of probes) {
-            const r = await renderPage(browser, path.join(out, dir, 'index.html'), { width: w, height: 800, scale: 1, out: null });
-            entry.overflow.push({ width: w, ok: !r.overflowX });
-          }
+        const variants = g.members.map((i) => ({ ...fwPages[i], fluid: false }));
+        // «резиновые» версии макетов: тот же генератор с правилами растяжения
+        const writeFluid = (v) => {
+          const fg = generateFrame(v.tree, { ...v.gen, fluid: true, fluidSkip: v.skip, tokens, assetUrl: (rel) => `../assets/${rel}`, extraCss, semantic: args.semantic });
+          fs.writeFileSync(path.join(out, v.dir, 'fluid.html'), fg.html);
+          fs.writeFileSync(path.join(out, v.dir, 'fluid.css'), fg.css);
+        };
+        for (const v of variants) {
+          if (v.gen.mode === 'absolute') continue; // полностью абсолютная вёрстка не растягивается
+          v.skip = new Set();
+          v.parentOf = new Map();
+          (function walk(n) { for (const c of n.children || []) { v.parentOf.set(c.id, n.id); walk(c); } })(v.tree);
+          writeFluid(v);
+          v.fluid = !!browser;
         }
+        let dir = writeResponsive(out, g, variants);
+        const entry = { name: g.name, dir, widths: variants.map((v) => Math.round(v.width)), exact: [], overflow: [], fluid: [] };
+        if (browser) {
+          const page = () => path.join(out, dir, 'index.html');
+          const ws = variants.map((v) => v.width);
+          // текстовые слои макета: на промежуточной ширине не должны налезать друг на друга и вылезать за экран
+          const textIds = (tree) => { const o = []; (function w(n) { if (n.visible === false) return; if (n.type === 'TEXT') o.push(n); (n.children || []).forEach(w); })(tree); return o; };
+          const overlap = (a, b) => Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x) > 1 && Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y) > 1;
+          const checkRange = async (i) => {
+            const v = variants[i];
+            const hi = i < ws.length - 1 ? ws[i + 1] - 1 : Math.round(ws[i] * 1.25);
+            const probes = [...new Set([Math.round((ws[i] + hi) / 2), Math.round(hi)])].filter((w) => w > ws[i]);
+            const texts = textIds(v.tree);
+            const out2 = [];
+            for (const w of probes) {
+              const r = await renderPage(browser, page(), { width: w, height: v.height, scale: 1, out: null });
+              const at = new Map(r.boxes.filter((b) => b.w > 0 || b.h > 0).map((b) => [b.id, b]));
+              const why = [];
+              if (r.overflowX) why.push('горизонтальная прокрутка');
+              const tb = texts.map((t) => [t, at.get(t.id)]).filter(([, b]) => b);
+              const outside = tb.filter(([, b]) => b.x < -0.5 || b.x + b.w > w + 0.5);
+              if (outside.length) why.push(`текст за краем: ${outside[0][0].name}`);
+              let clash = null;
+              for (let a = 0; !clash && a < tb.length; a++) for (let c = a + 1; c < tb.length; c++) {
+                if (overlap(tb[a][1], tb[c][1]) && !overlap(tb[a][0], tb[c][0])) { clash = [tb[a][0].name, tb[c][0].name]; break; }
+              }
+              if (clash) why.push(`текст налезает: ${clash.join(' / ')}`);
+              // блоки на всю ширину макета (фоны секций, шапка) и на экране должны быть на всю ширину
+              const bleed = (v.tree.children || []).filter((n) => n.visible !== false && n.x <= 0.5 && n.x + n.w >= v.tree.w - 0.5 && n.w > 0);
+              const short = v.fluid ? bleed.filter((n) => { const b = at.get(n.id); return b && b.w < w - 1; }) : [];
+              if (short.length) why.push(`не на всю ширину: ${short[0].name}`);
+              out2.push({ width: w, ok: !why.length, why });
+            }
+            return out2;
+          };
+          // на ширине макета — ровно его вёрстка; «резиновая» версия, которая не совпала или ломается между ширинами, заменяется фиксированной
+          for (let round = 0; round < variants.length * 4 + 2; round++) {
+            entry.exact = [];
+            let changed = false;
+            for (const [i, v] of variants.entries()) {
+              const png = path.join(out, dir, `render-${Math.round(v.width)}.png`);
+              const r = await renderPage(browser, page(), { width: v.width, height: v.height, scale: pkg.scale, out: png });
+              const d = comparePng(path.join(out, v.dir, 'render.png'), png, path.join(out, dir, `diff-${Math.round(v.width)}.png`));
+              const geo = checkGeometry(v.tree, r.boxes.filter((b) => b.w > 0 || b.h > 0));
+              const same = d.mismatched === 0 && geo.failed === 0;
+              entry.exact.push({ width: Math.round(v.width), same, percent: d.percent });
+              // не совпало на ширине макета: отключаем растяжение только у родителей несошедшихся слоёв (до 3 раз)
+              if (!same && v.fluid && geo.failed && (v.tries = (v.tries || 0) + 1) <= 3) {
+                for (const i of geo.issues) { const p = v.parentOf.get(i.id); if (p) v.skip.add(p); }
+                writeFluid(v); changed = true;
+              } else if (!same && v.fluid) { v.fluid = false; changed = true; entry.rejected = { ...entry.rejected, [Math.round(v.width)]: `на ширине макета расходится (${d.percent.toFixed(3)}%, геометрия ${geo.failed})` }; }
+            }
+            if (!changed) {
+              entry.overflow = [];
+              for (const [i, v] of variants.entries()) {
+                const probes = await checkRange(i);
+                entry.overflow.push(...probes);
+                if (v.fluid && probes.some((p) => !p.ok)) {
+                  v.fluid = false; changed = true;
+                  entry.rejected = { ...entry.rejected, [Math.round(v.width)]: probes.filter((p) => !p.ok).map((p) => `${p.width}px: ${p.why.join(', ')}`).join('; ') };
+                }
+              }
+            }
+            if (!changed) break;
+            dir = writeResponsive(out, g, variants);
+          }
+          // уже самого узкого — пропорциональное уменьшение
+          const narrow = Math.max(280, Math.round(ws[0] * 0.8));
+          const rn = await renderPage(browser, page(), { width: narrow, height: 800, scale: 1, out: null });
+          entry.overflow.unshift({ width: narrow, ok: !rn.overflowX });
+        }
+        entry.fluid = variants.map((v) => v.fluid);
         const ok = entry.exact.every((e) => e.same) && entry.overflow.every((e) => e.ok);
-        console.log(`Адаптивная страница «${g.name}» (${entry.widths.join(' / ')}): ${browser ? (ok ? 'на каждой ширине совпадает с макетом, без горизонтальной прокрутки' : 'ЕСТЬ РАСХОЖДЕНИЯ') : 'собрана'} → ${dir}/`);
+        const fl = entry.fluid.filter(Boolean).length;
+        const flTxt = browser ? `; между ширинами ${fl === variants.length ? 'тянется' : fl ? `тянется у ${fl} из ${variants.length} макетов` : 'макет по центру'}` : '';
+        console.log(`Адаптивная страница «${g.name}» (${entry.widths.join(' / ')}): ${browser ? (ok ? 'на каждой ширине совпадает с макетом, без горизонтальной прокрутки' : 'ЕСТЬ РАСХОЖДЕНИЯ') : 'собрана'}${flTxt} → ${dir}/`);
         if (browser && !ok) process.exitCode = 2;
         responsive.push({ ...entry, ok, components: g.members.map((i) => fwPages[i]) });
       }

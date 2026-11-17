@@ -294,6 +294,14 @@ function build(n, G, parentAbs, origin, ctx, inst) {
   const L = layoutOf(n);
   if (L) o.layout = L;
   o.layoutPositioning = n.stackPositioning === 'ABSOLUTE' ? 'ABSOLUTE' : 'AUTO';
+  // constraints и Fill в Auto Layout — для «резиновой» вёрстки (как constraints / layoutSizing* в Figma API)
+  const KC = { MIN: 'MIN', CENTER: 'CENTER', MAX: 'MAX', STRETCH: 'STRETCH', SCALE: 'SCALE', FIXED_MIN: 'MIN', FIXED_MAX: 'MAX' };
+  o.constraints = { h: KC[n.horizontalConstraint] || 'MIN', v: KC[n.verticalConstraint] || 'MIN' };
+  const par = n.parentIndex && G.nodes.get(gid(n.parentIndex.guid));
+  if (par && (par.stackMode === 'HORIZONTAL' || par.stackMode === 'VERTICAL')) {
+    const grow = n.stackChildPrimaryGrow > 0, str = n.stackChildAlignSelf === 'STRETCH';
+    o.sizing = par.stackMode === 'HORIZONTAL' ? { h: grow ? 'FILL' : 'FIXED', v: str ? 'FILL' : 'FIXED' } : { h: str ? 'FILL' : 'FIXED', v: grow ? 'FILL' : 'FIXED' };
+  }
 
   if (n.type === 'TEXT') {
     o.text = textOf(n, ctx);

@@ -140,7 +140,98 @@ function textEl(node, ctx) {
   return { tag: 'span', cls: inner, attrs: [], children: spans, inline: true, kind: 'text' };
 }
 
-function buildEl(box, place, ctx, inPhrasing = false) {
+// ---------------------------------------------------------------------------------------------
+// «Резиновая» вёрстка между брейкпоинтами (ctx.fluid): контейнер шире макета → дети ведут себя по
+// constraints Figma (MIN/CENTER/MAX/STRETCH/SCALE), а в Auto Layout — по Fill. Нет данных — по геометрии.
+// Все правки построены так, что на ширине макета раскладка совпадает с исходной до пикселя
+// (это проверяется рендером): margin:auto и flex-grow делят нулевой остаток.
+// ---------------------------------------------------------------------------------------------
+
+/** Как ребёнок держится по горизонтали, когда родитель шире макета. */
+export function anchorOf(c, parentRect, parentNode) {
+  const r = c.rect, n = c.node;
+  const lg = r.x - parentRect.x, rg = parentRect.x + parentRect.w - (r.x + r.w);
+  const hasImage = (n?.fills || []).some((f) => f.type === 'IMAGE' && f.visible !== false);
+  // тянуть можно контейнеры, прямоугольники-фоны и линии, текст (перенос строк); не картинки, векторы и повёрнутое
+  const canStretch = c.kind === 'wrap' || (!!n && !n.svg && !hasImage && !isTransformed(n));
+  // на всю ширину родителя (фон секции, шапка) — тянется при любых constraints: по центру или слева
+  // такой блок оставил бы пустую полосу сбоку
+  if (canStretch && Math.abs(lg) <= 0.5 && Math.abs(rg) <= 0.5 && n?.type !== 'TEXT') return 'STRETCH';
+  // MIN — значение по умолчанию в Figma, почти никто его не меняет: это «нет данных», решает геометрия
+  const k = n?.constraints?.h && n.constraints.h !== 'MIN' ? n.constraints.h : null;
+  if (k && parentNode && !(parentNode.layout && parentNode.layout.mode !== 'NONE' && n.layoutPositioning !== 'ABSOLUTE')) {
+    if ((k === 'STRETCH' || k === 'SCALE') && canStretch) return 'STRETCH';
+    if (k === 'STRETCH' || k === 'SCALE') return Math.abs(lg - rg) <= 1 ? 'CENTER' : 'MIN';
+    return k; // MIN | CENTER | MAX
+  }
+  // по геометрии: поля по краям маленькие (≤32px или ≤8% ширины) и блок широкий — тянется (мобильная
+  // вёрстка «на всю ширину с отступами»); широкие поля по центру — контейнер фиксированной ширины
+  const small = (g) => g <= Math.max(32, parentRect.w * 0.08);
+  const wide = r.w >= parentRect.w * 0.6;
+  if (canStretch && wide && small(Math.max(lg, 0)) && small(Math.max(rg, 0)) && (n?.type !== 'TEXT' || Math.abs(lg - rg) <= 1 || lg <= rg)) return 'STRETCH';
+  if (Math.abs(lg - rg) <= 1) return 'CENTER';
+  if (rg < lg && rg <= parentRect.w * 0.25) return 'MAX';
+  return 'MIN';
+}
+
+/** Инлайн-правки для ребёнка растущего контейнера; возвращает { style, grow }. */
+function fluidChild(parent, child, index, places, kids) {
+  const pr = parent.rect, r = child.rect;
+  const lg = r.x - pr.x, rg = pr.x + pr.w - (r.x + r.w);
+  const n = child.node;
+  if (parent.flow === 'figma') {
+    const L = parent.node.layout;
+    const fill = n?.sizing?.h === 'FILL';
+    if (L.mode === 'HORIZONTAL') return fill ? { style: 'flex-grow: 1;', grow: true } : { style: '', grow: false };
+    // вертикальный Auto Layout: по горизонтали — поперечная ось
+    // Fill — тянется; Fixed во всю ширину содержимого (типичная секция в вертикальном Auto Layout) — тоже
+    const cx = pr.x + (L.padding?.[3] || 0), cw = pr.w - (L.padding?.[1] || 0) - (L.padding?.[3] || 0);
+    const full = Math.abs(r.x - cx) <= 0.5 && Math.abs(r.x + r.w - (cx + cw)) <= 0.5;
+    if (fill || (full && n?.type !== 'TEXT' && anchorOf(child, { x: cx, w: cw }, null) === 'STRETCH')) {
+      return { style: 'align-self: stretch; width: auto;', grow: true };
+    }
+    return { style: '', grow: false };
+  }
+  const a = anchorOf(child, pr, parent.node);
+  if (parent.flow === 'abs') {
+    if (a === 'CENTER') return { style: `left: calc(50% - ${px(pr.w / 2 - lg)});`, grow: false };
+    if (a === 'MAX') return { style: `left: auto; right: ${px(rg)};`, grow: false };
+    if (a === 'STRETCH') return { style: `right: ${px(rg)}; width: auto;`, grow: true };
+    return { style: '', grow: false };
+  }
+  if (parent.flow === 'col') {
+    // через проценты, а не margin:auto — так работает и для блока шире родителя (auto не бывает отрицательным)
+    if (a === 'CENTER') return { style: `margin-left: calc(50% - ${px(pr.w / 2 - lg)});`, grow: false };
+    if (a === 'MAX') return { style: `margin-left: calc(100% - ${px(pr.w - lg)});`, grow: false };
+    if (a === 'STRETCH') return { style: `align-self: stretch; width: auto; margin-right: ${px(rg)};`, grow: true };
+    return { style: '', grow: false };
+  }
+  if (parent.flow === 'row') {
+    // строка: свободное место уходит в самый большой промежуток (логотип слева — меню справа)
+    const gaps = kids.map((k, i) => (i === 0 ? -1 : k.rect.x - (kids[i - 1].rect.x + kids[i - 1].rect.w)));
+    const sorted = gaps.slice(1).sort((a, b) => b - a);
+    // явный разрыв: самый большой промежуток заметно больше остальных (иначе это ровный ряд карточек)
+    const big = sorted[0] >= 24 && (sorted.length === 1 || sorted[0] >= sorted[1] * 2 + 8) ? sorted[0] : -1;
+    const at = gaps.indexOf(big);
+    const firstL = kids[0].rect.x - pr.x, last = kids[kids.length - 1], lastR = pr.x + pr.w - (last.rect.x + last.rect.w);
+    let style = '';
+    if (big > 0) {
+      if (index === at) style = 'margin-left: auto;';
+      if (index === kids.length - 1) style += ` margin-right: ${px(lastR)};`;
+    } else if (Math.abs(firstL - lastR) <= 1) {
+      // ряд по центру
+      if (index === 0) style = 'margin-left: auto;';
+      if (index === kids.length - 1) style += ' margin-right: auto;';
+    } else if (lastR < firstL && lastR <= pr.w * 0.25) {
+      if (index === 0) style = 'margin-left: auto;';
+      if (index === kids.length - 1) style += ` margin-right: ${px(lastR)};`;
+    }
+    return { style: style.trim(), grow: false };
+  }
+  return { style: '', grow: false };
+}
+
+function buildEl(box, place, ctx, inPhrasing = false, grow = false) {
   const node = box.node;
   const sem = node && box.kind === 'node' && ctx.semantic ? ctx.semantic.get(node.id) : null;
   let tag = sem?.tag || 'div';
@@ -208,9 +299,18 @@ function buildEl(box, place, ctx, inPhrasing = false) {
     kids = [svgImg(node, ctx)];
     inlineKids = true;
   } else {
-    children.forEach((c, i) => kids.push(buildEl(c, places[i], ctx, childPhrasing)));
+    const fluid = ctx.fluid && grow && !box.pinned && !(node && ctx.fluidSkip?.has(node.id));
+    children.forEach((c, i) => {
+      const f = fluid ? fluidChild(box, c, i, places, children) : { style: '', grow: false };
+      const el = buildEl(c, places[i], ctx, childPhrasing, f.grow);
+      if (f.style) el.style = `${el.style ? el.style + ' ' : ''}${f.style}`;
+      kids.push(el);
+    });
     for (const a of box.absChildren || []) {
-      kids.push(buildEl(a, { position: 'absolute', left: a.rect.x - box.rect.x, top: a.rect.y - box.rect.y }, ctx, childPhrasing));
+      const f = fluid ? fluidChild({ ...box, flow: 'abs' }, a, 0, [], [a]) : { style: '', grow: false };
+      const el = buildEl(a, { position: 'absolute', left: a.rect.x - box.rect.x, top: a.rect.y - box.rect.y }, ctx, childPhrasing, f.grow);
+      if (f.style) el.style = `${el.style} ${f.style}`;
+      kids.push(el);
     }
   }
 
@@ -259,14 +359,16 @@ function inlineHtml(el) {
  * Генерирует страницу для одного фрейма.
  * @returns {{ html: string, css: string, stats: object }}
  */
-export function generateFrame(tree, { mode = 'flow', absIds = null, tokens, assetUrl, title, extraCss = [], semantic = true, names = null }) {
+export function generateFrame(tree, { mode = 'flow', absIds = null, fluid = false, fluidSkip = null, tokens, assetUrl, title, extraCss = [], semantic = true, names = null }) {
   const styles = new StyleRegistry();
   const sem = semantic ? analyzeSemantics(tree) : null;
   // имена от ИИ (если включён) — только для безликих слоёв; теги остаются алгоритмическими
   if (sem && names) for (const [id, name] of names) { const e = sem.get(id); if (e) e.name = className(name); }
-  const ctx = { styles, tokens, assetUrl, semantic: sem, downgrade: new Set() };
+  const ctx = { styles, tokens, assetUrl, semantic: sem, downgrade: new Set(), fluid, fluidSkip };
   const root = buildBox(tree, { mode, absIds });
-  const rootEl = buildEl(root, null, ctx);
+  const rootEl = buildEl(root, null, ctx, false, fluid);
+  // не уже макета: ниже его ширины страница уменьшается целиком (zoom), а не сжимается
+  if (fluid) rootEl.style = `${rootEl.style ? rootEl.style + ' ' : ''}width: 100%; min-width: ${px(tree.w)};`;
   const body = htmlOf(rootEl, 1);
 
   // полнота: каждый видимый слой должен попасть в вёрстку (кроме вобранных фонов и содержимого векторов)

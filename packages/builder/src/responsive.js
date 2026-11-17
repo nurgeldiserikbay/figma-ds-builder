@@ -90,14 +90,18 @@ export function responsiveCss(widths, prefix = 'bp') {
 
 const bodyOf = (html) => (html.match(/<body>\n?([\s\S]*?)\n?<\/body>/) || [, ''])[1];
 
-/** Пишет адаптивную страницу. variants — по возрастанию ширины: { dir, width } (их index.html уже собраны и проверены). */
+/**
+ * Пишет адаптивную страницу. variants — по возрастанию ширины: { dir, width, fluid? }.
+ * fluid — взять «резиновую» версию макета (fluid.html / fluid.css рядом с index.html), иначе — фиксированную.
+ */
 export function writeResponsive(siteDir, group, variants) {
   const dir = `${className(group.name) || 'page'}.responsive`;
+  const files = (v) => (v.fluid ? ['fluid.html', 'fluid.css'] : ['index.html', 'styles.css']);
   const base = fs.readFileSync(path.join(siteDir, variants[0].dir, 'index.html'), 'utf8');
   const head = base.slice(0, base.indexOf('<body>')).replace(/<title>[^<]*<\/title>/, `<title>${group.name.replace(/[<&]/g, '')}</title>`).replace('<link rel="stylesheet" href="styles.css">',
-    variants.map((v) => `<link rel="stylesheet" href="../${v.dir}/styles.css">`).join('\n'));
+    variants.map((v) => `<link rel="stylesheet" href="../${v.dir}/${files(v)[1]}">`).join('\n'));
   const smallest = Math.round(variants[0].width);
-  const bodies = variants.map((v, i) => `<div class="bp bp-${i}" data-width="${Math.round(v.width)}">\n${bodyOf(fs.readFileSync(path.join(siteDir, v.dir, 'index.html'), 'utf8'))}\n</div>`);
+  const bodies = variants.map((v, i) => `<div class="bp bp-${i}${v.fluid ? ' bp-fluid' : ''}" data-width="${Math.round(v.width)}">\n${bodyOf(fs.readFileSync(path.join(siteDir, v.dir, files(v)[0]), 'utf8'))}\n</div>`);
   const html = `${head.replace('</head>', `<style>\n${responsiveCss(variants.map((v) => v.width))}\n</style>\n</head>`)}<body>
 ${bodies.join('\n')}
 <script>

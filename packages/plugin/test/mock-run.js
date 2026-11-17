@@ -54,6 +54,7 @@ function mockNode(t, parent) {
     clipsContent: !!t.clipsContent, isMask: !!t.isMask,
     layoutMode: t.layout ? t.layout.mode : 'NONE',
     layoutPositioning: t.layoutPositioning || 'AUTO',
+    constraints: { horizontal: t.constraints?.h || 'MIN', vertical: t.constraints?.v || 'MIN' },
     async exportAsync(o) {
       if (o.format === 'PNG') return pngBytes;
       return new TextEncoder().encode('<svg xmlns="http://www.w3.org/2000/svg"/>');
@@ -133,6 +134,7 @@ for (const [id, a] of A) {
   if (!b) { problems.push(`нет узла ${id}`); continue; }
   for (const k of ['x', 'y', 'w', 'h']) if (Math.abs(a[k] - b[k]) > 0.01) problems.push(`${a.name}.${k}: ${a[k]} → ${b[k]}`);
   if (a.text && a.text.characters !== b.text?.characters) problems.push(`${a.name}: текст`);
+  if ((a.constraints?.h || 'MIN') !== b.constraints?.h) problems.push(`${a.name}: constraints ${a.constraints?.h || 'MIN'} → ${b.constraints?.h}`);
 }
 const fonts = JSON.parse(fs.readFileSync(path.join(outDir, 'package/fonts.json'), 'utf8'));
 console.log(`пакет: файлов ${pkgFiles.length}; PNG: ${pngFiles.map((f) => f.path).join(', ')}`);

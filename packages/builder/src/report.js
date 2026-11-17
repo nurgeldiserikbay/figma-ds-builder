@@ -73,8 +73,11 @@ export function buildReport({ file, threshold, textThreshold, results, responsiv
 ${responsive.length ? `<section class="card"><header><h2>Адаптивные страницы</h2></header>
 ${responsive.map((r) => `<p class="meta"><b>${esc(r.name)}</b> — макеты ${r.widths.join(' / ')} px · <a href="${esc(r.dir)}/index.html">открыть</a><br>
 На ширине макета: ${r.exact.map((e) => `${e.width}px ${e.same ? '✓' : '✗ ' + e.percent.toFixed(3) + '%'}`).join(' · ') || '—'}<br>
-Без горизонтальной прокрутки: ${r.overflow.map((e) => `${e.width}px ${e.ok ? '✓' : '✗'}`).join(' · ') || '—'}</p>`).join('\n')}
-<p class="meta">Между ширинами показывается ближайший меньший макет по центру, уже самого узкого — пропорциональное уменьшение.</p></section>` : ''}
+Между макетами: ${r.overflow.map((e) => `${e.width}px ${e.ok ? '✓' : `✗ ${esc((e.why || []).join(', '))}`}`).join(' · ') || '—'}<br>
+${(r.fluid || []).map((f, i) => `${r.widths[i]}px → ${f ? 'тянется до следующего макета' : `по центру, фиксированной ширины${r.rejected?.[r.widths[i]] ? ` (растянутая версия отклонена — ${esc(r.rejected[r.widths[i]])})` : ''}`}`).join('<br>')}</p>`).join('\n')}
+<p class="meta">«Тянется» — блоки растягиваются по constraints Figma и Fill в Auto Layout, а без них — по геометрии;
+на ширине макета страница совпадает с ним пиксель в пиксель. Если растянутая версия где-то ломается (текст налезает или
+вылезает за край, фон секции не на всю ширину), остаётся фиксированная по центру. Уже самого узкого макета — пропорциональное уменьшение.</p></section>` : ''}
 ${cards}
 </main>
 <script>

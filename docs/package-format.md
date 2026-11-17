@@ -93,6 +93,7 @@ ID узлов Figma содержат `:` и `;` — в именах файлов
   // как узел ведёт себя внутри Auto Layout родителя
   "layoutPositioning": "AUTO",          // AUTO | ABSOLUTE
   "sizing": { "h": "FIXED", "v": "HUG" }, // FIXED | HUG | FILL
+  "constraints": { "h": "STRETCH", "v": "MIN" }, // MIN | CENTER | MAX | STRETCH | SCALE — поведение при растяжении родителя
 
   // только для TEXT
   "text": {
