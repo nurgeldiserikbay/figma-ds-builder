@@ -2,11 +2,18 @@ name: Программа с окном
 
 # Установщики DS Builder: Windows (.exe), macOS Apple Silicon (.dmg), Linux (.AppImage).
 # Перед выкладкой каждая собранная программа проверяется: собирает тестовый макет без окна.
-# По тегу v* — установщики прикладываются к GitHub Release; вручную (Run workflow) — только к артефактам запуска.
+# По тегу v* — установщики прикладываются к GitHub Release.
+# Вручную (Actions → «Программа с окном» → Run workflow): без версии — только артефакты запуска;
+# с версией (например 0.2.0) — после проверки на трёх ОС создаётся выпуск v0.2.0 со всеми установщиками и плагином.
 on:
   push:
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      version:
+        description: 'Выпустить версию (например 0.2.0; пусто — только собрать)'
+        required: false
+        default: ''
 
 permissions:
   contents: write
@@ -79,3 +86,29 @@ jobs:
           shopt -s nullglob
           files=(packages/desktop/release/*.exe packages/desktop/release/*.dmg packages/desktop/release/*.AppImage)
           gh release upload "$GITHUB_REF_NAME" "${files[@]}" --clobber
+
+  publish:
+    needs: build
+    if: github.event_name == 'workflow_dispatch' && inputs.version != ''
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Версия совпадает с программой
+        run: |
+          p=$(node -p "require('./packages/builder/package.json').version")
+          d=$(node -p "require('./packages/desktop/package.json').version")
+          [ "${{ inputs.version }}" = "$p" ] && [ "$p" = "$d" ] || { echo "Ввели ${{ inputs.version }}, а в package.json: программа $p, окно $d"; exit 1; }
+      - uses: actions/download-artifact@v4
+        with: { path: dist, merge-multiple: true }
+      - name: Архив плагина
+        run: |
+          node packages/plugin/build.js
+          (cd packages/plugin/dist && zip -qr "$GITHUB_WORKSPACE/dist/DS-Builder-Figma-plugin-${{ inputs.version }}.zip" .)
+      - name: Выпуск
+        env: { GH_TOKEN: '${{ github.token }}' }
+        run: |
+          ls -la dist
+          gh release create "v${{ inputs.version }}" dist/* --target "$GITHUB_SHA" --title "DS Builder ${{ inputs.version }}" --generate-notes \
+            --notes "Установщики программы: Windows (.exe), macOS Apple Silicon (.dmg), Linux (.AppImage). Плагин для Figma входит в программу; отдельно — DS-Builder-Figma-plugin-*.zip. Каждая сборка проверена на тестовом макете на всех трёх системах."
