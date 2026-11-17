@@ -23,6 +23,8 @@ export function buildReport({ file, threshold, textThreshold, results }) {
     absolute: ${r.stats.abs || 0} · классов: ${r.stats.classes}${r.stats.tags ? ' · теги: ' + Object.entries(r.stats.tags).map(([t, n]) => `${t} ${n}`).join(', ') : ''}
     · <a href="${esc(r.dir)}/index.html">открыть вёрстку</a></p>
   ${geo}
+  ${r.stats.missing?.length ? `<p class="warn">Не свёрстаны слои (${r.stats.missing.length}): ${r.stats.missing.slice(0, 10).map((m) => esc(m.name)).join(', ')}</p>` : ''}
+  ${r.frameworks ? `<p class="meta">${Object.entries(r.frameworks).map(([fw, x]) => `${fw === 'react' ? 'React' : 'Vue'}: ${x.same ? 'совпадает с HTML ✓' : `<b>отличается</b> (${x.percent.toFixed(3)}%, геометрия ${x.geometry})`}`).join(' · ')}</p>` : ''}
   ${r.refine ? `<p class="meta">Автодоработка: ${r.refine.before.toFixed(3)}% → ${r.refine.after.toFixed(3)}%, поправок: ${r.refine.patches.length} (${r.refine.patches.map((p) => esc(p.name)).join(', ')})</p>` : ''}
   ${tries ? `<ul class="meta">${tries}</ul>` : ''}
   ${fonts.length ? `<p class="warn">Не найдены шрифты: ${fonts.join(', ')} — установите их, иначе текст будет отличаться.</p>` : ''}

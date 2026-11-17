@@ -8,15 +8,22 @@
   },
   "scripts": {
     "fixture": "node fixtures/make-fixture.js",
-    "test": "node fixtures/make-fixture.js && node src/cli.js build fixtures/sample --out out/sample"
+    "test": "node fixtures/make-fixture.js && node src/cli.js build fixtures/sample --out out/sample --framework react,vue"
   },
   "engines": {
     "node": ">=20"
   },
   "dependencies": {
+    "esbuild": "^0.28.2",
     "pixelmatch": "^7.1.0",
     "playwright-core": "^1.56.0",
-    "pngjs": "^7.0.0"
+    "pngjs": "^7.0.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "vue": "^3.5.45"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "overrides": {
+    "csstype": "3.1.3"
+  }
 }

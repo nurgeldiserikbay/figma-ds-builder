@@ -112,36 +112,35 @@ function maskCss(m, ctx) {
   return o;
 }
 
+// ---------------------------------------------------------------------------------------------
+// Дерево элементов: из него получаются HTML, JSX (React) и шаблоны Vue — разметка совпадает до элемента.
+// Элемент: { tag, cls, style (строка инлайн-стиля), attrs: [[k, v]], children: [], text, void, inline, id, name, kind }
+// ---------------------------------------------------------------------------------------------
+
 function svgImg(node, ctx, box) {
   const b = box || node.svgBox;
-  return b
-    ? `<img src="${esc(ctx.assetUrl(node.svg))}" alt="" style="position:absolute;left:${px(b.x)};top:${px(b.y)};width:${px(b.w)};height:${px(b.h)};max-width:none">`
-    : `<img src="${esc(ctx.assetUrl(node.svg))}" alt="" style="display:block;width:100%;height:100%">`;
+  return {
+    tag: 'img', void: true, inline: true,
+    attrs: [['src', ctx.assetUrl(node.svg)], ['alt', '']],
+    style: b ? `position:absolute;left:${px(b.x)};top:${px(b.y)};width:${px(b.w)};height:${px(b.h)};max-width:none` : 'display:block;width:100%;height:100%',
+  };
 }
 
-function textHtml(node, ctx) {
+function textEl(node, ctx) {
   const t = node.text || { characters: '', segments: [] };
   const chars = t.characters || '';
   const segs = t.segments?.length ? t.segments : [{ start: 0, end: chars.length }];
-  const spans = segs
-    .map((s) => {
-      const cls = ctx.styles.classFor('t', declarations(segmentCss(s, ctx)));
-      return `<span class="${cls}">${esc(chars.slice(s.start, s.end))}</span>`;
-    })
-    .join('');
+  const spans = segs.map((s) => ({ tag: 'span', cls: ctx.styles.classFor('t', declarations(segmentCss(s, ctx))), text: chars.slice(s.start, s.end), attrs: [], inline: true }));
   const align = { LEFT: 'left', CENTER: 'center', RIGHT: 'right', JUSTIFIED: 'justify' }[t.align] || 'left';
   const noWrap = t.autoResize === 'WIDTH_AND_HEIGHT';
   const inner = ctx.styles.classFor(
     'text',
     declarations({ display: 'block', width: '100%', 'text-align': align, 'white-space': noWrap ? 'pre' : 'pre-wrap', 'overflow-wrap': 'break-word' }),
   );
-  return `<span class="${inner}">${spans}</span>`;
+  return { tag: 'span', cls: inner, attrs: [], children: spans, inline: true, kind: 'text' };
 }
 
-const PHRASING = new Set(['button', 'a', 'span', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p']);
-
-function emit(box, place, ctx, depth, inPhrasing = false) {
-  const pad = '  '.repeat(depth);
+function buildEl(box, place, ctx, inPhrasing = false) {
   const node = box.node;
   const sem = node && box.kind === 'node' && ctx.semantic ? ctx.semantic.get(node.id) : null;
   let tag = sem?.tag || 'div';
@@ -175,8 +174,8 @@ function emit(box, place, ctx, depth, inPhrasing = false) {
   const gap = collapseGap(box.flow, places);
   if (gap) flow.gap = px(gap);
 
-  let inner = '';
-  const parts = [];
+  let kids = [];
+  let inlineKids = false;
   if (rotated) {
     // сам слой — внутри рамки, с точной матрицей Figma (поворот, отражение)
     const t = node.transform, size = node.size || { w: node.w, h: node.h };
@@ -188,29 +187,31 @@ function emit(box, place, ctx, depth, inPhrasing = false) {
     vis.top = px(t[1][2] - box.rect.y);
     vis.transform = `matrix(${[t[0][0], t[1][0], t[0][1], t[1][1]].map((v) => Math.round(v * 1e5) / 1e5).join(', ')}, 0, 0)`;
     vis['transform-origin'] = '0 0';
-    let content = '';
+    let content = [];
     if (node.type === 'TEXT') {
       const va = { TOP: 'flex-start', CENTER: 'center', BOTTOM: 'flex-end' }[node.text?.verticalAlign] || 'flex-start';
       Object.assign(vis, { display: 'flex', 'flex-direction': 'column', 'justify-content': va });
-      content = textHtml(node, ctx);
-    } else if (node.svg && node.svgSpace !== 'box') content = svgImg(node, ctx);
+      content = [textEl(node, ctx)];
+    } else if (node.svg && node.svgSpace !== 'box') content = [svgImg(node, ctx)];
     const icls = ctx.styles.classFor((node.name || 'layer') + '-shape', declarations(vis));
-    parts.push(`${pad}  <div class="${icls}">${content}</div>`);
+    kids.push({ tag: childPhrasing ? 'span' : 'div', cls: icls, attrs: [], children: content, inlineChildren: true, kind: 'shape' });
     // SVG, отрисованный Figma уже с поворотом, — по рамке
-    if (node.svg && node.svgSpace === 'box') parts.push(`${pad}  ${svgImg(node, ctx, node.svgBox || { x: 0, y: 0, w: box.rect.w, h: box.rect.h })}`);
+    if (node.svg && node.svgSpace === 'box') kids.push(svgImg(node, ctx, node.svgBox || { x: 0, y: 0, w: box.rect.w, h: box.rect.h }));
+    // дети повёрнутого слоя — со своими матрицами, внутри рамки
+    children.forEach((c, i) => kids.push(buildEl(c, places[i], ctx, childPhrasing)));
   } else if (node?.type === 'TEXT' && box.kind === 'node') {
     const va = { TOP: 'flex-start', CENTER: 'center', BOTTOM: 'flex-end' }[node.text?.verticalAlign] || 'flex-start';
     Object.assign(flow, { display: 'flex', 'flex-direction': 'column', 'justify-content': va });
-    inner = textHtml(node, ctx);
+    kids = [textEl(node, ctx)];
+    inlineKids = true;
   } else if (node?.svg && box.kind === 'node') {
-    inner = svgImg(node, ctx);
-  }
-  if (!inner) {
-    children.forEach((c, i) => parts.push(emit(c, places[i], ctx, depth + 1, childPhrasing)));
+    kids = [svgImg(node, ctx)];
+    inlineKids = true;
+  } else {
+    children.forEach((c, i) => kids.push(buildEl(c, places[i], ctx, childPhrasing)));
     for (const a of box.absChildren || []) {
-      parts.push(emit(a, { position: 'absolute', left: a.rect.x - box.rect.x, top: a.rect.y - box.rect.y }, ctx, depth + 1, childPhrasing));
+      kids.push(buildEl(a, { position: 'absolute', left: a.rect.x - box.rect.x, top: a.rect.y - box.rect.y }, ctx, childPhrasing));
     }
-    inner = parts.length ? '\n' + parts.join('\n') + '\n' + pad : '';
   }
 
   const all = { ...baseDecl, ...flow };
@@ -218,12 +219,40 @@ function emit(box, place, ctx, depth, inPhrasing = false) {
   const decl = declarations(all);
   const base = box.kind === 'mask' ? (sem?.name || node.name) + '-mask' : sem?.name || (node ? node.name : 'group');
   const cls = ctx.styles.classFor(base, decl);
-  const attrs = [`class="${cls}"`];
-  const st = placementStyle(place);
-  if (st) attrs.push(`style="${st}"`);
-  for (const [k, v] of Object.entries(sem?.attrs || {})) if (tag !== 'div' || k === 'role' || k === 'aria-label') attrs.push(`${k}="${esc(v)}"`);
-  if (node) attrs.push(`data-figma-id="${esc(node.id)}"`, `data-name="${esc(node.name)}"`);
-  return `${pad}<${tag} ${attrs.join(' ')}>${inner}</${tag}>`;
+  const attrs = [];
+  for (const [k, v] of Object.entries(sem?.attrs || {})) if (tag !== 'div' || k === 'role' || k === 'aria-label') attrs.push([k, v]);
+  if (node) attrs.push(['data-figma-id', node.id], ['data-name', node.name]);
+  return {
+    tag, cls, style: placementStyle(place), attrs, children: kids, inlineChildren: inlineKids,
+    id: node?.id, name: sem?.name || (node ? node.name : 'group'), kind: box.kind, component: node?.component || null,
+  };
+}
+
+/** Сериализация в HTML (то же форматирование, что и раньше: блоки с новой строки, текст — в строку). */
+export function htmlOf(el, depth = 1) {
+  const pad = '  '.repeat(depth);
+  if (el.inline || el.tag === 'img') return inlineHtml(el);
+  const attrs = [`class="${el.cls}"`];
+  if (el.style) attrs.push(`style="${el.style}"`);
+  for (const [k, v] of el.attrs) attrs.push(`${k}="${esc(v)}"`);
+  const open = `${pad}<${el.tag} ${attrs.join(' ')}>`;
+  const kids = el.children || [];
+  if (!kids.length) return `${open}</${el.tag}>`;
+  if (el.inlineChildren) return `${open}${kids.map(inlineHtml).join('')}</${el.tag}>`;
+  const lines = kids.map((k) => (k.inline || k.tag === 'img' ? `${pad}  ${inlineHtml(k)}` : htmlOf(k, depth + 1)));
+  return `${open}\n${lines.join('\n')}\n${pad}</${el.tag}>`;
+}
+
+function inlineHtml(el) {
+  if (el.tag === 'img') {
+    const a = el.attrs.map(([k, v]) => `${k}="${esc(v)}"`).join(' ');
+    return `<img ${a} style="${el.style}">`;
+  }
+  if (el.text !== undefined) return `<span class="${el.cls}">${esc(el.text)}</span>`;
+  const attrs = [`class="${el.cls}"`];
+  if (el.style) attrs.push(`style="${el.style}"`);
+  for (const [k, v] of el.attrs || []) attrs.push(`${k}="${esc(v)}"`);
+  return `<${el.tag} ${attrs.join(' ')}>${(el.children || []).map(inlineHtml).join('')}</${el.tag}>`;
 }
 
 /**
@@ -237,7 +266,21 @@ export function generateFrame(tree, { mode = 'flow', tokens, assetUrl, title, ex
   if (sem && names) for (const [id, name] of names) { const e = sem.get(id); if (e) e.name = className(name); }
   const ctx = { styles, tokens, assetUrl, semantic: sem, downgrade: new Set() };
   const root = buildBox(tree, { mode });
-  const body = emit(root, null, ctx, 1);
+  const rootEl = buildEl(root, null, ctx);
+  const body = htmlOf(rootEl, 1);
+
+  // полнота: каждый видимый слой должен попасть в вёрстку (кроме вобранных фонов и содержимого векторов)
+  const emitted = new Set();
+  (function walkEl(e) { if (e.id) emitted.add(e.id); (e.children || []).forEach(walkEl); })(rootEl);
+  const absorbed = new Set();
+  (function walkBox(b) { if (b.bg) absorbed.add(b.bg.id); (b.children || []).forEach(walkBox); (b.absChildren || []).forEach(walkBox); })(root);
+  const missing = [];
+  (function walkTree(n) {
+    if (n.visible === false) return;
+    if (!emitted.has(n.id) && !absorbed.has(n.id)) missing.push({ id: n.id, name: n.name, type: n.type });
+    if (n.type === 'TEXT' || n.svg) return; // их содержимое — в тексте/SVG
+    (n.children || []).forEach(walkTree);
+  })(tree);
   const tagStats = {};
   for (const m of body.matchAll(/<(h[1-6]|p|button|a|nav|header|footer|section|ul|li|span) /g)) tagStats[m[1]] = (tagStats[m[1]] || 0) + 1;
 
@@ -250,6 +293,7 @@ export function generateFrame(tree, { mode = 'flow', tokens, assetUrl, title, ex
   })(root);
   stats.classes = styles.rules.length;
   stats.tags = tagStats;
+  stats.missing = missing;
 
   const css = [
     '/* Сгенерировано figma-ds-builder. Слой токенов — tokens.css */',
@@ -274,5 +318,5 @@ ${body}
 </body>
 </html>
 `;
-  return { html, css, stats };
+  return { html, css, stats, root: rootEl, rules: styles.rules };
 }

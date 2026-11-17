@@ -18,6 +18,8 @@ import { analyzeSemantics } from './semantic.js';
 import { analyzeDesignSystem } from './ds/analyze.js';
 import { exportFiles, toTokens } from './ds/export.js';
 import { familiesOf, ensureFonts, buildFontsCss, defaultCacheDir } from './fonts.js';
+import { findComponents } from './components.js';
+import { preparePages, exportReact, exportVue, renderReact, renderVue, checkPageHtml } from './frameworks.js';
 
 const HELP = `
 ds-build analyze <пакет | пакет.zip> [--out папка] [--delta-e 3] [--min-uses 2]
@@ -41,6 +43,9 @@ ds-build build <пакет | пакет.zip> [опции]
                        none — только шрифты, установленные в системе
   --css <файл>         подключить дополнительный CSS ко всем страницам (например, свои @font-face)
   --open               открыть отчёт в браузере после сборки
+  --framework <список> react, vue или react,vue: проект на Vite с компонентами (повторяющиеся блоки →
+                       компоненты с параметрами) и страницами; каждая страница проверяется — серверный
+                       рендер должен совпасть с HTML-версией пиксель в пиксель
   --no-refine          не подбирать поправки после сверки с эталоном
   --no-semantic        без семантических тегов (только div)
   --ai                 понятные имена классов от ИИ для слоёв с безликими именами (Frame 237…).
@@ -52,7 +57,7 @@ ds-build build <пакет | пакет.zip> [опции]
 `;
 
 function parseArgs(argv) {
-  const a = { _: [], frames: [], css: [], layout: 'auto', threshold: 0.1, textThreshold: 0.5, out: 'out', verify: true, refine: true, analyze: true, fonts: 'auto', semantic: true, ai: false };
+  const a = { _: [], frames: [], css: [], frameworks: [], layout: 'auto', threshold: 0.1, textThreshold: 0.5, out: 'out', verify: true, refine: true, analyze: true, fonts: 'auto', semantic: true, ai: false };
   for (let i = 0; i < argv.length; i++) {
     const k = argv[i];
     if (k === '--out') a.out = argv[++i];
@@ -68,6 +73,7 @@ function parseArgs(argv) {
     else if (k === '--ai') a.ai = true;
     else if (k === '--fonts') a.fonts = argv[++i];
     else if (k === '--open') a.open = true;
+    else if (k === '--framework') a.frameworks.push(...argv[++i].split(',').map((x) => x.trim().toLowerCase()).filter(Boolean));
     else if (k === '--delta-e') a.deltaE = parseFloat(argv[++i]);
     else if (k === '--min-uses') a.minUses = parseInt(argv[++i], 10);
     else if (k === '-h' || k === '--help') a.help = true;
@@ -171,6 +177,7 @@ async function build(args) {
   console.log(`Пакет: ${pkg.manifest.file} · фреймов: ${frames.length} · токенов цвета: ${tokens.count}`);
   const browser = args.verify ? await openBrowser() : null;
   const results = [];
+  const fwPages = [];
   const modes = args.layout === 'auto' ? ['flow', 'absolute'] : [args.layout];
 
   try {
@@ -236,7 +243,9 @@ async function build(args) {
         }
         attempts.push(att);
         if (attemptDir !== fdir && hasRef) fs.copyFileSync(path.join(fdir, 'reference.png'), path.join(attemptDir, 'reference.png'));
-        att.ok = (!att.geometry || att.geometry.failed === 0) && (!hasRef || pixelOk(att.diff, args));
+        const complete = !gen.stats.missing.length;
+        if (!complete) console.log(`  ✗ не свёрстаны слои: ${gen.stats.missing.slice(0, 5).map((m) => m.name).join(', ')}${gen.stats.missing.length > 5 ? '…' : ''}`);
+        att.ok = complete && (!att.geometry || att.geometry.failed === 0) && (!hasRef || pixelOk(att.diff, args));
         if (att.ok || (!hasRef && !att.geometry)) { chosen = att; break; }
       }
       // чистая раскладка (первая попытка) остаётся, если запасная не лучше заметно (на 20%)
@@ -255,6 +264,7 @@ async function build(args) {
       for (const a of attempts) if (a.dir !== fdir) fs.rmSync(a.dir, { recursive: true, force: true });
 
       const pass = browser ? !!chosen.ok : null;
+      fwPages.push({ title: f.name, dir: dirName, root: chosen.gen.root, tree, width: f.width, height: f.height, result: results.length });
       results.push({
         name: f.name, id: f.id, width: f.width, height: f.height, dir: dirName,
         mode: chosen.mode, stats: chosen.gen.stats, fonts: chosen.fonts, diff: chosen.diff, geometry: chosen.geometry, refine: chosen.refine, pixels: pixelSplit(chosen.diff), pass,
@@ -266,6 +276,37 @@ async function build(args) {
       const ref = chosen.refine ? ` (до автодоработки ${chosen.refine.before.toFixed(3)}%, поправок ${chosen.refine.patches.length})` : '';
       const status = `${pix}${ref} · ${geo} · ${pass === null ? '' : pass ? 'OK' : 'FAIL'}`;
       console.log(`  ${f.name}: ${chosen.mode} · ${status}`);
+    }
+    // компоненты и фреймворки: из того же дерева элементов; проверка — совпадение с HTML-версией
+    if (args.frameworks.length && fwPages.length) {
+      const pages = preparePages(fwPages);
+      const comps = findComponents(pages);
+      console.log(`Компоненты: ${comps.components.length}${comps.components.length ? ' — ' + comps.components.slice(0, 8).map((c) => `${c.name}×${c.instances.length}${c.props.length ? ` (${c.props.map((p) => p.name).join(', ')})` : ''}`).join(', ') : ''}`);
+      for (const fw of args.frameworks) {
+        if (!['react', 'vue'].includes(fw)) { console.log(`  неизвестный фреймворк: ${fw}`); continue; }
+        const dir = fw === 'react' ? exportReact(out, pages, comps) : exportVue(out, pages, comps);
+        console.log(`${fw === 'react' ? 'React' : 'Vue'}: ${path.relative(process.cwd(), dir) || dir}`);
+        if (!browser) continue;
+        const markup = fw === 'react' ? await renderReact(pages, comps) : await renderVue(pages, comps);
+        for (const p of pages) {
+          const html = fs.readFileSync(path.join(out, p.dir, 'index.html'), 'utf8');
+          const chk = path.join(out, `${p.dir}.${fw}-check`);
+          fs.mkdirSync(chk, { recursive: true });
+          fs.writeFileSync(path.join(chk, 'index.html'), checkPageHtml(html, markup[p.component], p.dir));
+          const r = await renderPage(browser, path.join(chk, 'index.html'), { width: p.width, height: p.height, scale: pkg.scale, out: path.join(chk, 'render.png') });
+          const d = comparePng(path.join(out, p.dir, 'render.png'), path.join(chk, 'render.png'), path.join(chk, 'diff.png'));
+          const g = checkGeometry(p.tree, r.boxes);
+          const same = d.mismatched === 0 && g.failed === 0;
+          results[p.result].frameworks = { ...(results[p.result].frameworks || {}), [fw]: { percent: d.percent, geometry: `${g.checked - g.failed}/${g.checked}`, same } };
+          console.log(`  ${p.title}: ${fw} ${same ? 'совпадает с HTML' : `ОТЛИЧАЕТСЯ: pixel ${d.percent.toFixed(3)}%, геометрия ${g.checked - g.failed}/${g.checked}`}`);
+          if (same) fs.rmSync(chk, { recursive: true, force: true });
+          else process.exitCode = 2;
+        }
+      }
+      fs.writeFileSync(path.join(out, 'components.json'), JSON.stringify(comps.components.map((c) => ({
+        name: c.name, uses: c.instances.length, props: c.props.map((p) => ({ name: p.name, example: p.sample })),
+        pages: [...new Set(c.instances.map((i) => pages.find((p) => (function has(e) { return e === i || (e.children || []).some(has); })(p.root))?.title))],
+      })), null, 2));
     }
   } finally {
     await browser?.close();
