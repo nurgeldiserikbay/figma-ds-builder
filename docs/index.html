@@ -124,6 +124,22 @@
   .feature p { color: var(--muted); font-size: 17px; max-width: 52ch; }
 
   /* шаги с командами */
+  .downloads { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin: 0 0 40px; }
+  .dl { display: block; padding: 20px 22px; border: 1px solid var(--rule); border-radius: 10px; color: var(--ink); text-decoration: none; }
+  .dl b { display: block; font-size: 20px; font-weight: 600; margin-bottom: 4px; }
+  .dl span { color: var(--muted); font-size: 15px; }
+  .dl:hover { border-color: var(--ink); color: var(--ink); }
+  .dl.mine { border: 1.5px solid var(--select); box-shadow: 0 0 0 3px rgba(13,153,255,.12); }
+  .dl.mine b::after { content: " — ваша система"; font-size: 14px; font-weight: 400; color: var(--select); }
+  details.dev { margin-top: 32px; }
+  details.dev summary { cursor: pointer; color: var(--muted); font-size: 17px; }
+  details.dev > p { color: var(--muted); font-size: 17px; margin: 12px 0; max-width: 64ch; }
+  .usage-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 48px; align-items: start; }
+  .usage-grid .step { grid-template-columns: 48px minmax(0, 1fr); }
+  .app-shot { margin: 30px 0 0; position: sticky; top: 24px; }
+  .app-shot img { display: block; width: 100%; height: auto; border: 1px solid var(--rule); border-radius: 10px; box-shadow: 0 20px 50px rgba(26,32,51,.08); }
+  .app-shot figcaption { color: var(--muted); font-size: 15px; margin-top: 10px; }
+  @media (max-width: 900px) { .downloads, .usage-grid { grid-template-columns: 1fr; } .app-shot { position: static; } }
   .step { display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 20px; padding: 30px 0; border-top: 1px solid var(--rule); }
   .step:last-child { border-bottom: 1px solid var(--rule); }
   .step .n { width: 36px; height: 36px; border: 1.5px solid var(--ink); border-radius: 50%; display: grid; place-items: center; font-weight: 600; font-size: 16px; }
@@ -216,7 +232,7 @@
       </div>
       <p class="lead">Плагин выгружает макеты. Программа на вашем компьютере строит из них дизайн-систему, верстает страницы и сверяет каждую с макетом: положение каждого элемента и каждый пиксель. Подходит и для макетов без стилей, компонентов и Auto Layout.</p>
       <div class="actions">
-        <a class="btn solid" href="#install">Установить</a>
+        <a class="btn solid" href="#install">Скачать программу</a>
         <a class="btn" href="#how">Как это работает</a>
       </div>
     </div>
@@ -363,35 +379,39 @@
 <section id="install" class="block" aria-labelledby="install-title">
   <div class="wrap">
     <h2 id="install-title">Установка</h2>
-    <p class="intro">Один раз, около пяти минут. Нужны Figma Desktop, Node.js 20 или новее и Google Chrome. Работает на macOS, Windows и Linux.</p>
+    <p class="intro">DS Builder ставится как обычная программа, без терминала. Плагин для Figma входит в неё. Нужны Figma Desktop и Google Chrome или Microsoft Edge: в браузере программа проверяет вёрстку.</p>
+    <div class="downloads" role="list">
+      <a class="dl" role="listitem" data-os="win" href="https://github.com/nurgeldiserikbay/figma-ds-builder/releases/latest"><b>Windows</b><span>установщик .exe · Windows 10 и 11</span></a>
+      <a class="dl" role="listitem" data-os="mac" href="https://github.com/nurgeldiserikbay/figma-ds-builder/releases/latest"><b>macOS</b><span>.dmg · Mac на Apple Silicon (M1 и новее)</span></a>
+      <a class="dl" role="listitem" data-os="linux" href="https://github.com/nurgeldiserikbay/figma-ds-builder/releases/latest"><b>Linux</b><span>.AppImage · x64</span></a>
+    </div>
     <div>
       <div class="step">
         <div class="n">1</div>
         <div>
-          <h3>Скачайте и подготовьте</h3>
-          <p>Команды установят зависимости программы и соберут плагин.</p>
-          <div class="code"><pre><code>git clone https://github.com/nurgeldiserikbay/figma-ds-builder
-cd figma-ds-builder
-npm run setup</code></pre><button class="copy" type="button">Копировать</button></div>
+          <h3>Скачайте и установите</h3>
+          <p>Откройте страницу выпуска и скачайте файл для своей системы. Установщики пока без цифровой подписи, поэтому система спросит подтверждение один раз.</p>
+          <p><b>Windows:</b> «Windows защитил ваш компьютер» → «Подробнее» → «Выполнить в любом случае».<br>
+          <b>macOS:</b> если «не удаётся проверить разработчика» — Системные настройки → Конфиденциальность и безопасность → «Всё равно открыть».</p>
         </div>
       </div>
       <div class="step">
         <div class="n">2</div>
         <div>
-          <h3>Подключите плагин</h3>
-          <p>В Figma Desktop: Plugins, Development, Import plugin from manifest, затем файл <code>packages/plugin/dist/manifest.json</code>. Плагин появится под названием «DS Builder — экспорт для вёрстки».</p>
+          <h3>Подключите плагин в Figma</h3>
+          <p>В окне DS Builder нажмите «Плагина ещё нет в Figma?» → «открыть папку с плагином». Затем в Figma Desktop выберите Plugins → Development → Import plugin from manifest и укажите <code>manifest.json</code> из этой папки. Плагин появится под названием «DS Builder — экспорт для вёрстки».</p>
           <p>Локальные плагины работают только в приложении Figma для компьютера.</p>
         </div>
       </div>
-      <div class="step">
-        <div class="n">3</div>
-        <div>
-          <h3>Проверьте установку</h3>
-          <p>Необязательно. Тесты программы и плагина на встроенном макете занимают около минуты.</p>
-          <div class="code"><pre><code>npm test</code></pre><button class="copy" type="button">Копировать</button></div>
-        </div>
-      </div>
     </div>
+    <details class="dev">
+      <summary>Для разработчиков: из исходников</summary>
+      <p>Нужен Node.js 20 или новее. Команды установят зависимости и соберут плагин в <code>packages/plugin/dist</code>; окно программы запускается командой <code>npm run ui</code>.</p>
+      <div class="code"><pre><code>git clone https://github.com/nurgeldiserikbay/figma-ds-builder
+cd figma-ds-builder
+npm run setup
+npm run ui</code></pre><button class="copy" type="button">Копировать</button></div>
+    </details>
   </div>
 </section>
 
@@ -399,44 +419,48 @@ npm run setup</code></pre><button class="copy" type="button">Копироват�
   <div class="wrap">
     <h2 id="usage-title">Работа с макетом</h2>
     <p class="intro">От выгрузки до проверенной вёрстки за несколько минут.</p>
-    <div>
-      <div class="step">
-        <div class="n">1</div>
-        <div>
-          <h3>Выгрузите макеты</h3>
-          <p>Запустите плагин, выберите выделенные фреймы, страницу или весь файл, масштаб 1×, и нажмите «Пакет для вёрстки». Скачается <code>&lt;файл&gt; — ds-package.zip</code>.</p>
-          <p>Для скриншот-тестов есть кнопка «Только PNG макетов».</p>
+    <div class="usage-grid">
+      <div>
+        <div class="step">
+          <div class="n">1</div>
+          <div>
+            <h3>Выгрузите макет</h3>
+            <p>Запустите плагин в Figma. Если ничего не выделено, он выгрузит весь файл: все фреймы всех страниц. Нажмите «Пакет для вёрстки», скачается <code>&lt;файл&gt; — ds-package.zip</code>.</p>
+          </div>
+        </div>
+        <div class="step">
+          <div class="n">2</div>
+          <div>
+            <h3>Перетащите архив в DS Builder</h3>
+            <p>Выберите, что получить: HTML и CSS, React, Vue. Программа скачает бесплатные шрифты макета, построит дизайн-систему, сверстает каждый фрейм и сверит его с макетом.</p>
+          </div>
+        </div>
+        <div class="step">
+          <div class="n">3</div>
+          <div>
+            <h3>Откройте результат</h3>
+            <p>«Открыть вёрстку» — готовая папка с обычными HTML и CSS, её можно выложить на любой хостинг. «Открыть отчёт» — где вёрстка совпала с макетом, а где нет. Desktop и Mobile одной страницы собираются в одну адаптивную.</p>
+          </div>
+        </div>
+        <div class="step">
+          <div class="n">4</div>
+          <div>
+            <h3>Верните дизайн-систему в Figma</h3>
+            <p>В плагине выберите <code>design-system/tokens.json</code> из папки сборки и нажмите «Создать переменные и стили». Появятся коллекции переменных, текстовые стили и стили теней.</p>
+          </div>
         </div>
       </div>
-      <div class="step">
-        <div class="n">2</div>
-        <div>
-          <h3>Соберите и проверьте</h3>
-          <p>Откройте окно программы и перетащите в него архив. Программа скачает бесплатные шрифты макета, построит дизайн-систему, сверстает и сверит каждую страницу. Ход сборки и отчёты видны в окне.</p>
-          <div class="code"><pre><code>npm run ui</code></pre><button class="copy" type="button">Копировать</button></div>
-          <p>То же из командной строки:</p>
-          <div class="code"><pre><code>npm run ds -- build "&lt;файл&gt; — ds-package.zip" --out out/my-site --open</code></pre><button class="copy" type="button">Копировать</button></div>
-        </div>
-      </div>
-      <div class="step">
-        <div class="n">3</div>
-        <div>
-          <h3>Посмотрите результат</h3>
-          <p>Отчёт лежит в <code>out/my-site/report.html</code>, вёрстка страниц в <code>out/my-site/&lt;фрейм&gt;/index.html</code>, адаптивные страницы в <code>&lt;имя&gt;.responsive/</code>, дизайн-система в <code>out/my-site/design-system/</code>.</p>
-          <div class="code"><pre><code><span class="c"># только дизайн-система, без вёрстки</span>
-npm run ds -- analyze "&lt;файл&gt; — ds-package.zip" --out out/ds
-<span class="c"># ещё и проекты React и Vue</span>
-npm run ds -- build "&lt;файл&gt; — ds-package.zip" --out out/my-site --framework react,vue</code></pre><button class="copy" type="button">Копировать</button></div>
-        </div>
-      </div>
-      <div class="step">
-        <div class="n">4</div>
-        <div>
-          <h3>Верните дизайн-систему в Figma</h3>
-          <p>В плагине выберите <code>design-system/tokens.json</code> и нажмите «Создать переменные и стили». Появятся коллекции переменных, текстовые стили и стили теней.</p>
-        </div>
-      </div>
+      <figure class="app-shot">
+        <img src="assets/app-done.png" width="756" height="640" alt="Окно DS Builder после сборки: этапы с галочками, «Вёрстка совпадает с макетом», кнопки «Открыть вёрстку», «Открыть отчёт», «Папка с файлами»" loading="lazy">
+        <figcaption>Окно DS Builder после сборки тестового макета</figcaption>
+      </figure>
     </div>
+    <details class="dev">
+      <summary>Командная строка</summary>
+      <div class="code"><pre><code>npm run ds -- build "&lt;файл&gt; — ds-package.zip" --out out/my-site --framework html,react,vue --open
+<span class="c"># только дизайн-система, без вёрстки</span>
+npm run ds -- analyze "&lt;файл&gt; — ds-package.zip" --out out/ds</code></pre><button class="copy" type="button">Копировать</button></div>
+    </details>
   </div>
 </section>
 
@@ -507,7 +531,7 @@ npm run ds -- build "&lt;файл&gt; — ds-package.zip" --out out/my-site --fr
     <h2 id="faq-title" style="margin-bottom:32px">Вопросы</h2>
     <details>
       <summary>Макеты куда-то отправляются?</summary>
-      <p>Нет. Плагин не обращается к сети, программа работает на вашем компьютере. Из интернета скачиваются только бесплатные шрифты из npm, один раз в локальный кэш.</p>
+      <p>Нет. Плагин не обращается к сети, программа работает на вашем компьютере. Из интернета скачиваются только бесплатные шрифты макета, один раз в локальный кэш.</p>
     </details>
     <details>
       <summary>Нужен ли ИИ или платные сервисы?</summary>
@@ -518,8 +542,12 @@ npm run ds -- build "&lt;файл&gt; — ds-package.zip" --out out/my-site --fr
       <p>Это основной сценарий. Дизайн-система собирается из значений, которые реально используются, а раскладка определяется по положению слоёв. Уменьшенные копии экранов распознаются и не попадают в шкалы.</p>
     </details>
     <details>
-      <summary>Зачем нужен Chrome?</summary>
-      <p>Вёрстка проверяется в настоящем браузере: страница отрисовывается в Chrome, каждый элемент измеряется, скриншот сравнивается с эталоном. Используется уже установленный Chrome. Если он стоит в нестандартном месте, укажите путь в переменной <code>CHROME_PATH</code>.</p>
+      <summary>Зачем нужен Chrome или Edge?</summary>
+      <p>Вёрстка проверяется в настоящем браузере: страница отрисовывается, каждый элемент измеряется, скриншот сравнивается с эталоном. Программа берёт уже установленный Google Chrome, а если его нет — Microsoft Edge, который есть на любом Windows. Если браузер стоит в нестандартном месте, укажите путь в переменной <code>CHROME_PATH</code>.</p>
+    </details>
+    <details>
+      <summary>Почему Windows или macOS предупреждает при установке?</summary>
+      <p>У установщиков пока нет цифровой подписи: сертификаты платные. Каждая сборка программы перед выкладкой проверяется на тестовом макете на всех трёх системах. Подтвердить запуск нужно один раз, как описано в разделе «Установка».</p>
     </details>
     <details>
       <summary>Можно ли без Figma?</summary>
@@ -527,7 +555,7 @@ npm run ds -- build "&lt;файл&gt; — ds-package.zip" --out out/my-site --fr
     </details>
     <details>
       <summary>Что прислать, если что-то не сработало?</summary>
-      <p>Текст ошибки из терминала, консоль плагина (Plugins, Development, Show/Hide console), файл <code>report.json</code> и, если можно, сам пакет или один проблемный фрейм.</p>
+      <p>Подробный журнал из окна программы (раскрывается под этапами сборки), консоль плагина (Plugins, Development, Show/Hide console), файл <code>report.json</code> из папки сборки и, если можно, сам пакет или один проблемный фрейм.</p>
     </details>
   </div>
 </section>
@@ -536,10 +564,11 @@ npm run ds -- build "&lt;файл&gt; — ds-package.zip" --out out/my-site --fr
   <div class="wrap">
     <div>
       <h2 id="cl-title">Проверьте на своём макете</h2>
-      <p>Установка, выгрузка, вёрстка и отчёт занимают 10–15 минут.</p>
+      <p>Установка, выгрузка, вёрстка и отчёт занимают около 10 минут.</p>
     </div>
     <div style="display:flex;gap:12px;flex-wrap:wrap">
-      <a class="btn solid" href="https://github.com/nurgeldiserikbay/figma-ds-builder/blob/main/docs/how-to-test.md">Открыть инструкцию</a>
+      <a class="btn solid" href="#install">Скачать DS Builder</a>
+      <a class="btn" href="https://github.com/nurgeldiserikbay/figma-ds-builder/blob/main/docs/how-to-test.md">Подробная инструкция</a>
       <a class="btn" href="https://github.com/nurgeldiserikbay/figma-ds-builder">Репозиторий</a>
     </div>
   </div>
@@ -560,6 +589,13 @@ npm run ds -- build "&lt;файл&gt; — ds-package.zip" --out out/my-site --fr
 </footer>
 
 <script>
+  // подсветить установщик для системы посетителя
+  (function () {
+    var ua = navigator.userAgent, os = /Windows/.test(ua) ? 'win' : /Mac/.test(ua) ? 'mac' : /Linux|X11/.test(ua) && !/Android/.test(ua) ? 'linux' : '';
+    var el = os && document.querySelector('.dl[data-os="' + os + '"]');
+    if (el) el.classList.add('mine');
+  })();
+
   // размер заголовка в метке выделения — настоящий, как в Figma
   (function () {
     var h1 = document.getElementById('hero-title'), tag = document.getElementById('h1size');
