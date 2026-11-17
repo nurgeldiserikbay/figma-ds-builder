@@ -1,11 +1,34 @@
 {
-  "name": "@figma-ds-builder/builder",
-  "version": "0.1.0",
-  "description": "Локальная программа: пакет из плагина Figma → HTML/CSS → рендер → pixel diff против эталона.",
+  "name": "figma-ds-build",
+  "version": "0.2.0",
+  "description": "Вёрстка из Figma с гарантией pixel perfect: архив из плагина → дизайн-система, HTML/CSS, React, Vue → сверка с макетом и автодоработка.",
+  "keywords": [
+    "figma",
+    "design-system",
+    "design-tokens",
+    "pixel-perfect",
+    "html",
+    "css",
+    "react",
+    "vue",
+    "figma-to-code"
+  ],
+  "homepage": "https://nurgeldiserikbay.github.io/figma-ds-builder/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nurgeldiserikbay/figma-ds-builder.git",
+    "directory": "packages/builder"
+  },
+  "bugs": "https://github.com/nurgeldiserikbay/figma-ds-builder/issues",
+  "license": "MIT",
   "type": "module",
   "bin": {
     "ds-build": "src/cli.js"
   },
+  "files": [
+    "src/",
+    "README.md"
+  ],
   "scripts": {
     "fixture": "node fixtures/make-fixture.js",
     "test": "node test/ai-chain.js && node fixtures/make-fixture.js && node src/cli.js build fixtures/sample --out out/sample --framework react,vue && node test/ui.js",
@@ -23,8 +46,11 @@
     "react-dom": "^19.3.1",
     "vue": "^3.5.45"
   },
-  "license": "MIT",
   "overrides": {
     "csstype": "3.1.3"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
   }
 }

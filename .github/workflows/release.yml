@@ -1,0 +1,60 @@
+name: Выпуск
+
+# Тег v0.2.0 → тесты → GitHub Release с архивом плагина → npm (если задан секрет NPM_TOKEN).
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write   # создать релиз
+  id-token: write   # provenance для npm
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      - name: Версия тега = версия программы
+        run: |
+          v="${GITHUB_REF_NAME#v}"
+          p=$(node -p "require('./packages/builder/package.json').version")
+          [ "$v" = "$p" ] || { echo "Тег $GITHUB_REF_NAME, а в packages/builder/package.json $p"; exit 1; }
+
+      - name: Chrome
+        id: chrome
+        uses: browser-actions/setup-chrome@v1
+        with:
+          chrome-version: stable
+
+      - run: npm run setup
+
+      - name: Тесты
+        run: npm test
+        env:
+          CHROME_PATH: ${{ steps.chrome.outputs.chrome-path }}
+
+      - name: Архив плагина
+        run: |
+          cd packages/plugin/dist
+          zip -r "$RUNNER_TEMP/ds-builder-figma-plugin-${GITHUB_REF_NAME}.zip" .
+
+      - name: GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" "$RUNNER_TEMP/ds-builder-figma-plugin-${GITHUB_REF_NAME}.zip" \
+            --title "$GITHUB_REF_NAME" --generate-notes \
+            --notes "Плагин: распакуйте архив и в Figma выберите Plugins → Development → Import plugin from manifest → manifest.json. Программа: npx figma-ds-build ui"
+
+      - name: npm
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -z "$NODE_AUTH_TOKEN" ]; then echo "Секрет NPM_TOKEN не задан — публикация в npm пропущена"; exit 0; fi
+          cd packages/builder && npm publish
