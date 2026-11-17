@@ -4,6 +4,7 @@ name: Выпуск
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:   # запуск вручную на теге (Run workflow → выбрать тег)
 
 permissions:
   contents: write   # создать релиз
