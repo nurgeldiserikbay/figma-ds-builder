@@ -2,7 +2,7 @@
 import { buildBox, placements, isTransformed } from './layout.js';
 import { analyzeSemantics, className, SEMANTIC_RESET } from './semantic.js';
 import {
-  px, r2, fillsToCss, strokesToCss, effectsToCss, radiusToCss, segmentCss, declarations, mergeShadows,
+  px, r2, fillsToCss, strokesToCss, effectsToCss, radiusToCss, segmentCss, declarations, mergeShadows, colorValue,
 } from './css.js';
 
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -117,8 +117,57 @@ function maskCss(m, ctx) {
 // Элемент: { tag, cls, style (строка инлайн-стиля), attrs: [[k, v]], children: [], text, void, inline, id, name, kind }
 // ---------------------------------------------------------------------------------------------
 
+/** Цвет из атрибута SVG → {r,g,b,a} (0..1) или null. */
+function parseSvgColor(v) {
+  v = String(v).trim().toLowerCase();
+  let m;
+  if ((m = /^#([0-9a-f]{6})([0-9a-f]{2})?$/.exec(v))) {
+    return { r: parseInt(m[1].slice(0, 2), 16) / 255, g: parseInt(m[1].slice(2, 4), 16) / 255, b: parseInt(m[1].slice(4, 6), 16) / 255, a: m[2] ? parseInt(m[2], 16) / 255 : 1 };
+  }
+  if ((m = /^#([0-9a-f]{3})$/.exec(v))) { const [r, g, b] = [...m[1]].map((h) => parseInt(h + h, 16) / 255); return { r, g, b, a: 1 }; }
+  if ((m = /^rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*(?:,\s*([\d.]+)\s*)?\)$/.exec(v))) {
+    return { r: +m[1] / 255, g: +m[2] / 255, b: +m[3] / 255, a: m[4] !== undefined ? +m[4] : 1 };
+  }
+  return null;
+}
+
+/**
+ * SVG для вставки в страницу: на всю рамку элемента, id с префиксом (несколько иконок на странице не путаются
+ * градиентами), цвета, совпавшие с токенами, — через var(--color-…) (иконку можно перекрасить из CSS).
+ * null — если SVG лучше оставить файлом (большой, картинки, свои стили, скрипты).
+ */
+export function inlineSvg(text, prefix, ctx) {
+  if (!text || text.length > 16384 || !/^\s*(<\?xml[^>]*>\s*)?<svg\b/i.test(text)) return null;
+  if (/<(image|script|foreignObject|style|text)\b|\bon[a-z]+\s*=/i.test(text)) return null;
+  let s = text.replace(/^\s*<\?xml[^>]*>\s*/i, '').trim();
+  const pre = `s${String(prefix).replace(/[^a-zA-Z0-9]/g, '_')}-`;
+  s = s.replace(/\bid="([^"]+)"/g, (_, id) => `id="${pre}${id}"`)
+    .replace(/url\(#([^)]+)\)/g, (_, id) => `url(#${pre}${id})`)
+    .replace(/(xlink:href|href)="#([^"]+)"/g, (_, k, id) => `${k}="#${pre}${id}"`);
+  // цвета → токены (в атрибуте var() не работает, поэтому — в style элемента)
+  s = s.replace(/<([a-zA-Z]+)\b([^>]*?)(\/?)>/g, (tag, name, attrs, close) => {
+    if (/\bstyle=/.test(attrs)) return tag;
+    const st = [];
+    for (const k of ['fill', 'stroke']) {
+      const m = new RegExp(`\\b${k}="([^"]+)"`).exec(attrs);
+      const c = m && parseSvgColor(m[1]);
+      if (!c) continue;
+      const v = colorValue(c, 1, ctx);
+      if (v.startsWith('var(')) st.push(`${k}:${v}`);
+    }
+    return st.length ? `<${name}${attrs} style="${st.join(';')}"${close}>` : tag;
+  });
+  // корень — на всю рамку элемента
+  s = s.replace(/^<svg\b/, '<svg style="display:block;width:100%;height:100%" aria-hidden="true" focusable="false"');
+  return s;
+}
+
 function svgImg(node, ctx, box) {
   const b = box || node.svgBox;
+  const place = b ? `position:absolute;left:${px(b.x)};top:${px(b.y)};width:${px(b.w)};height:${px(b.h)}` : 'display:block;width:100%;height:100%';
+  // небольшой SVG — прямо в страницу (рисуется так же, как картинка, но правится в коде и берёт цвета из токенов)
+  const html = ctx.inlineSvg !== false && ctx.svgText ? inlineSvg(ctx.svgText(node.svg), node.id, ctx) : null;
+  if (html) return { tag: 'span', inline: true, cls: ctx.styles.classFor('icon', declarations({ display: 'block' })), attrs: [], children: [], html, style: place };
   return {
     tag: 'img', void: true, inline: true,
     attrs: [['src', ctx.assetUrl(node.svg)], ['alt', '']],
@@ -344,6 +393,12 @@ export function htmlOf(el, depth = 1) {
 }
 
 function inlineHtml(el) {
+  if (el.html !== undefined) {
+    const attrs = [`class="${el.cls}"`];
+    if (el.style) attrs.push(`style="${el.style}"`);
+    for (const [k, v] of el.attrs || []) attrs.push(`${k}="${esc(v)}"`);
+    return `<span ${attrs.join(' ')}>${el.html}</span>`;
+  }
   if (el.tag === 'img') {
     const a = el.attrs.map(([k, v]) => `${k}="${esc(v)}"`).join(' ');
     return `<img ${a} style="${el.style}">`;
@@ -359,12 +414,12 @@ function inlineHtml(el) {
  * Генерирует страницу для одного фрейма.
  * @returns {{ html: string, css: string, stats: object }}
  */
-export function generateFrame(tree, { mode = 'flow', absIds = null, fluid = false, fluidSkip = null, tokens, assetUrl, title, extraCss = [], semantic = true, names = null }) {
+export function generateFrame(tree, { mode = 'flow', absIds = null, fluid = false, fluidSkip = null, svgText = null, inlineSvg: inlineSvgOpt = true, tokens, assetUrl, title, extraCss = [], semantic = true, names = null }) {
   const styles = new StyleRegistry();
   const sem = semantic ? analyzeSemantics(tree) : null;
   // имена от ИИ (если включён) — только для безликих слоёв; теги остаются алгоритмическими
   if (sem && names) for (const [id, name] of names) { const e = sem.get(id); if (e) e.name = className(name); }
-  const ctx = { styles, tokens, assetUrl, semantic: sem, downgrade: new Set(), fluid, fluidSkip };
+  const ctx = { styles, tokens, assetUrl, semantic: sem, downgrade: new Set(), fluid, fluidSkip, svgText, inlineSvg: inlineSvgOpt };
   const root = buildBox(tree, { mode, absIds });
   const rootEl = buildEl(root, null, ctx, false, fluid);
   // не уже макета: ниже его ширины страница уменьшается целиком (zoom), а не сжимается

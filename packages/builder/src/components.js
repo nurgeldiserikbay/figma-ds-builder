@@ -45,7 +45,7 @@ function diffProps(instances, maxShare) {
   const props = [];
   const names = new Set(['ids', 'style']);
   const add = (kind, path, hint) => {
-    const suffix = { text: '', cls: 'Class', style: 'Style', src: 'Src' }[kind];
+    const suffix = { text: '', cls: 'Class', style: 'Style', src: 'Src', html: 'Svg' }[kind];
     let base = camel(hint || 'part') + suffix;
     if (kind === 'text' && base === 'root') base = 'text';
     let n = base, k = 2;
@@ -62,6 +62,7 @@ function diffProps(instances, maxShare) {
       if (differs('cls')) add('cls', s.path, s.hint + '-text'); // цвет/начертание текста — в классе фрагмента
       continue;
     }
+    if (s.el.html !== undefined) { if (differs('html')) add('html', s.path, s.hint); if (differs('style')) { add('style', s.path, s.hint); styleDiffs++; } continue; }
     if (s.el.tag === 'img') { if (differs('src')) add('src', s.path, s.hint); if (differs('style')) { add('style', s.path, s.hint); styleDiffs++; } continue; }
     if (differs('cls')) add('cls', s.path, s.hint);
     if (s.path !== '' && differs('style')) { add('style', s.path, s.hint); styleDiffs++; }
@@ -78,6 +79,7 @@ function valueAt(el, path, kind) {
   if (kind === 'cls') return e.cls;
   if (kind === 'style') return e.style || '';
   if (kind === 'src') return (e.attrs || []).find(([k]) => k === 'src')?.[1];
+  if (kind === 'html') return e.html;
   return undefined;
 }
 

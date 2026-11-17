@@ -1182,6 +1182,26 @@
     },
     {
       "id": "1:133",
+      "name": "icon/check",
+      "type": "BOOLEAN_OPERATION",
+      "x": 36,
+      "y": 856,
+      "w": 16,
+      "h": 16,
+      "svg": "vectors/check.svg"
+    },
+    {
+      "id": "1:134",
+      "name": "icon/badge",
+      "type": "BOOLEAN_OPERATION",
+      "x": 12,
+      "y": 856,
+      "w": 16,
+      "h": 16,
+      "svg": "vectors/badge.svg"
+    },
+    {
+      "id": "1:135",
       "name": "footer",
       "type": "TEXT",
       "x": 64,
@@ -1224,7 +1244,7 @@
       }
     },
     {
-      "id": "1:135",
+      "id": "1:137",
       "name": "stamp",
       "type": "FRAME",
       "x": 1038.24,
@@ -1245,7 +1265,7 @@
       "radius": 8,
       "children": [
         {
-          "id": "1:134",
+          "id": "1:136",
           "name": "stamp/text",
           "type": "TEXT",
           "x": 1038.24,
@@ -1325,7 +1345,7 @@
       "rotation": 8
     },
     {
-      "id": "1:136",
+      "id": "1:138",
       "name": "avatar",
       "type": "GROUP",
       "x": 1160,
@@ -1334,7 +1354,7 @@
       "h": 48,
       "children": [
         {
-          "id": "1:137",
+          "id": "1:139",
           "name": "avatar/mask",
           "type": "ELLIPSE",
           "x": 1160,
@@ -1355,7 +1375,7 @@
           "isMask": true
         },
         {
-          "id": "1:138",
+          "id": "1:140",
           "name": "avatar/photo",
           "type": "RECTANGLE",
           "x": 1150,

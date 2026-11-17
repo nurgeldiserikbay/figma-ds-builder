@@ -110,6 +110,9 @@ const root = frame('Landing / Desktop', 0, 0, 1280, 900, [
   card(64, 520, 'Токены', 'Цвета, шрифты, отступы и радиусы с нормализацией.', '#bfdbfe'),
   card(456, 520, 'Компоненты', 'Повторяющиеся блоки становятся компонентами.', '#ddd6fe'),
   card(848, 520, 'Pixel diff', 'Каждая страница сверяется с эталоном из Figma.', '#bbf7d0'),
+  // векторы (булевы операции в Figma): одноцветный и двухцветный — вставляются в страницу, цвета из токенов
+  { id: id(), name: 'icon/check', type: 'BOOLEAN_OPERATION', x: 36, y: 856, w: 16, h: 16, svg: 'vectors/check.svg' },
+  { id: id(), name: 'icon/badge', type: 'BOOLEAN_OPERATION', x: 12, y: 856, w: 16, h: 16, svg: 'vectors/badge.svg' },
   text('footer', 64, 852, 600, 24, '© 2026 Acme. Тестовый макет для figma-ds-builder.', { size: 14, lh: 24, color: MUTED }),
   // повёрнутый бейдж (−8°) и аватар под круглой маской
   rotate(frame('stamp', 1040, 846, 96, 32, [
@@ -153,6 +156,12 @@ const tokens = {
 fs.rmSync(dir, { recursive: true, force: true });
 fs.mkdirSync(path.join(dir, 'frames'), { recursive: true });
 fs.writeFileSync(path.join(dir, 'frames', '1_1.json'), JSON.stringify(root, null, 2));
+fs.mkdirSync(path.join(dir, 'vectors'), { recursive: true });
+const SVGS = {
+  'check.svg': `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"><path d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0Zm3.6 5.2L7 9.8 4.4 7.2 3.2 8.4 7 12.2l5.8-5.8-1.2-1.2Z" fill="${BLUE}" fill-rule="evenodd"/></svg>`,
+  'badge.svg': `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"><defs><clipPath id="c"><rect width="16" height="16" rx="4"/></clipPath></defs><g clip-path="url(#c)"><rect width="16" height="16" fill="${INK}"/><circle cx="8" cy="8" r="4" fill="#facc15"/></g></svg>`,
+};
+for (const [n, t] of Object.entries(SVGS)) fs.writeFileSync(path.join(dir, 'vectors', n), t);
 fs.writeFileSync(path.join(dir, 'frames', '2_1.json'), JSON.stringify(mobile, null, 2));
 fs.writeFileSync(path.join(dir, 'tokens.json'), JSON.stringify(tokens, null, 2));
 fs.writeFileSync(path.join(dir, 'manifest.json'), JSON.stringify({
@@ -170,7 +179,7 @@ const browser = await openBrowser();
 for (const [tree, file, w, h] of [[root, '1_1', 1280, 900], [mobile, '2_1', 390, 820]]) {
   const tmp = path.join(dir, '.ref');
   fs.mkdirSync(tmp, { recursive: true });
-  const gen = generateFrame(tree, { mode: 'absolute', tokens: loadTokens(tokens), assetUrl: (r) => r });
+  const gen = generateFrame(tree, { mode: 'absolute', tokens: loadTokens(tokens), assetUrl: (r) => r, svgText: (r) => fs.readFileSync(path.join(dir, r), 'utf8') });
   // шрифт — тот же, что подключит ds-build (Inter из npm), чтобы тест не зависел от шрифтов системы
   fs.writeFileSync(path.join(tmp, 'fonts.css'), buildFontsCss(fonts.dir, fonts.found));
   fs.writeFileSync(path.join(tmp, 'index.html'), gen.html.replace('../tokens.css', 'tokens.css').replace('<link rel="stylesheet" href="tokens.css">', '<link rel="stylesheet" href="fonts.css">\n<link rel="stylesheet" href="tokens.css">'));

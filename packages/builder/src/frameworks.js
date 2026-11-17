@@ -74,6 +74,11 @@ function jsx(el, c, depth, p = []) {
   const attrs = [];
   if (pp.cls) attrs.push(`className={${pp.cls}}`);
   else if (el.cls) attrs.push(`className="${el.cls}"`);
+  if (el.html !== undefined) {
+    attrs.push(pp.style ? `style={${pp.style}}` : `style={${styleObjJs(el.style)}}`);
+    attrs.push(`dangerouslySetInnerHTML={{ __html: ${pp.html || jsStr(el.html)} }}`);
+    return `${pad}<span ${attrs.join(' ')} />`;
+  }
   if (el.tag === 'img') {
     const src = el.attrs.find(([k]) => k === 'src')[1];
     const rel = assetRel(src);
@@ -148,6 +153,11 @@ function vueTpl(el, c, depth, p = []) {
   const attrs = [];
   if (pp.cls) attrs.push(`:class="${pp.cls}"`);
   else if (el.cls) attrs.push(`class="${el.cls}"`);
+  if (el.html !== undefined) {
+    attrs.push(pp.style ? `:style="${pp.style}"` : `style="${escAttr(el.style)}"`);
+    attrs.push(`v-html="${pp.html || escAttr(jsStr(el.html))}"`);
+    return `${pad}<span ${attrs.join(' ')}></span>`;
+  }
   if (el.tag === 'img') {
     const src = el.attrs.find(([k]) => k === 'src')[1];
     const rel = assetRel(src);

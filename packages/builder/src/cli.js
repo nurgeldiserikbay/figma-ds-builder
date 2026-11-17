@@ -57,6 +57,8 @@ ds-build build <пакет | пакет.zip> [опции]
                        рендер должен совпасть с HTML-версией пиксель в пиксель
   --no-refine          не подбирать поправки после сверки с эталоном
   --no-semantic        без семантических тегов (только div)
+  --svg-files          векторы — файлами <img src="….svg">; по умолчанию небольшие SVG вставляются в страницу
+                       (правятся в коде, цвета — из токенов var(--color-…))
   --ai                 понятные имена классов от ИИ для слоёв с безликими именами (Frame 237…).
                        Цепочка: Ollama (локально) → Groq → Gemini → OpenRouter (бесплатные планы, если задан
                        GROQ_API_KEY / GEMINI_API_KEY / OPENROUTER_API_KEY). Свой сервер: DS_AI_URL, DS_AI_MODEL, DS_AI_KEY.
@@ -68,7 +70,7 @@ ds-build build <пакет | пакет.zip> [опции]
 `;
 
 function parseArgs(argv) {
-  const a = { _: [], frames: [], css: [], frameworks: [], groups: {}, responsive: true, layout: 'auto', threshold: 0.1, textThreshold: 0.5, out: 'out', verify: true, refine: true, analyze: true, fonts: 'auto', semantic: true, ai: false };
+  const a = { _: [], frames: [], css: [], frameworks: [], groups: {}, responsive: true, inlineSvg: true, layout: 'auto', threshold: 0.1, textThreshold: 0.5, out: 'out', verify: true, refine: true, analyze: true, fonts: 'auto', semantic: true, ai: false };
   for (let i = 0; i < argv.length; i++) {
     const k = argv[i];
     if (k === '--out') a.out = argv[++i];
@@ -86,6 +88,7 @@ function parseArgs(argv) {
     else if (k === '--fonts') a.fonts = argv[++i];
     else if (k === '--open') a.open = true;
     else if (k === '--no-responsive') a.responsive = false;
+    else if (k === '--svg-files') a.inlineSvg = false;
     else if (k === '--port') a.port = Number(argv[++i]);
     else if (k === '--home') a.home = path.resolve(argv[++i]);
     else if (k === '--no-open') a.noOpen = true;
@@ -196,6 +199,8 @@ async function build(args) {
   const results = [];
   const fwPages = [];
   const responsive = [];
+  // текст SVG из пакета: небольшие векторы вставляются прямо в страницу
+  const svgText = (rel) => { try { return fs.readFileSync(path.join(pkg.dir, rel), 'utf8'); } catch { return null; } };
 
   try {
     for (const f of frames) {
@@ -220,7 +225,7 @@ async function build(args) {
       (function walk(n) { for (const c of n.children || []) { parentOf.set(c.id, n.id); walk(c); } })(tree);
 
       const runAttempt = async (mode, absIds = null) => {
-        const gen = generateFrame(tree, { mode, absIds, tokens, assetUrl: (rel) => `../assets/${rel}`, title: f.name, extraCss, semantic: args.semantic, names });
+        const gen = generateFrame(tree, { mode, absIds, svgText, inlineSvg: args.inlineSvg, tokens, assetUrl: (rel) => `../assets/${rel}`, title: f.name, extraCss, semantic: args.semantic, names });
         // пробные варианты — рядом с папкой фрейма (та же глубина, пути к assets не меняются)
         const attemptDir = args.layout === 'auto' ? path.join(out, `${dirName}.try-${mode}${absIds ? `-${attempts.length}` : ''}`) : fdir;
         fs.mkdirSync(attemptDir, { recursive: true });
@@ -356,7 +361,7 @@ async function build(args) {
         const variants = g.members.map((i) => ({ ...fwPages[i], fluid: false }));
         // «резиновые» версии макетов: тот же генератор с правилами растяжения
         const writeFluid = (v) => {
-          const fg = generateFrame(v.tree, { ...v.gen, fluid: true, fluidSkip: v.skip, tokens, assetUrl: (rel) => `../assets/${rel}`, extraCss, semantic: args.semantic });
+          const fg = generateFrame(v.tree, { ...v.gen, fluid: true, fluidSkip: v.skip, svgText, inlineSvg: args.inlineSvg, tokens, assetUrl: (rel) => `../assets/${rel}`, extraCss, semantic: args.semantic });
           fs.writeFileSync(path.join(out, v.dir, 'fluid.html'), fg.html);
           fs.writeFileSync(path.join(out, v.dir, 'fluid.css'), fg.css);
         };
