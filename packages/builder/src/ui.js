@@ -168,7 +168,15 @@ export async function startUi({ port = 0, open = true, home = defaultHome(), log
 
   await new Promise((ok) => server.listen(port, '127.0.0.1', ok));
   const url = `http://127.0.0.1:${server.address().port}/?t=${token}`;
-  log(`Окно ds-build: ${url}\nПапка сборок: ${home}\nОстановить — Ctrl+C.`);
+  log([
+    '',
+    open ? '  Окно программы открылось в браузере.' : '  Окно программы:',
+    open ? `  Если не открылось — скопируйте ссылку в браузер: ${url}` : `  ${url}`,
+    '',
+    '  Не закрывайте этот терминал, пока работаете с окном. Выйти — Ctrl+C.',
+    `  Сборки сохраняются в ${home}`,
+    '',
+  ].join('\n'));
   if (open) openPath(url);
   return { server, url, token, home };
 }

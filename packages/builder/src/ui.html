@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ds-build</title>
+<title>ds-build — вёрстка из Figma</title>
 <style>
   :root {
     --canvas: #FFFFFF;
@@ -12,227 +12,355 @@
     --rule: #E3E5EB;
     --panel: #F5F6F8;
     --select: #0D99FF;
+    --select-soft: #E7F4FF;
     --redline: #E2401C;
     --ok: #157347;
+    --ok-soft: #E8F5EE;
     --code-bg: #1A2033;
     --code-ink: #E8EBF3;
   }
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--canvas); color: var(--ink); font: 400 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  body { margin: 0; background: var(--panel); color: var(--ink); font: 400 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
   button, input, select { font: inherit; color: inherit; }
   :focus-visible { outline: 2px solid var(--select); outline-offset: 2px; }
   a { color: #0A63C9; text-underline-offset: 3px; }
+  [hidden] { display: none !important; }
 
-  header { display: flex; align-items: baseline; gap: 16px; padding: 18px 28px; border-bottom: 1px solid var(--rule); }
-  header h1 { margin: 0; font-size: 17px; font-weight: 650; letter-spacing: -0.01em; }
-  header .home { color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  header .home button { border: 0; background: none; padding: 0; color: #0A63C9; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+  header { background: var(--canvas); border-bottom: 1px solid var(--rule); }
+  header .in { max-width: 760px; margin: 0 auto; padding: 16px 24px; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
+  header h1 { margin: 0; font-size: 17px; font-weight: 650; }
+  header p { margin: 0; color: var(--muted); font-size: 14px; }
 
-  main { display: grid; grid-template-columns: 380px 1fr; min-height: calc(100vh - 58px); }
-  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+  main { max-width: 760px; margin: 0 auto; padding: 28px 24px 64px; }
+  .card { background: var(--canvas); border: 1px solid var(--rule); border-radius: 10px; padding: 28px; }
 
-  .new { padding: 24px 28px; border-right: 1px solid var(--rule); background: var(--panel); }
-  .new h2, .side h2 { margin: 0 0 14px; font-size: 15px; font-weight: 650; }
+  /* шаги — это действительно последовательность */
+  ol.steps { list-style: none; margin: 0; padding: 0; counter-reset: s; }
+  ol.steps > li { position: relative; padding-left: 44px; counter-increment: s; }
+  ol.steps > li + li { margin-top: 28px; }
+  ol.steps > li::before { content: counter(s); position: absolute; left: 0; top: 0; width: 28px; height: 28px; border-radius: 50%;
+    background: var(--panel); border: 1px solid var(--rule); display: grid; place-items: center; font-size: 14px; font-weight: 600; color: var(--muted); }
+  ol.steps > li.done::before { content: "✓"; background: var(--ok-soft); border-color: transparent; color: var(--ok); }
+  ol.steps h2 { margin: 2px 0 6px; font-size: 16px; font-weight: 650; }
+  ol.steps p { margin: 0; color: var(--muted); }
+  ol.steps p b { color: var(--ink); font-weight: 600; }
 
-  /* выбор файла — как рамка выделения в Figma */
-  .drop { position: relative; display: grid; place-items: center; text-align: center; min-height: 168px; padding: 20px;
-    background: var(--canvas); border: 1px dashed #B9BECB; cursor: pointer; transition: border-color .12s; }
+  /* выбор файла — рамка выделения, как в Figma */
+  .drop { position: relative; display: grid; place-items: center; text-align: center; min-height: 150px; margin-top: 12px; padding: 20px;
+    background: var(--canvas); border: 1px dashed #B9BECB; cursor: pointer; transition: border-color .12s, background .12s; }
   .drop input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
   .drop .h { position: absolute; width: 7px; height: 7px; background: #fff; border: 1px solid var(--select); opacity: 0; }
   .drop .h.tl { left: -4px; top: -4px; } .drop .h.tr { right: -4px; top: -4px; } .drop .h.bl { left: -4px; bottom: -4px; } .drop .h.br { right: -4px; bottom: -4px; }
   .drop.over, .drop.has, .drop:focus-within { border: 1px solid var(--select); }
+  .drop.over { background: var(--select-soft); }
   .drop.over .h, .drop.has .h, .drop:focus-within .h { opacity: 1; }
   .drop .size { position: absolute; bottom: -22px; left: 50%; transform: translateX(-50%); background: var(--select); color: #fff;
     font-size: 11px; padding: 1px 6px; border-radius: 2px; white-space: nowrap; display: none; }
   .drop.has .size { display: block; }
-  .drop b { display: block; font-weight: 600; word-break: break-word; }
-  .drop span { color: var(--muted); font-size: 13px; }
+  .drop b { display: block; font-weight: 600; word-break: break-word; font-size: 16px; }
+  .drop span { color: var(--muted); font-size: 14px; }
 
-  fieldset { border: 0; margin: 34px 0 0; padding: 0; }
-  legend { font-weight: 600; font-size: 13px; color: var(--muted); margin-bottom: 8px; padding: 0; }
-  label.opt { display: flex; gap: 10px; align-items: flex-start; padding: 7px 0; cursor: pointer; }
+  /* что получить */
+  .choices { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
+  .choice { position: relative; display: block; cursor: pointer; flex: 1 1 150px; }
+  .choice input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
+  .choice span { display: block; height: 100%; padding: 10px 14px; border: 1px solid var(--rule); border-radius: 8px; background: var(--canvas); }
+  .choice span b { display: block; font-weight: 600; }
+  .choice span small { color: var(--muted); font-size: 13px; }
+  .choice input:checked + span { border-color: var(--select); box-shadow: inset 0 0 0 1px var(--select); background: var(--select-soft); }
+  .choice input:focus-visible + span { outline: 2px solid var(--select); outline-offset: 2px; }
+
+  details.howto { margin-top: 8px; font-size: 14px; color: var(--muted); }
+  details.howto summary { cursor: pointer; }
+  details.howto p { margin-top: 6px; }
+  details.howto code { font: 13px ui-monospace, Menlo, Consolas, monospace; color: var(--ink); background: var(--panel); padding: 1px 4px; border-radius: 3px; }
+  details.more { margin-top: 16px; }
+  details.more summary { cursor: pointer; color: var(--muted); font-size: 14px; }
+  details.more .body { padding: 8px 0 0; }
+  label.opt { display: flex; gap: 10px; align-items: flex-start; padding: 6px 0; cursor: pointer; }
   label.opt input { margin: 3px 0 0; accent-color: var(--select); }
   label.opt small { display: block; color: var(--muted); font-size: 13px; }
-  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 4px; }
+  .row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 8px; }
   .row label { font-size: 13px; color: var(--muted); }
   .row input, .row select { width: 100%; margin-top: 4px; padding: 6px 8px; border: 1px solid var(--rule); border-radius: 4px; background: #fff; }
-  details.more { margin-top: 18px; }
-  details.more summary { cursor: pointer; font-size: 13px; color: var(--muted); }
+  @media (max-width: 560px) { .row { grid-template-columns: 1fr; } }
 
-  .run { width: 100%; margin-top: 24px; padding: 11px 16px; border: 0; border-radius: 6px; background: var(--ink); color: #fff; font-weight: 600; cursor: pointer; }
-  .run:disabled { opacity: .45; cursor: not-allowed; }
-  .err { color: var(--redline); font-size: 13px; margin-top: 10px; min-height: 1.5em; }
+  .run { display: block; width: 100%; margin-top: 28px; padding: 13px 16px; border: 0; border-radius: 8px; background: var(--ink); color: #fff; font-weight: 600; font-size: 16px; cursor: pointer; }
+  .run:disabled { background: #C9CDD6; cursor: not-allowed; }
+  .hint { text-align: center; color: var(--muted); font-size: 13px; margin-top: 8px; min-height: 1.5em; }
+  .err { color: var(--redline); font-size: 14px; margin-top: 10px; }
+  .err:empty { display: none; }
 
-  .side { padding: 24px 28px; min-width: 0; }
-  .job { margin-bottom: 36px; }
-  .job[hidden] { display: none; }
-  .bar { height: 4px; background: var(--rule); margin: 8px 0 12px; overflow: hidden; }
-  .bar i { display: block; height: 100%; width: 0; background: var(--select); transition: width .3s; }
-  .job.fail .bar i { background: var(--redline); }
-  .job.done:not(.fail) .bar i { background: var(--ok); }
-  .status { font-size: 14px; }
-  pre.log { margin: 0; max-height: 340px; overflow: auto; padding: 14px 16px; background: var(--code-bg); color: var(--code-ink);
+  /* ход сборки */
+  .job h2 { margin: 0 0 4px; font-size: 18px; word-break: break-word; }
+  .job .sub { color: var(--muted); margin: 0 0 18px; }
+  ul.stages { list-style: none; margin: 0; padding: 0; }
+  ul.stages li { display: flex; gap: 12px; align-items: baseline; padding: 6px 0; color: var(--muted); }
+  ul.stages li i { flex: none; width: 18px; text-align: center; font-style: normal; }
+  ul.stages li.now { color: var(--ink); font-weight: 600; }
+  ul.stages li.now i::before { content: "●"; color: var(--select); animation: pulse 1.2s infinite; }
+  ul.stages li.wait i::before { content: "○"; }
+  ul.stages li.ok { color: var(--ink); }
+  ul.stages li.ok i::before { content: "✓"; color: var(--ok); }
+  ul.stages li.bad { color: var(--ink); }
+  ul.stages li.bad i::before { content: "✗"; color: var(--redline); }
+  ul.stages li small { color: var(--muted); font-weight: 400; font-size: 14px; }
+  @keyframes pulse { 50% { opacity: .35; } }
+
+  .verdict { margin-top: 20px; padding: 16px 18px; border-radius: 8px; background: var(--ok-soft); }
+  .verdict.bad { background: #FDEDE8; }
+  .verdict b { display: block; font-size: 16px; }
+  .verdict p { margin: 4px 0 0; color: var(--muted); }
+  .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+  .btn { display: inline-block; padding: 10px 16px; border-radius: 8px; border: 1px solid var(--rule); background: var(--canvas); color: var(--ink);
+    font-weight: 600; text-decoration: none; cursor: pointer; }
+  .btn.primary { background: var(--ink); border-color: var(--ink); color: #fff; }
+  details.log { margin-top: 18px; }
+  details.log summary { cursor: pointer; color: var(--muted); font-size: 14px; }
+  pre.log { margin: 10px 0 0; max-height: 300px; overflow: auto; padding: 14px 16px; background: var(--code-bg); color: var(--code-ink);
     font: 12.5px/1.55 ui-monospace, "JetBrains Mono", Menlo, Consolas, monospace; white-space: pre-wrap; border-radius: 6px; }
   pre.log .bad { color: #FF8A70; } pre.log .good { color: #7EE0A8; }
 
-  .builds { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--rule); }
-  .builds li { display: grid; grid-template-columns: 1fr auto; gap: 4px 16px; padding: 14px 0; border-bottom: 1px solid var(--rule); }
+  /* прошлые сборки */
+  h2.list { font-size: 15px; margin: 36px 0 10px; }
+  .builds { list-style: none; margin: 0; padding: 0; background: var(--canvas); border: 1px solid var(--rule); border-radius: 10px; }
+  .builds li { display: grid; grid-template-columns: 1fr auto; gap: 2px 16px; padding: 14px 18px; }
+  .builds li + li { border-top: 1px solid var(--rule); }
   .builds .t { font-weight: 600; word-break: break-word; }
   .builds .m { color: var(--muted); font-size: 13px; }
-  .builds .verdict { grid-row: span 2; align-self: center; font-size: 13px; font-weight: 600; white-space: nowrap; }
-  .verdict.ok { color: var(--ok); } .verdict.bad { color: var(--redline); }
-  .links { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 13px; }
-  .links button { border: 0; background: none; padding: 0; color: #0A63C9; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; font-size: 13px; }
-  .empty { color: var(--muted); padding: 14px 0; }
-  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+  .builds .v { grid-row: span 2; align-self: center; font-size: 13px; font-weight: 600; white-space: nowrap; }
+  .v.ok { color: var(--ok); } .v.bad { color: var(--redline); }
+  .links { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 14px; margin-top: 4px; }
+  .links button, .foot button { border: 0; background: none; padding: 0; color: #0A63C9; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; font-size: inherit; }
+  .foot { margin-top: 28px; color: var(--muted); font-size: 13px; }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 </style>
 </head>
 <body>
-<header>
+<header><div class="in">
   <h1>ds-build</h1>
-  <div class="home">Сборки сохраняются в <span id="home">__HOME__</span> · <button type="button" data-open=".">открыть папку</button></div>
-</header>
+  <p>вёрстка из макета Figma с проверкой пиксель в пиксель</p>
+</div></header>
+
 <main>
-  <section class="new" aria-labelledby="new-title">
-    <h2 id="new-title">Новая сборка</h2>
+  <section class="card" id="start" aria-label="Новая сборка">
     <form id="form">
-      <div class="drop" id="drop">
-        <i class="h tl"></i><i class="h tr"></i><i class="h bl"></i><i class="h br"></i>
-        <input type="file" id="file" accept=".zip,application/zip" aria-label="Архив из плагина (ds-package.zip)">
-        <div id="dropText"><b>Перетащите архив из плагина</b><span>или нажмите, чтобы выбрать «… — ds-package.zip»</span></div>
-        <div class="size" id="size"></div>
-      </div>
-
-      <fieldset>
-        <legend>Что собрать</legend>
-        <label class="opt"><input type="checkbox" name="html" checked><span>HTML и CSS<small>чистая папка: открыть с диска или выложить на хостинг</small></span></label>
-        <label class="opt"><input type="checkbox" name="react"><span>React<small>проект на Vite с компонентами</small></span></label>
-        <label class="opt"><input type="checkbox" name="vue"><span>Vue<small>проект на Vite с компонентами</small></span></label>
-        <label class="opt"><input type="checkbox" name="responsive" checked><span>Адаптивные страницы<small>Desktop и Mobile одной страницы — в одну</small></span></label>
-        <label class="opt"><input type="checkbox" name="semantic" checked><span>Семантические теги<small>header, nav, button, h1… вместо div</small></span></label>
-        <label class="opt"><input type="checkbox" name="ai"><span>Имена классов от ИИ<small>Ollama, затем бесплатные API, если заданы ключи</small></span></label>
-      </fieldset>
-
-      <details class="more">
-        <summary>Допуски и раскладка</summary>
-        <div class="row">
-          <label>Пиксели, %<input name="threshold" type="number" step="0.05" min="0" value="0.1"></label>
-          <label>Текст, %<input name="textThreshold" type="number" step="0.1" min="0" value="0.5"></label>
-        </div>
-        <div class="row">
-          <label>Раскладка<select name="layout"><option value="auto">авто</option><option value="flow">flow</option><option value="absolute">absolute</option></select></label>
-        </div>
-      </details>
-
-      <button class="run" id="run" type="submit" disabled>Собрать и проверить</button>
+      <ol class="steps">
+        <li id="s1">
+          <h2>Выгрузите макет из Figma</h2>
+          <p>В Figma откройте плагин <b>DS Builder</b>, выделите нужные фреймы и нажмите <b>«Пакет для вёрстки»</b>. Скачается файл <b>«… — ds-package.zip»</b>. Распаковывать его не нужно.</p>
+          <details class="howto"><summary>Плагина ещё нет в Figma?</summary>
+            <p>Откройте Figma Desktop, затем <b>Plugins → Development → Import plugin from manifest…</b> и выберите файл
+            <code>packages/plugin/dist/manifest.json</code> в папке проекта. Если файла нет, выполните <code>npm run setup</code>.</p></details>
+        </li>
+        <li id="s2">
+          <h2>Добавьте этот файл сюда</h2>
+          <div class="drop" id="drop">
+            <i class="h tl"></i><i class="h tr"></i><i class="h bl"></i><i class="h br"></i>
+            <input type="file" id="file" accept=".zip,application/zip" aria-label="Архив из плагина: … — ds-package.zip">
+            <div id="dropText"><b>Перетащите архив сюда</b><span>или нажмите, чтобы выбрать его в папке «Загрузки»</span></div>
+            <div class="size" id="size"></div>
+          </div>
+        </li>
+        <li id="s3">
+          <h2>Выберите, что получить</h2>
+          <p>Дизайн-систему (цвета, шрифты, отступы) и отчёт о сверке с макетом программа делает всегда.</p>
+          <div class="choices" role="group" aria-label="Что получить">
+            <label class="choice"><input type="checkbox" name="html" checked><span><b>HTML и CSS</b><small>обычная вёрстка, папка для хостинга</small></span></label>
+            <label class="choice"><input type="checkbox" name="react"><span><b>React</b><small>проект с компонентами</small></span></label>
+            <label class="choice"><input type="checkbox" name="vue"><span><b>Vue</b><small>проект с компонентами</small></span></label>
+          </div>
+          <details class="more">
+            <summary>Дополнительные настройки — менять не обязательно</summary>
+            <div class="body">
+              <label class="opt"><input type="checkbox" name="responsive" checked><span>Объединять Desktop и Mobile одной страницы<small>в одну адаптивную страницу с брейкпоинтами</small></span></label>
+              <label class="opt"><input type="checkbox" name="semantic" checked><span>Смысловые теги<small>header, nav, button, h1… вместо одних div</small></span></label>
+              <label class="opt"><input type="checkbox" name="ai"><span>Имена классов от ИИ<small>сначала локальная модель Ollama, затем бесплатные API, если заданы ключи</small></span></label>
+              <div class="row">
+                <label>Допуск, пиксели %<input name="threshold" type="number" step="0.05" min="0" value="0.1"></label>
+                <label>Допуск, текст %<input name="textThreshold" type="number" step="0.1" min="0" value="0.5"></label>
+                <label>Раскладка<select name="layout"><option value="auto">авто</option><option value="flow">flow</option><option value="absolute">absolute</option></select></label>
+              </div>
+            </div>
+          </details>
+        </li>
+      </ol>
+      <button class="run" id="run" type="submit" disabled>Сверстать и проверить</button>
+      <div class="hint" id="hint"></div>
       <div class="err" id="err" role="alert"></div>
     </form>
   </section>
 
-  <section class="side">
-    <div class="job" id="job" hidden aria-live="polite">
-      <h2 id="jobTitle">Сборка</h2>
-      <div class="status" id="status"></div>
-      <div class="bar"><i id="bar"></i></div>
-      <pre class="log" id="log"></pre>
-    </div>
-    <h2>Сборки</h2>
-    <ul class="builds" id="builds"></ul>
+  <section class="card job" id="job" hidden aria-live="polite">
+    <h2 id="jobTitle"></h2>
+    <p class="sub" id="jobSub"></p>
+    <ul class="stages" id="stages"></ul>
+    <div id="result"></div>
+    <details class="log"><summary>Подробный журнал</summary><pre class="log" id="log"></pre></details>
   </section>
+
+  <h2 class="list" id="listTitle" hidden>Прошлые сборки</h2>
+  <ul class="builds" id="builds" hidden></ul>
+
+  <p class="foot">Файлы сборок сохраняются в <span id="home">__HOME__</span> · <button type="button" data-open=".">открыть папку</button><br>
+  Программа работает только на этом компьютере. Пока пользуетесь ею, не закрывайте окно терминала, в котором её запустили.</p>
 </main>
+
 <script>
 const $ = (id) => document.getElementById(id);
 const form = $('form'), fileInput = $('file'), drop = $('drop');
 let file = null, running = false;
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 function pickFile(f) {
-  file = f && /\.zip$/i.test(f.name) ? f : null;
-  $('err').textContent = f && !file ? 'Нужен zip-архив, который выгружает плагин.' : '';
-  drop.classList.toggle('has', !!file);
-  $('dropText').innerHTML = file ? `<b></b><span>нажмите, чтобы выбрать другой</span>` : `<b>Перетащите архив из плагина</b><span>или нажмите, чтобы выбрать «… — ds-package.zip»</span>`;
-  if (file) { $('dropText').querySelector('b').textContent = file.name; $('size').textContent = `${(file.size / 1048576).toFixed(1)} МБ`; }
+  if (!f) return;
+  const ok = /\.zip$/i.test(f.name);
+  $('err').textContent = ok ? '' : 'Это не тот файл: нужен архив «… — ds-package.zip», который скачивает плагин.';
+  if (!ok) return;
+  file = f;
+  drop.classList.add('has');
+  $('s1').classList.add('done');
+  $('s2').classList.add('done');
+  $('dropText').innerHTML = '<b></b><span>Готово. Нажмите, чтобы выбрать другой файл</span>';
+  $('dropText').querySelector('b').textContent = file.name;
+  $('size').textContent = `${(file.size / 1048576).toFixed(1)} МБ`;
+  updateRun();
+}
+function updateRun() {
+  const any = ['html', 'react', 'vue'].some((n) => form.elements[n].checked);
   $('run').disabled = !file || running;
+  $('hint').textContent = running ? '' : !file ? 'Сначала добавьте архив из плагина' : !any ? 'Будут только дизайн-система и отчёт' : '';
 }
 fileInput.addEventListener('change', () => pickFile(fileInput.files[0]));
+form.addEventListener('change', (ev) => { if (ev.target !== fileInput) updateRun(); });
 ['dragenter', 'dragover'].forEach((e) => drop.addEventListener(e, (ev) => { ev.preventDefault(); drop.classList.add('over'); }));
 ['dragleave', 'drop'].forEach((e) => drop.addEventListener(e, () => drop.classList.remove('over')));
-drop.addEventListener('drop', (ev) => { ev.preventDefault(); pickFile(ev.dataTransfer.files[0]); });
+drop.addEventListener('drop', (ev) => { ev.preventDefault(); ev.stopPropagation(); pickFile(ev.dataTransfer.files[0]); });
+// архив, брошенный мимо рамки: иначе браузер открыл бы его вместо окна программы
+window.addEventListener('dragover', (ev) => ev.preventDefault());
+window.addEventListener('drop', (ev) => { ev.preventDefault(); if (!running && ev.dataTransfer.files[0]) pickFile(ev.dataTransfer.files[0]); });
 
 function options() {
   const o = {};
-  for (const el of form.elements) {
-    if (!el.name) continue;
-    o[el.name] = el.type === 'checkbox' ? el.checked : el.value;
-  }
+  for (const el of form.elements) if (el.name) o[el.name] = el.type === 'checkbox' ? el.checked : el.value;
   return o;
 }
 
-const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+// этапы — по строкам журнала программы
+function stagesFor(o) {
+  const s = [
+    { id: 'upload', text: 'Загрузка архива' },
+    { id: 'ds', text: 'Дизайн-система', re: /^Дизайн-система:/ },
+    { id: 'frames', text: 'Вёрстка и сверка с макетом', re: /^Пакет:/ },
+  ];
+  if (o.responsive) s.push({ id: 'resp', text: 'Адаптивные страницы', re: /^Адаптивная страница/, optional: true });
+  if (o.html) s.push({ id: 'html', text: 'HTML и CSS', re: /^HTML\/CSS:/ });
+  if (o.react || o.vue) s.push({ id: 'fw', text: [o.react && 'React', o.vue && 'Vue'].filter(Boolean).join(' и '), re: /^(React|Vue|Компоненты):/ });
+  s.push({ id: 'report', text: 'Отчёт', re: /^Отчёт:/ });
+  return s;
+}
+let stages = [];
+function drawStages() {
+  $('stages').innerHTML = stages.map((s) => `<li class="${s.state}"><i aria-hidden="true"></i><span>${esc(s.text)}${s.note ? ` <small>· ${esc(s.note)}</small>` : ''}</span></li>`).join('');
+}
+function reach(id, note) {
+  const at = stages.findIndex((s) => s.id === id);
+  if (at < 0) return;
+  stages.forEach((s, i) => {
+    if (i < at && (s.state === 'wait' || s.state === 'now')) s.state = s.optional && s.state === 'wait' ? 'skip' : 'ok';
+    if (i === at && s.state !== 'bad') s.state = 'now';
+  });
+  stages = stages.filter((s) => s.state !== 'skip');
+  if (note !== undefined) stages.find((s) => s.id === id).note = note;
+  drawStages();
+}
 
 form.addEventListener('submit', async (ev) => {
   ev.preventDefault();
   if (!file || running) return;
-  running = true; $('run').disabled = true; $('err').textContent = '';
-  const job = $('job'); job.hidden = false; job.className = 'job';
-  $('jobTitle').textContent = file.name; $('log').textContent = ''; $('bar').style.width = '2%';
-  $('status').textContent = 'Загрузка архива…';
+  running = true; updateRun(); $('err').textContent = '';
+  const o = options();
+  stages = stagesFor(o).map((s) => ({ ...s, state: 'wait' }));
+  $('start').hidden = true;
+  const job = $('job'); job.hidden = false; job.classList.remove('done');
+  $('jobTitle').textContent = file.name.replace(/\.zip$/i, '');
+  $('jobSub').textContent = 'Обычно это занимает от 30 секунд до нескольких минут.';
+  $('result').innerHTML = ''; $('log').textContent = '';
+  document.querySelector('details.log').open = false;
+  reach('upload');
   let res;
   try {
-    res = await fetch(`/api/build?file=${encodeURIComponent(file.name)}&opts=${encodeURIComponent(JSON.stringify(options()))}`, { method: 'POST', body: file });
-  } catch (e) { res = { ok: false, json: async () => ({ error: 'программа не отвечает — она запущена?' }) }; }
+    res = await fetch(`/api/build?file=${encodeURIComponent(file.name)}&opts=${encodeURIComponent(JSON.stringify(o))}`, { method: 'POST', body: file });
+  } catch (e) { res = { ok: false, json: async () => ({ error: 'Программа не отвечает. Проверьте, что окно терминала с ней не закрыто.' }) }; }
   const data = await res.json();
-  if (!res.ok) { $('err').textContent = data.error; running = false; pickFile(file); job.hidden = true; return; }
+  if (!res.ok) { running = false; job.hidden = true; $('start').hidden = false; $('err').textContent = data.error; updateRun(); return; }
   follow(data.id);
 });
 
 function follow(id) {
-  const log = $('log');
-  let total = 0, frames = 0;
-  $('status').textContent = 'Сборка идёт…';
+  let total = 0, frames = 0, fails = 0;
+  reach('ds');
   const es = new EventSource(`/api/jobs/${id}/events`);
   es.onmessage = (m) => {
     const line = JSON.parse(m.data);
-    const t = /фреймов: (\d+)/.exec(line); if (t) total = +t[1];
-    if (/^  \S.*: (flow|absolute|hybrid).*· (OK|FAIL)?/.test(line) || /^  .+: flow, координаты/.test(line)) frames++;
+    for (const s of stages) if (s.re && s.re.test(line)) reach(s.id);
+    const t = /фреймов: (\d+)/.exec(line); if (t) { total = +t[1]; reach('frames', `0 из ${total}`); }
+    if (/^ {2}\S.*· (OK|FAIL)$/.test(line)) { frames++; if (/FAIL$/.test(line)) fails++; reach('frames', `${frames} из ${total}${fails ? `, не сошлось: ${fails}` : ''}`); }
     const span = document.createElement('span');
     if (/FAIL|Ошибка|✗|ОТЛИЧ|РАСХОЖДЕН/.test(line)) span.className = 'bad';
     else if (/ OK$|совпадает/.test(line)) span.className = 'good';
     span.textContent = line + '\n';
-    const stick = log.scrollTop + log.clientHeight >= log.scrollHeight - 4;
-    log.append(span);
-    if (stick) log.scrollTop = log.scrollHeight;
-    if (total) { $('bar').style.width = `${Math.max(4, Math.min(96, (frames / total) * 92))}%`; $('status').textContent = `Свёрстано фреймов: ${frames} из ${total}`; }
+    $('log').append(span);
   };
   es.addEventListener('done', (m) => {
     es.close();
     const d = JSON.parse(m.data), s = d.summary;
-    const job = $('job'); job.classList.add('done');
-    $('bar').style.width = '100%';
-    if (d.code === 1 || !s) { job.classList.add('fail'); $('status').textContent = 'Сборка остановилась с ошибкой — причина в журнале.'; }
-    else {
-      if (s.failed) job.classList.add('fail');
-      $('status').innerHTML = `${s.failed ? `Не прошли проверку: ${s.failed} из ${s.frames}.` : `Все фреймы прошли проверку (${s.frames}).`} <a href="/out/${encodeURIComponent(d.name)}/report.html" target="_blank" rel="noopener">Открыть отчёт</a>`;
+    running = false;
+    const base = `/out/${encodeURIComponent(d.name)}`;
+    if (d.code === 1 || !s) {
+      stages.forEach((x) => { if (x.state === 'now') x.state = 'bad'; });
+      drawStages();
+      $('jobSub').textContent = 'Сборка остановилась с ошибкой.';
+      $('result').innerHTML = `<div class="verdict bad"><b>Не получилось собрать</b><p>Причина — в подробном журнале ниже. Если непонятно, что делать, пришлите его.</p></div>
+        <div class="actions"><button class="btn primary" type="button" id="again">Попробовать снова</button></div>`;
+      document.querySelector('details.log').open = true;
+    } else {
+      stages.forEach((x) => { if (x.state !== 'bad') x.state = 'ok'; });
+      if (s.failed) { const f = stages.find((x) => x.id === 'frames'); if (f) f.state = 'bad'; }
+      drawStages();
+      $('jobSub').textContent = 'Готово.';
+      const word = (n) => (n % 10 === 1 && n % 100 !== 11 ? 'фрейм' : [2, 3, 4].includes(n % 10) && ![12, 13, 14].includes(n % 100) ? 'фрейма' : 'фреймов');
+      $('result').innerHTML = `<div class="verdict${s.failed ? ' bad' : ''}">
+          <b>${s.failed ? `С макетом совпадает ${s.passed} из ${s.frames} ${word(s.frames)}` : `Вёрстка совпадает с макетом${s.frames > 1 ? `: ${s.frames} ${word(s.frames)} из ${s.frames}` : ''}`}</b>
+          <p>${s.failed ? 'В отчёте видно, какие места отличаются: наложение со шторкой и карта различий.' : 'Положение каждого элемента и пиксели сверены с PNG из Figma.'}</p></div>
+        <div class="actions">
+          ${s.html ? `<a class="btn primary" href="${base}/html/index.html" target="_blank" rel="noopener">Открыть вёрстку</a>` : ''}
+          <a class="btn${s.html ? '' : ' primary'}" href="${base}/report.html" target="_blank" rel="noopener">Открыть отчёт</a>
+          <button class="btn" type="button" data-open="${esc(d.name)}${s.html ? '/html' : ''}">Папка с файлами</button>
+          <button class="btn" type="button" id="again">Новая сборка</button>
+        </div>`;
     }
-    running = false; pickFile(file); loadBuilds();
+    $('again').addEventListener('click', () => { $('job').hidden = true; $('start').hidden = false; window.scrollTo(0, 0); });
+    $('job').classList.add('done');
+    updateRun(); loadBuilds();
   });
-  es.onerror = () => { if (running) $('status').textContent = 'Связь с программой прервалась. Если окно терминала закрыто — запустите ds-build ui снова.'; };
+  es.onerror = () => { if (running) $('jobSub').textContent = 'Связь с программой прервалась. Если окно терминала закрыто, запустите npm run ui снова.'; };
 }
 
 async function loadBuilds() {
   const r = await fetch('/api/builds').then((x) => x.json());
   const ul = $('builds');
-  if (!r.builds.length) { ul.innerHTML = '<li class="empty">Здесь появятся готовые сборки.</li>'; return; }
+  $('listTitle').hidden = ul.hidden = !r.builds.length;
   ul.innerHTML = r.builds.map((b) => {
     const base = `/out/${encodeURIComponent(b.name)}`;
     const when = new Date(b.when).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
-    const verdict = b.failed ? `<span class="verdict bad">не прошли ${b.failed} из ${b.frames}</span>` : b.passed ? `<span class="verdict ok">${b.passed} из ${b.frames} ✓</span>` : `<span class="verdict">${b.frames} фреймов</span>`;
-    return `<li><div class="t">${esc(b.file)}</div>${verdict}
-      <div><div class="m">${esc(when)}</div><div class="links">
+    const v = b.failed ? `<span class="v bad">не совпало: ${b.failed} из ${b.frames}</span>` : b.passed ? '<span class="v ok">совпадает ✓</span>' : '';
+    return `<li><div class="t">${esc(b.file)}</div>${v}
+      <div><div class="m">${esc(when)} · фреймов: ${b.frames}</div><div class="links">
+        ${b.html ? `<a href="${base}/html/index.html" target="_blank" rel="noopener">вёрстка</a>` : ''}
         <a href="${base}/report.html" target="_blank" rel="noopener">отчёт</a>
         ${b.ds ? `<a href="${base}/design-system/design-system.md" target="_blank" rel="noopener">дизайн-система</a>` : ''}
-        ${b.html ? `<a href="${base}/html/index.html" target="_blank" rel="noopener">HTML</a>` : ''}
         <button type="button" data-open="${esc(b.name)}">папка</button>
-        ${b.html ? `<button type="button" data-open="${esc(b.name)}/html">папка HTML</button>` : ''}
         ${b.react ? `<button type="button" data-open="${esc(b.name)}/react">React</button>` : ''}
         ${b.vue ? `<button type="button" data-open="${esc(b.name)}/vue">Vue</button>` : ''}
       </div></div></li>`;
@@ -242,6 +370,7 @@ document.addEventListener('click', (ev) => {
   const b = ev.target.closest('[data-open]');
   if (b) fetch(`/api/open?path=${encodeURIComponent(b.dataset.open)}`, { method: 'POST' });
 });
+updateRun();
 loadBuilds();
 </script>
 </body>
