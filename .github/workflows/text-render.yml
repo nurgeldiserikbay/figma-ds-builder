@@ -38,7 +38,7 @@ jobs:
         env:
           CHROME_PATH: ${{ steps.chrome.outputs.chrome-path }}
         run: |
-          for v in "" "--text-contrast=0 --text-gamma=1000" "--text-contrast=0 --text-gamma=1400" "--text-contrast=100 --text-gamma=1200" "--disable-font-subpixel-positioning"; do
+          for v in ""; do
             echo "=== DS_CHROME_ARGS='$v'"
-            DS_CHROME_ARGS="$v" node packages/builder/src/cli.js build pkg --out "out/v" --no-analyze --no-responsive --no-refine 2>&1 | grep -E "pixel diff|Ошибка" || true
+            DS_CHROME_ARGS="$v" node packages/builder/src/cli.js build pkg --out "out/v" --no-analyze --no-responsive 2>&1 | grep -E "pixel diff|Ошибка" || true
           done
