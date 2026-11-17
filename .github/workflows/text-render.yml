@@ -22,5 +22,5 @@ jobs:
           cd packages/bench
           for v in "" "--text-contrast=0 --text-gamma=1000" "--text-contrast=50 --text-gamma=1200" "--disable-font-subpixel-positioning" "--enable-font-antialiasing --text-contrast=0"; do
             echo "=== DS_CHROME_ARGS='$v'"
-            DS_CHROME_ARGS="$v" node src/run.js --only hackrpi-thankyou --runs 1 2>&1 | grep -E "^\| hackrpi-thankyou \| v(2.1|3)" || true
+            DS_CHROME_ARGS="$v" node src/run.js --only hackrpi-thankyou --runs 1 2>&1 | tail -14 || true
           done
