@@ -12,13 +12,13 @@ export function buildReport({ file, threshold, textThreshold, results, responsiv
         (r.diff ? ` · pixel diff: ${r.diff.percent.toFixed(3)}%` + (r.pixels ? ` (текст ${r.pixels.textPct.toFixed(3)}%, остальное ${r.pixels.otherPct.toFixed(3)}%)` : '') : '') + '</p>' +
         (g.issues.length ? '<ul class="warn">' + g.issues.slice(0, 10).map((i) => `<li>${esc(i.name)} (${esc(i.id)}): Δ ${i.delta}px — Figma ${i.figma.x},${i.figma.y} ${i.figma.w}×${i.figma.h}, вёрстка ${i.html.x},${i.html.y} ${i.html.w}×${i.html.h}</li>`).join('') + '</ul>' : '') : '';
       const tries = (r.attempts || [])
-        .map((a) => `<li>${esc(a.mode)}: pixel diff ${Number.isNaN(a.percent) ? '—' : a.percent.toFixed(3) + '%'}, ошибок геометрии ${a.geometryFailed ?? '—'}${a.chosen ? ' — <b>выбран</b>' : ''}</li>`)
+        .map((a) => `<li>${esc(a.mode === 'hybrid' ? `flow с закреплёнными блоками (${a.pinned})` : a.mode)}: pixel diff ${Number.isNaN(a.percent) ? '—' : a.percent.toFixed(3) + '%'}, ошибок геометрии ${a.geometryFailed ?? '—'}${a.chosen ? ' — <b>выбран</b>' : ''}</li>`)
         .join('');
       const fonts = (r.fonts || []).filter((f) => !f.available).map((f) => esc(f.family));
       return `
 <section class="card">
   <header><h2>${esc(r.name)}</h2>${badge}</header>
-  <p class="meta">${r.width}×${r.height} · раскладка: <b>${esc(r.mode)}</b> ·
+  <p class="meta">${r.width}×${r.height} · раскладка: <b>${esc(r.mode === 'hybrid' ? `flow, координаты закреплены у блоков: ${r.pinned.length}` : r.mode)}</b> ·
     блоков: ${r.stats.nodes} · flex Auto Layout: ${r.stats.figma || 0} · колонок/строк по геометрии: ${(r.stats.col || 0) + (r.stats.row || 0)} ·
     absolute: ${r.stats.abs || 0} · классов: ${r.stats.classes}${r.stats.tags ? ' · теги: ' + Object.entries(r.stats.tags).map(([t, n]) => `${t} ${n}`).join(', ') : ''}
     · <a href="${esc(r.dir)}/index.html">открыть вёрстку</a></p>

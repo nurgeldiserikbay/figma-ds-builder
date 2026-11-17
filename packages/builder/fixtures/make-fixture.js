@@ -123,13 +123,21 @@ const root = frame('Landing / Desktop', 0, 0, 1280, 900, [
 root.id = '1:1';
 
 // тот же лендинг под мобильный (390): фреймы «Landing / Desktop» и «Landing / Mobile» → одна адаптивная страница
-const mobile = frame('Landing / Mobile', 0, 0, 390, 760, [
+const mobile = frame('Landing / Mobile', 0, 0, 390, 820, [
   text('m/logo', 20, 20, 120, 28, 'Acme', { size: 20, lh: 28, style: 'Bold' }),
   text('m/title', 20, 80, 350, 96, 'Дизайн-система из любого макета', { size: 36, lh: 48, style: 'Bold', ls: -0.5 }),
   text('m/subtitle', 20, 192, 350, 72, 'Плагин собирает токены и компоненты, а программа верстает страницы и проверяет их попиксельно.', { size: 16, lh: 24, color: MUTED }),
   button('Button / Primary', 20, 288, 350, 52, 'Начать', true),
   card(11, 372, 'Токены', 'Цвета, шрифты, отступы и радиусы с нормализацией.', '#bfdbfe'),
   text('m/footer', 20, 712, 350, 24, '© 2026 Acme.', { size: 14, lh: 24, color: MUTED }),
+  // «грязный» макет: у ряда тегов Auto Layout с gap 8, но теги потом раздвинули руками до 16 —
+  // flex по Auto Layout ставит их не туда; точечный запасной режим закрепляет координаты только у этого ряда
+  frame('tags', 20, 760, 296, 32, [
+    ['HTML', 20, 72], ['CSS', 108, 64], ['React', 188, 80], ['Vue', 284, 32],
+  ].slice(0, 3).map(([t, x, w]) => frame(`tag/${t}`, x, 760, w, 32, [
+    text('label', x + 12, 764, w - 24, 24, t, { size: 14, lh: 24, style: 'Medium', align: 'CENTER', color: INK }),
+  ], { radius: 16, fills: solid('#e4e4e7'), layout: { mode: 'HORIZONTAL', gap: 0, padding: [4, 12, 4, 12], primaryAlign: 'CENTER', counterAlign: 'CENTER' } })),
+  { layout: { mode: 'HORIZONTAL', gap: 8, padding: [0, 0, 0, 0], primaryAlign: 'MIN', counterAlign: 'MIN' } }),
 ], { fills: solid('#fafafa'), clip: true });
 mobile.id = '2:1';
 
@@ -152,14 +160,14 @@ fs.writeFileSync(path.join(dir, 'manifest.json'), JSON.stringify({
   tokens: 'tokens.json',
   frames: [
     { id: '1:1', name: 'Landing / Desktop', page: 'Landing', width: 1280, height: 900, tree: 'frames/1_1.json', png: 'frames/1_1.png' },
-    { id: '2:1', name: 'Landing / Mobile', page: 'Landing', width: 390, height: 760, tree: 'frames/2_1.json', png: 'frames/2_1.png' },
+    { id: '2:1', name: 'Landing / Mobile', page: 'Landing', width: 390, height: 820, tree: 'frames/2_1.json', png: 'frames/2_1.png' },
   ],
 }, null, 2));
 
 // синтетический эталон: режим absolute
 const fonts = ensureFonts(['Inter'], defaultCacheDir());
 const browser = await openBrowser();
-for (const [tree, file, w, h] of [[root, '1_1', 1280, 900], [mobile, '2_1', 390, 760]]) {
+for (const [tree, file, w, h] of [[root, '1_1', 1280, 900], [mobile, '2_1', 390, 820]]) {
   const tmp = path.join(dir, '.ref');
   fs.mkdirSync(tmp, { recursive: true });
   const gen = generateFrame(tree, { mode: 'absolute', tokens: loadTokens(tokens), assetUrl: (r) => r });

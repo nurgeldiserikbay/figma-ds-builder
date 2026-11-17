@@ -2,7 +2,7 @@
   "format": "ds-package",
   "version": 1,
   "file": "Sample landing (fixture)",
-  "createdAt": "2026-11-17T09:59:55.645Z",
+  "createdAt": "2026-11-17T12:00:34.102Z",
   "scale": 1,
   "tokens": "tokens.json",
   "frames": [
@@ -20,7 +20,7 @@
       "name": "Landing / Mobile",
       "page": "Landing",
       "width": 390,
-      "height": 760,
+      "height": 820,
       "tree": "frames/2_1.json",
       "png": "frames/2_1.png"
     }

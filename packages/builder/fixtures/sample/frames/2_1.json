@@ -5,7 +5,7 @@
   "x": 0,
   "y": 0,
   "w": 390,
-  "h": 760,
+  "h": 820,
   "fills": [
     {
       "type": "SOLID",
@@ -431,6 +431,268 @@
             ]
           }
         ]
+      }
+    },
+    {
+      "id": "1:157",
+      "name": "tags",
+      "type": "FRAME",
+      "x": 20,
+      "y": 760,
+      "w": 296,
+      "h": 32,
+      "fills": [],
+      "children": [
+        {
+          "id": "1:152",
+          "name": "tag/HTML",
+          "type": "FRAME",
+          "x": 20,
+          "y": 760,
+          "w": 72,
+          "h": 32,
+          "fills": [
+            {
+              "type": "SOLID",
+              "color": {
+                "r": 0.8941176470588236,
+                "g": 0.8941176470588236,
+                "b": 0.9058823529411765,
+                "a": 1
+              }
+            }
+          ],
+          "radius": 16,
+          "children": [
+            {
+              "id": "1:151",
+              "name": "label",
+              "type": "TEXT",
+              "x": 32,
+              "y": 764,
+              "w": 48,
+              "h": 24,
+              "text": {
+                "characters": "HTML",
+                "align": "CENTER",
+                "verticalAlign": "TOP",
+                "autoResize": "NONE",
+                "segments": [
+                  {
+                    "start": 0,
+                    "end": 4,
+                    "fontFamily": "Inter",
+                    "fontStyle": "Medium",
+                    "fontSize": 14,
+                    "lineHeight": {
+                      "unit": "PIXELS",
+                      "value": 24
+                    },
+                    "letterSpacing": {
+                      "unit": "PIXELS",
+                      "value": 0
+                    },
+                    "fills": [
+                      {
+                        "type": "SOLID",
+                        "color": {
+                          "r": 0.09411764705882353,
+                          "g": 0.09411764705882353,
+                          "b": 0.10588235294117647,
+                          "a": 1
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          ],
+          "clipsContent": false,
+          "layout": {
+            "mode": "HORIZONTAL",
+            "gap": 0,
+            "padding": [
+              4,
+              12,
+              4,
+              12
+            ],
+            "primaryAlign": "CENTER",
+            "counterAlign": "CENTER"
+          }
+        },
+        {
+          "id": "1:154",
+          "name": "tag/CSS",
+          "type": "FRAME",
+          "x": 108,
+          "y": 760,
+          "w": 64,
+          "h": 32,
+          "fills": [
+            {
+              "type": "SOLID",
+              "color": {
+                "r": 0.8941176470588236,
+                "g": 0.8941176470588236,
+                "b": 0.9058823529411765,
+                "a": 1
+              }
+            }
+          ],
+          "radius": 16,
+          "children": [
+            {
+              "id": "1:153",
+              "name": "label",
+              "type": "TEXT",
+              "x": 120,
+              "y": 764,
+              "w": 40,
+              "h": 24,
+              "text": {
+                "characters": "CSS",
+                "align": "CENTER",
+                "verticalAlign": "TOP",
+                "autoResize": "NONE",
+                "segments": [
+                  {
+                    "start": 0,
+                    "end": 3,
+                    "fontFamily": "Inter",
+                    "fontStyle": "Medium",
+                    "fontSize": 14,
+                    "lineHeight": {
+                      "unit": "PIXELS",
+                      "value": 24
+                    },
+                    "letterSpacing": {
+                      "unit": "PIXELS",
+                      "value": 0
+                    },
+                    "fills": [
+                      {
+                        "type": "SOLID",
+                        "color": {
+                          "r": 0.09411764705882353,
+                          "g": 0.09411764705882353,
+                          "b": 0.10588235294117647,
+                          "a": 1
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          ],
+          "clipsContent": false,
+          "layout": {
+            "mode": "HORIZONTAL",
+            "gap": 0,
+            "padding": [
+              4,
+              12,
+              4,
+              12
+            ],
+            "primaryAlign": "CENTER",
+            "counterAlign": "CENTER"
+          }
+        },
+        {
+          "id": "1:156",
+          "name": "tag/React",
+          "type": "FRAME",
+          "x": 188,
+          "y": 760,
+          "w": 80,
+          "h": 32,
+          "fills": [
+            {
+              "type": "SOLID",
+              "color": {
+                "r": 0.8941176470588236,
+                "g": 0.8941176470588236,
+                "b": 0.9058823529411765,
+                "a": 1
+              }
+            }
+          ],
+          "radius": 16,
+          "children": [
+            {
+              "id": "1:155",
+              "name": "label",
+              "type": "TEXT",
+              "x": 200,
+              "y": 764,
+              "w": 56,
+              "h": 24,
+              "text": {
+                "characters": "React",
+                "align": "CENTER",
+                "verticalAlign": "TOP",
+                "autoResize": "NONE",
+                "segments": [
+                  {
+                    "start": 0,
+                    "end": 5,
+                    "fontFamily": "Inter",
+                    "fontStyle": "Medium",
+                    "fontSize": 14,
+                    "lineHeight": {
+                      "unit": "PIXELS",
+                      "value": 24
+                    },
+                    "letterSpacing": {
+                      "unit": "PIXELS",
+                      "value": 0
+                    },
+                    "fills": [
+                      {
+                        "type": "SOLID",
+                        "color": {
+                          "r": 0.09411764705882353,
+                          "g": 0.09411764705882353,
+                          "b": 0.10588235294117647,
+                          "a": 1
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          ],
+          "clipsContent": false,
+          "layout": {
+            "mode": "HORIZONTAL",
+            "gap": 0,
+            "padding": [
+              4,
+              12,
+              4,
+              12
+            ],
+            "primaryAlign": "CENTER",
+            "counterAlign": "CENTER"
+          }
+        }
+      ],
+      "clipsContent": false,
+      "layout": {
+        "mode": "HORIZONTAL",
+        "gap": 8,
+        "padding": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "primaryAlign": "MIN",
+        "counterAlign": "MIN"
       }
     }
   ],

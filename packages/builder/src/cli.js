@@ -185,7 +185,6 @@ async function build(args) {
   const results = [];
   const fwPages = [];
   const responsive = [];
-  const modes = args.layout === 'auto' ? ['flow', 'absolute'] : [args.layout];
 
   try {
     for (const f of frames) {
@@ -206,14 +205,17 @@ async function build(args) {
       }
       const attempts = [];
       let chosen = null;
-      for (const mode of modes) {
-        const gen = generateFrame(tree, { mode, tokens, assetUrl: (rel) => `../assets/${rel}`, title: f.name, extraCss, semantic: args.semantic, names });
+      const parentOf = new Map();
+      (function walk(n) { for (const c of n.children || []) { parentOf.set(c.id, n.id); walk(c); } })(tree);
+
+      const runAttempt = async (mode, absIds = null) => {
+        const gen = generateFrame(tree, { mode, absIds, tokens, assetUrl: (rel) => `../assets/${rel}`, title: f.name, extraCss, semantic: args.semantic, names });
         // пробные варианты — рядом с папкой фрейма (та же глубина, пути к assets не меняются)
-        const attemptDir = modes.length > 1 ? path.join(out, `${dirName}.try-${mode}`) : fdir;
+        const attemptDir = args.layout === 'auto' ? path.join(out, `${dirName}.try-${mode}${absIds ? `-${attempts.length}` : ''}`) : fdir;
         fs.mkdirSync(attemptDir, { recursive: true });
         fs.writeFileSync(path.join(attemptDir, 'index.html'), gen.html);
         fs.writeFileSync(path.join(attemptDir, 'styles.css'), gen.css);
-        const att = { mode, gen, dir: attemptDir, percent: NaN };
+        const att = { mode, gen, dir: attemptDir, percent: NaN, pinned: absIds ? [...absIds] : [] };
         if (browser) {
           const rendered = await renderPage(browser, path.join(attemptDir, 'index.html'), {
             width: f.width, height: f.height, scale: pkg.scale, out: path.join(attemptDir, 'render.png'),
@@ -253,10 +255,59 @@ async function build(args) {
         const complete = !gen.stats.missing.length;
         if (!complete) console.log(`  ✗ не свёрстаны слои: ${gen.stats.missing.slice(0, 5).map((m) => m.name).join(', ')}${gen.stats.missing.length > 5 ? '…' : ''}`);
         att.ok = complete && (!att.geometry || att.geometry.failed === 0) && (!hasRef || pixelOk(att.diff, args));
-        if (att.ok || (!hasRef && !att.geometry)) { chosen = att; break; }
-      }
-      // чистая раскладка (первая попытка) остаётся, если запасная не лучше заметно (на 20%)
+        return att;
+      };
+
+      // слои, которые не сошлись: геометрия и (при эталоне) не-текстовые источники pixel diff.
+      // Что закреплять: сдвинут сам слой — виноват родитель (раскладка его детей); у контейнера на месте,
+      // но не того размера, — его собственная раскладка
+      const nodeById = new Map();
+      (function walk(n) { nodeById.set(n.id, n); (n.children || []).forEach(walk); })(tree);
+      const culprits = (att) => {
+        const bad = new Map();
+        for (const i of att.geometry?.issues || []) {
+          const moved = Math.abs(i.figma.x - i.html.x) > 0.5 || Math.abs(i.figma.y - i.html.y) > 0.5;
+          bad.set(i.id, moved || !nodeById.get(i.id)?.children?.length ? 'parent' : 'self');
+        }
+        if (hasRef && att.diff && !pixelOk(att.diff, args)) {
+          for (const t of att.diff.sources?.top || []) if (t.type !== 'TEXT' && t.pixels >= 50 && !bad.has(t.id)) bad.set(t.id, 'parent');
+        }
+        // сдвиг, унаследованный от несошедшегося предка, — не своя ошибка: берём только верхние
+        const inherited = (id) => { for (let p = parentOf.get(id); p; p = parentOf.get(p)) if (bad.has(p)) return true; return false; };
+        const pins = new Set();
+        for (const [id, who] of bad) if (!inherited(id)) pins.add(who === 'self' ? id : parentOf.get(id));
+        pins.delete(undefined);
+        return pins;
+      };
+
       const score = (a) => (a.geometry?.failed || 0) * 1000 + (Number.isNaN(a.percent) ? 0 : a.percent);
+      if (args.layout !== 'auto') {
+        chosen = await runAttempt(args.layout);
+      } else {
+        let att = await runAttempt('flow');
+        if (att.ok || (!hasRef && !att.geometry)) chosen = att;
+        // точечный запасной режим: координаты только у родителей несошедшихся слоёв;
+        // не сошлось — поднимаемся на уровень выше; до 4 шагов
+        const pinned = new Set();
+        for (let step = 0; !chosen && step < 4; step++) {
+          const want = culprits(att);
+          if (!want.size) break;
+          let grew = false;
+          for (let p of want) {
+            while (p && pinned.has(p)) p = parentOf.get(p); // уже закреплён и не помогло — уровнем выше
+            if (p && !pinned.has(p)) { pinned.add(p); grew = true; }
+          }
+          if (!grew) break;
+          att = await runAttempt('hybrid', new Set(pinned));
+          if (att.ok) chosen = att;
+          else if (score(att) >= score(attempts[0])) break; // не помогает — дальше полный запасной режим
+        }
+        if (!chosen) {
+          att = await runAttempt('absolute');
+          if (att.ok) chosen = att;
+        }
+      }
+      // чистая раскладка (первая попытка) остаётся, если запасные не лучше заметно (на 20%)
       if (!chosen) chosen = attempts.reduce((a, b) => (score(b) < score(a) * 0.8 ? b : a));
       chosen.chosen = true;
 
@@ -275,14 +326,16 @@ async function build(args) {
       results.push({
         name: f.name, id: f.id, width: f.width, height: f.height, dir: dirName,
         mode: chosen.mode, stats: chosen.gen.stats, fonts: chosen.fonts, diff: chosen.diff, geometry: chosen.geometry, refine: chosen.refine, pixels: pixelSplit(chosen.diff), pass,
-        attempts: attempts.map((a) => ({ mode: a.mode, percent: a.percent, geometryFailed: a.geometry?.failed ?? null, chosen: a.chosen })),
+        pinned: chosen.pinned,
+        attempts: attempts.map((a) => ({ mode: a.mode, pinned: a.pinned.length, percent: a.percent, geometryFailed: a.geometry?.failed ?? null, chosen: a.chosen })),
       });
       const geo = chosen.geometry ? `геометрия ${chosen.geometry.checked - chosen.geometry.failed}/${chosen.geometry.checked} (макс. ${chosen.geometry.maxDelta}px)` : '';
       const sp = pixelSplit(chosen.diff);
       const pix = hasRef ? `pixel diff ${chosen.percent.toFixed(3)}% (текст ${sp.textPct.toFixed(3)}%, остальное ${sp.otherPct.toFixed(3)}%)` : 'без эталона';
       const ref = chosen.refine ? ` (до автодоработки ${chosen.refine.before.toFixed(3)}%, поправок ${chosen.refine.patches.length})` : '';
       const status = `${pix}${ref} · ${geo} · ${pass === null ? '' : pass ? 'OK' : 'FAIL'}`;
-      console.log(`  ${f.name}: ${chosen.mode} · ${status}`);
+      const modeLabel = chosen.mode === 'hybrid' ? `flow, координаты закреплены у блоков: ${chosen.pinned.length}` : chosen.mode;
+      console.log(`  ${f.name}: ${modeLabel} · ${status}`);
     }
     // адаптивные страницы: фреймы одной страницы под разные ширины
     if (args.responsive) {

@@ -259,13 +259,13 @@ function inlineHtml(el) {
  * Генерирует страницу для одного фрейма.
  * @returns {{ html: string, css: string, stats: object }}
  */
-export function generateFrame(tree, { mode = 'flow', tokens, assetUrl, title, extraCss = [], semantic = true, names = null }) {
+export function generateFrame(tree, { mode = 'flow', absIds = null, tokens, assetUrl, title, extraCss = [], semantic = true, names = null }) {
   const styles = new StyleRegistry();
   const sem = semantic ? analyzeSemantics(tree) : null;
   // имена от ИИ (если включён) — только для безликих слоёв; теги остаются алгоритмическими
   if (sem && names) for (const [id, name] of names) { const e = sem.get(id); if (e) e.name = className(name); }
   const ctx = { styles, tokens, assetUrl, semantic: sem, downgrade: new Set() };
-  const root = buildBox(tree, { mode });
+  const root = buildBox(tree, { mode, absIds });
   const rootEl = buildEl(root, null, ctx);
   const body = htmlOf(rootEl, 1);
 

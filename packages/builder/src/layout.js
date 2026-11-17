@@ -99,14 +99,17 @@ function groupMasks(kids) {
 const hasAutoLayout = (n) => n.layout && (n.layout.mode === 'HORIZONTAL' || n.layout.mode === 'VERTICAL');
 
 /** Строит дерево блоков для узла. */
-export function buildBox(node, opts) {
+export function buildBox(node, outer) {
   const box = { kind: 'node', node, rect: rectOf(node), flow: 'col', children: [], absChildren: [] };
   if (node.type === 'TEXT' || node.svg) return box; // листья
   const kids = (node.children || []).filter(isVisible);
   if (!kids.length) return box;
+  // точечный запасной режим: только у этого узла дети ставятся по координатам, глубже — как обычно
+  const opts = outer.absIds?.has(node.id) ? { ...outer, mode: 'absolute' } : outer;
+  if (opts !== outer) box.pinned = true;
   const childBoxes = groupMasks(kids).map((k) => (k.mask
-    ? { kind: 'mask', node: k.mask, rect: rectOf(k.mask), flow: 'abs', children: k.members.map((m) => buildBox(m, opts)), absChildren: [] }
-    : buildBox(k, opts)));
+    ? { kind: 'mask', node: k.mask, rect: rectOf(k.mask), flow: 'abs', children: k.members.map((m) => buildBox(m, outer)), absChildren: [] }
+    : buildBox(k, outer)));
   // повёрнутый контейнер: дети несут свои абсолютные матрицы — кладём их в рамку как есть
   if (isTransformed(node)) {
     box.flow = 'abs';
