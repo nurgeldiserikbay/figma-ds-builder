@@ -1,10 +1,27 @@
 name: Текст на Windows (эксперимент)
 
 # Сравнение рендера текста с эталоном Figma на Windows при разных настройках Chrome.
+# Пакет из открытого макета готовится на Linux (конвертер .fig), сверка — на Windows.
 on: workflow_dispatch
 
 jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - id: chrome
+        uses: browser-actions/setup-chrome@v1
+        with: { chrome-version: stable }
+      - run: npm run setup
+      - run: cd packages/bench && node src/run.js --only hackrpi-thankyou --runs 1 | tail -8
+        env: { CHROME_PATH: '${{ steps.chrome.outputs.chrome-path }}' }
+      - uses: actions/upload-artifact@v4
+        with: { name: pkg, path: .bench/packages/hackrpi-thankyou }
+
   measure:
+    needs: prepare
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -14,13 +31,14 @@ jobs:
         uses: browser-actions/setup-chrome@v1
         with: { chrome-version: stable }
       - run: npm run setup
+      - uses: actions/download-artifact@v4
+        with: { name: pkg, path: pkg }
       - name: Варианты
         shell: bash
         env:
           CHROME_PATH: ${{ steps.chrome.outputs.chrome-path }}
         run: |
-          cd packages/bench
-          for v in "" "--text-contrast=0 --text-gamma=1000" "--text-contrast=50 --text-gamma=1200" "--disable-font-subpixel-positioning" "--enable-font-antialiasing --text-contrast=0"; do
+          for v in "" "--text-contrast=0 --text-gamma=1000" "--text-contrast=0 --text-gamma=1400" "--text-contrast=100 --text-gamma=1200" "--disable-font-subpixel-positioning"; do
             echo "=== DS_CHROME_ARGS='$v'"
-            DS_CHROME_ARGS="$v" node src/run.js --only hackrpi-thankyou --runs 1 2>&1 | tail -14 || true
+            DS_CHROME_ARGS="$v" node packages/builder/src/cli.js build pkg --out "out/v" --no-analyze --no-responsive --no-refine 2>&1 | grep -E "pixel diff|Ошибка" || true
           done
