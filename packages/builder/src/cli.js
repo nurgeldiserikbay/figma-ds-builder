@@ -20,7 +20,7 @@ import { exportFiles, toTokens } from './ds/export.js';
 import { familiesOf, ensureFonts, buildFontsCss, defaultCacheDir } from './fonts.js';
 import { findComponents } from './components.js';
 import { preparePages, exportReact, exportVue, renderReact, renderVue, checkPageHtml } from './frameworks.js';
-import { groupFrames, writeResponsive } from './responsive.js';
+import { groupFrames, writeResponsive, textsOf } from './responsive.js';
 
 const HELP = `
 ds-build analyze <пакет | пакет.zip> [--out папка] [--delta-e 3] [--min-uses 2]
@@ -286,7 +286,7 @@ async function build(args) {
     }
     // адаптивные страницы: фреймы одной страницы под разные ширины
     if (args.responsive) {
-      const groups = groupFrames(fwPages.map((p) => ({ name: p.title, page: p.page, width: p.width })), args.groups);
+      const groups = groupFrames(fwPages.map((p) => ({ name: p.title, page: p.page, width: p.width, texts: textsOf(p.tree) })), args.groups);
       for (const g of groups) {
         const variants = g.members.map((i) => fwPages[i]);
         const dir = writeResponsive(out, g, variants);

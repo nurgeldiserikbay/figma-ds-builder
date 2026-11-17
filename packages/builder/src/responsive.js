@@ -22,8 +22,27 @@ export function pageNameOf(name) {
     .replace(/\s*[/|—–]\s*(?=[/|—–]|$)/gu, '').replace(/\s{2,}/g, ' ').trim();
 }
 
+/** Тексты фрейма — признак «это та же страница». */
+export function textsOf(tree) {
+  const out = new Set();
+  (function walk(n) {
+    if (n.type === 'TEXT' && n.text?.characters) out.add(n.text.characters.trim().toLowerCase().replace(/\s+/g, ' '));
+    (n.children || []).forEach(walk);
+  })(tree);
+  return out;
+}
+
+// доля общих текстов (от меньшего набора): у вариантов одной страницы тексты в основном те же
+function overlap(a, b) {
+  if (!a || !b) return 1;
+  if (!a.size || !b.size) return 0;
+  let n = 0;
+  for (const t of a) if (b.has(t)) n++;
+  return n / Math.min(a.size, b.size);
+}
+
 /**
- * @param {{ name: string, page?: string, width: number }[]} frames
+ * @param {{ name: string, page?: string, width: number, texts?: Set<string> }[]} frames
  * @param {Record<string, string[]>} manual — { "Главная": ["Home / Desktop", "Home / Mobile"] }
  * @returns {{ name: string, members: number[] }[]} — группы из ≥2 фреймов разной ширины, по возрастанию ширины
  */
@@ -48,6 +67,8 @@ export function groupFrames(frames, manual = {}) {
   for (const [key, members] of groups) {
     const widths = new Set(members.map((i) => Math.round(frames[i].width)));
     if (members.length < 2 || widths.size !== members.length) continue;
+    // группа по имени — только если у макетов в основном общие тексты (ручная --group не проверяется)
+    if (key.includes('\u0000') && !members.every((i) => members.every((j) => i === j || overlap(frames[i].texts, frames[j].texts) >= 0.5))) continue;
     members.sort((a, b) => frames[a].width - frames[b].width);
     const f0 = frames[members[0]];
     out.push({ name: key.includes('\u0000') ? pageNameOf(f0.name) || f0.page || 'page' : key, members });
