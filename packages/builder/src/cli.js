@@ -20,6 +20,7 @@ import { exportFiles, toTokens } from './ds/export.js';
 import { familiesOf, ensureFonts, buildFontsCss, defaultCacheDir } from './fonts.js';
 import { findComponents } from './components.js';
 import { preparePages, exportReact, exportVue, renderReact, renderVue, checkPageHtml } from './frameworks.js';
+import { groupFrames, writeResponsive } from './responsive.js';
 
 const HELP = `
 ds-build analyze <пакет | пакет.zip> [--out папка] [--delta-e 3] [--min-uses 2]
@@ -43,6 +44,9 @@ ds-build build <пакет | пакет.zip> [опции]
                        none — только шрифты, установленные в системе
   --css <файл>         подключить дополнительный CSS ко всем страницам (например, свои @font-face)
   --open               открыть отчёт в браузере после сборки
+  --group "Имя=Фрейм A,Фрейм B"
+                       объединить фреймы одной страницы под разные ширины (по умолчанию — по именам:
+                       «Home / Desktop» и «Home / Mobile» → «Home»); --no-responsive — не объединять
   --framework <список> react, vue или react,vue: проект на Vite с компонентами (повторяющиеся блоки →
                        компоненты с параметрами) и страницами; каждая страница проверяется — серверный
                        рендер должен совпасть с HTML-версией пиксель в пиксель
@@ -57,7 +61,7 @@ ds-build build <пакет | пакет.zip> [опции]
 `;
 
 function parseArgs(argv) {
-  const a = { _: [], frames: [], css: [], frameworks: [], layout: 'auto', threshold: 0.1, textThreshold: 0.5, out: 'out', verify: true, refine: true, analyze: true, fonts: 'auto', semantic: true, ai: false };
+  const a = { _: [], frames: [], css: [], frameworks: [], groups: {}, responsive: true, layout: 'auto', threshold: 0.1, textThreshold: 0.5, out: 'out', verify: true, refine: true, analyze: true, fonts: 'auto', semantic: true, ai: false };
   for (let i = 0; i < argv.length; i++) {
     const k = argv[i];
     if (k === '--out') a.out = argv[++i];
@@ -73,6 +77,8 @@ function parseArgs(argv) {
     else if (k === '--ai') a.ai = true;
     else if (k === '--fonts') a.fonts = argv[++i];
     else if (k === '--open') a.open = true;
+    else if (k === '--no-responsive') a.responsive = false;
+    else if (k === '--group') { const [n, list] = argv[++i].split('='); a.groups[n.trim()] = (list || '').split(',').map((x) => x.trim()).filter(Boolean); }
     else if (k === '--framework') a.frameworks.push(...argv[++i].split(',').map((x) => x.trim().toLowerCase()).filter(Boolean));
     else if (k === '--delta-e') a.deltaE = parseFloat(argv[++i]);
     else if (k === '--min-uses') a.minUses = parseInt(argv[++i], 10);
@@ -178,6 +184,7 @@ async function build(args) {
   const browser = args.verify ? await openBrowser() : null;
   const results = [];
   const fwPages = [];
+  const responsive = [];
   const modes = args.layout === 'auto' ? ['flow', 'absolute'] : [args.layout];
 
   try {
@@ -264,7 +271,7 @@ async function build(args) {
       for (const a of attempts) if (a.dir !== fdir) fs.rmSync(a.dir, { recursive: true, force: true });
 
       const pass = browser ? !!chosen.ok : null;
-      fwPages.push({ title: f.name, dir: dirName, root: chosen.gen.root, tree, width: f.width, height: f.height, result: results.length });
+      fwPages.push({ title: f.name, page: f.page, dir: dirName, root: chosen.gen.root, tree, width: f.width, height: f.height, result: results.length });
       results.push({
         name: f.name, id: f.id, width: f.width, height: f.height, dir: dirName,
         mode: chosen.mode, stats: chosen.gen.stats, fonts: chosen.fonts, diff: chosen.diff, geometry: chosen.geometry, refine: chosen.refine, pixels: pixelSplit(chosen.diff), pass,
@@ -277,14 +284,46 @@ async function build(args) {
       const status = `${pix}${ref} · ${geo} · ${pass === null ? '' : pass ? 'OK' : 'FAIL'}`;
       console.log(`  ${f.name}: ${chosen.mode} · ${status}`);
     }
+    // адаптивные страницы: фреймы одной страницы под разные ширины
+    if (args.responsive) {
+      const groups = groupFrames(fwPages.map((p) => ({ name: p.title, page: p.page, width: p.width })), args.groups);
+      for (const g of groups) {
+        const variants = g.members.map((i) => fwPages[i]);
+        const dir = writeResponsive(out, g, variants);
+        const entry = { name: g.name, dir, widths: variants.map((v) => Math.round(v.width)), exact: [], overflow: [] };
+        if (browser) {
+          // на ширине каждого макета — точно его вёрстка
+          for (const v of variants) {
+            const png = path.join(out, dir, `render-${Math.round(v.width)}.png`);
+            const r = await renderPage(browser, path.join(out, dir, 'index.html'), { width: v.width, height: v.height, scale: pkg.scale, out: png });
+            const d = comparePng(path.join(out, v.dir, 'render.png'), png, path.join(out, dir, `diff-${Math.round(v.width)}.png`));
+            const geo = checkGeometry(v.tree, r.boxes.filter((b) => b.w > 0 || b.h > 0));
+            entry.exact.push({ width: Math.round(v.width), same: d.mismatched === 0 && geo.failed === 0, percent: d.percent });
+          }
+          // между ширинами и уже самого узкого — без горизонтальной прокрутки
+          const ws = variants.map((v) => v.width);
+          const probes = [Math.max(280, Math.round(ws[0] * 0.8)), ...ws.slice(1).map((w, i) => Math.round((w + ws[i]) / 2)), Math.round(ws[ws.length - 1] * 1.25)];
+          for (const w of probes) {
+            const r = await renderPage(browser, path.join(out, dir, 'index.html'), { width: w, height: 800, scale: 1, out: null });
+            entry.overflow.push({ width: w, ok: !r.overflowX });
+          }
+        }
+        const ok = entry.exact.every((e) => e.same) && entry.overflow.every((e) => e.ok);
+        console.log(`Адаптивная страница «${g.name}» (${entry.widths.join(' / ')}): ${browser ? (ok ? 'на каждой ширине совпадает с макетом, без горизонтальной прокрутки' : 'ЕСТЬ РАСХОЖДЕНИЯ') : 'собрана'} → ${dir}/`);
+        if (browser && !ok) process.exitCode = 2;
+        responsive.push({ ...entry, ok, components: g.members.map((i) => fwPages[i]) });
+      }
+    }
+
     // компоненты и фреймворки: из того же дерева элементов; проверка — совпадение с HTML-версией
     if (args.frameworks.length && fwPages.length) {
       const pages = preparePages(fwPages);
+      const groupsFw = responsive.map((r) => ({ name: r.name, members: r.components.map((c) => pages[fwPages.indexOf(c)]), widths: r.widths }));
       const comps = findComponents(pages);
       console.log(`Компоненты: ${comps.components.length}${comps.components.length ? ' — ' + comps.components.slice(0, 8).map((c) => `${c.name}×${c.instances.length}${c.props.length ? ` (${c.props.map((p) => p.name).join(', ')})` : ''}`).join(', ') : ''}`);
       for (const fw of args.frameworks) {
         if (!['react', 'vue'].includes(fw)) { console.log(`  неизвестный фреймворк: ${fw}`); continue; }
-        const dir = fw === 'react' ? exportReact(out, pages, comps) : exportVue(out, pages, comps);
+        const dir = fw === 'react' ? exportReact(out, pages, comps, groupsFw) : exportVue(out, pages, comps, groupsFw);
         console.log(`${fw === 'react' ? 'React' : 'Vue'}: ${path.relative(process.cwd(), dir) || dir}`);
         if (!browser) continue;
         const markup = fw === 'react' ? await renderReact(pages, comps) : await renderVue(pages, comps);
@@ -312,7 +351,7 @@ async function build(args) {
     await browser?.close();
   }
 
-  fs.writeFileSync(path.join(out, 'report.html'), buildReport({ file: pkg.manifest.file, threshold: args.threshold, textThreshold: args.textThreshold, results }));
+  fs.writeFileSync(path.join(out, 'report.html'), buildReport({ file: pkg.manifest.file, threshold: args.threshold, textThreshold: args.textThreshold, results, responsive: responsive.map(({ components, ...r }) => r) }));
   fs.writeFileSync(path.join(out, 'report.json'), JSON.stringify({ file: pkg.manifest.file, threshold: args.threshold,
     results: results.map(({ stats, ...r }) => ({ ...r, stats })) }, null, 2));
   console.log(`Отчёт: ${path.join(out, 'report.html')}`);

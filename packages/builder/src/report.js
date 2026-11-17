@@ -1,7 +1,7 @@
 // HTML-отчёт: эталон / вёрстка / разница + наложение с ползунком.
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
-export function buildReport({ file, threshold, textThreshold, results }) {
+export function buildReport({ file, threshold, textThreshold, results, responsive = [] }) {
   const passed = results.filter((r) => r.pass).length;
   const cards = results
     .map((r) => {
@@ -70,6 +70,11 @@ export function buildReport({ file, threshold, textThreshold, results }) {
 <h1>Pixel diff: ${esc(file)}</h1>
 <p class="summary"><a href="design-system/design-system.md">Дизайн-система</a> · <a href="design-system/tokens.json">tokens.json</a> (импорт в Figma — кнопкой в плагине)</p>
 <p class="summary">Критерий: геометрия каждого элемента ±0.5px; несовпадающих пикселей вне текста не больше ${threshold}%, в тексте — не больше ${textThreshold}% · прошли ${passed} из ${results.length} фреймов</p>
+${responsive.length ? `<section class="card"><header><h2>Адаптивные страницы</h2></header>
+${responsive.map((r) => `<p class="meta"><b>${esc(r.name)}</b> — макеты ${r.widths.join(' / ')} px · <a href="${esc(r.dir)}/index.html">открыть</a><br>
+На ширине макета: ${r.exact.map((e) => `${e.width}px ${e.same ? '✓' : '✗ ' + e.percent.toFixed(3) + '%'}`).join(' · ') || '—'}<br>
+Без горизонтальной прокрутки: ${r.overflow.map((e) => `${e.width}px ${e.ok ? '✓' : '✗'}`).join(' · ') || '—'}</p>`).join('\n')}
+<p class="meta">Между ширинами показывается ближайший меньший макет по центру, уже самого узкого — пропорциональное уменьшение.</p></section>` : ''}
 ${cards}
 </main>
 <script>

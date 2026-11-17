@@ -7,6 +7,7 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { pascal } from './components.js';
+import { responsiveCss } from './responsive.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
@@ -259,9 +260,60 @@ export function preparePages(pages) {
   });
 }
 
-export function exportReact(siteDir, pages, comps) {
+function respInfo(groups) {
+  return groups.map((g) => {
+    const name = `${pascal(g.name)}Responsive`;
+    const prefix = `bp-${pascal(g.name).toLowerCase()}`;
+    return { ...g, component: name, route: name.replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase(), prefix, css: responsiveCss(g.widths, prefix) };
+  });
+}
+
+function reactResponsive(r) {
+  const smallest = r.widths[0];
+  return `import { useEffect, useRef } from 'react';
+${r.members.map((m) => `import ${m.component} from './${m.component}.jsx';`).join('\n')}
+
+/** Адаптивная страница: макеты ${r.widths.join(' / ')} px, переключение — в site.css (@media). */
+export default function ${r.component}() {
+  const first = useRef(null);
+  useEffect(() => {
+    // уже самого узкого макета — пропорциональное уменьшение
+    const fit = () => { const el = first.current?.firstElementChild; if (el) el.style.zoom = innerWidth < ${smallest} ? String(innerWidth / ${smallest}) : ''; };
+    fit(); addEventListener('resize', fit);
+    return () => removeEventListener('resize', fit);
+  }, []);
+  return (
+    <>
+${r.members.map((m, i) => `      <div className="${r.prefix} ${r.prefix}-${i}"${i === 0 ? ' ref={first}' : ''}><${m.component} /></div>`).join('\n')}
+    </>
+  );
+}
+`;
+}
+
+function vueResponsive(r) {
+  const smallest = r.widths[0];
+  return `<script setup>
+import { ref, onMounted, onUnmounted } from 'vue';
+${r.members.map((m) => `import ${m.component} from './${m.component}.vue';`).join('\n')}
+// Адаптивная страница: макеты ${r.widths.join(' / ')} px, переключение — в site.css (@media).
+const first = ref(null);
+const fit = () => { const el = first.value?.firstElementChild; if (el) el.style.zoom = innerWidth < ${smallest} ? String(innerWidth / ${smallest}) : ''; };
+onMounted(() => { fit(); addEventListener('resize', fit); });
+onUnmounted(() => removeEventListener('resize', fit));
+</script>
+
+<template>
+${r.members.map((m, i) => `  <div class="${r.prefix} ${r.prefix}-${i}"${i === 0 ? ' ref="first"' : ''}><${m.component} /></div>`).join('\n')}
+</template>
+`;
+}
+
+export function exportReact(siteDir, pages, comps, groups = []) {
   const root = path.join(siteDir, 'react');
   fs.rmSync(root, { recursive: true, force: true });
+  const resp = respInfo(groups);
+  const routesList = [...resp, ...pages];
   const files = {
     'package.json': JSON.stringify({ name: 'figma-ds-site-react', private: true, type: 'module',
       scripts: { dev: 'vite', build: 'vite build', preview: 'vite preview' },
@@ -272,11 +324,11 @@ export function exportReact(siteDir, pages, comps) {
     'src/assets.js': "export const asset = (p) => import.meta.env.BASE_URL + 'assets/' + p;\n",
     'src/main.jsx': "import { createRoot } from 'react-dom/client';\nimport App from './App.jsx';\nimport './styles/site.css';\n\ncreateRoot(document.getElementById('root')).render(<App />);\n",
     'src/App.jsx': `import { useEffect, useState } from 'react';
-${pages.map((p) => `import ${p.component} from './pages/${p.component}.jsx';`).join('\n')}
+${routesList.map((p) => `import ${p.component} from './pages/${p.component}.jsx';`).join('\n')}
 
-// Страницы из макетов; переключение — #${pages[0]?.route}
-const routes = { ${pages.map((p) => `'${p.route}': ${p.component}`).join(', ')} };
-const first = '${pages[0]?.route}';
+// Страницы из макетов; переключение — #${routesList[0]?.route}
+const routes = { ${routesList.map((p) => `'${p.route}': ${p.component}`).join(', ')} };
+const first = '${routesList[0]?.route}';
 
 export default function App() {
   const [route, setRoute] = useState(() => location.hash.slice(1) || first);
@@ -289,9 +341,10 @@ export default function App() {
   return <Page />;
 }
 `,
-    'src/styles/site.css': siteCss(siteDir, pages, path.join(root, 'public/fonts')),
-    'README.md': `# Вёрстка из Figma — React\n\nСгенерировано figma-ds-builder. Компонентов: ${comps.components.length}, страниц: ${pages.length}.\n\n\`\`\`bash\nnpm install\nnpm run dev\n\`\`\`\n\nСтраницы: ${pages.map((p) => `#${p.route}`).join(', ')}.\nПроп \`ids\` у компонентов связывает элементы со слоями Figma (нужен для сверки), его можно удалить.\n`,
+    'src/styles/site.css': siteCss(siteDir, pages, path.join(root, 'public/fonts')) + resp.map((r) => r.css).join('\n') + '\n',
+    'README.md': `# Вёрстка из Figma — React\n\nСгенерировано figma-ds-builder. Компонентов: ${comps.components.length}, страниц: ${pages.length}.\n\n\`\`\`bash\nnpm install\nnpm run dev\n\`\`\`\n\nСтраницы: ${routesList.map((p) => `#${p.route}`).join(', ')}.\nПроп \`ids\` у компонентов связывает элементы со слоями Figma (нужен для сверки), его можно удалить.\n`,
   };
+  for (const r of resp) files[`src/pages/${r.component}.jsx`] = reactResponsive(r);
   for (const c of comps.components) files[`src/components/${c.name}.jsx`] = reactComponent(c);
   for (const p of pages) files[`src/pages/${p.component}.jsx`] = reactPage(p, comps);
   writeFiles(root, files);
@@ -299,9 +352,11 @@ export default function App() {
   return root;
 }
 
-export function exportVue(siteDir, pages, comps) {
+export function exportVue(siteDir, pages, comps, groups = []) {
   const root = path.join(siteDir, 'vue');
   fs.rmSync(root, { recursive: true, force: true });
+  const resp = respInfo(groups);
+  const routesList = [...resp, ...pages];
   const files = {
     'package.json': JSON.stringify({ name: 'figma-ds-site-vue', private: true, type: 'module',
       scripts: { dev: 'vite', build: 'vite build', preview: 'vite preview' },
@@ -313,11 +368,11 @@ export function exportVue(siteDir, pages, comps) {
     'src/main.js': "import { createApp } from 'vue';\nimport App from './App.vue';\nimport './styles/site.css';\n\ncreateApp(App).mount('#app');\n",
     'src/App.vue': `<script setup>
 import { ref, onMounted, onUnmounted, computed } from 'vue';
-${pages.map((p) => `import ${p.component} from './pages/${p.component}.vue';`).join('\n')}
+${routesList.map((p) => `import ${p.component} from './pages/${p.component}.vue';`).join('\n')}
 
-// Страницы из макетов; переключение — #${pages[0]?.route}
-const routes = { ${pages.map((p) => `'${p.route}': ${p.component}`).join(', ')} };
-const first = '${pages[0]?.route}';
+// Страницы из макетов; переключение — #${routesList[0]?.route}
+const routes = { ${routesList.map((p) => `'${p.route}': ${p.component}`).join(', ')} };
+const first = '${routesList[0]?.route}';
 const route = ref(location.hash.slice(1) || first);
 const on = () => (route.value = location.hash.slice(1) || first);
 onMounted(() => addEventListener('hashchange', on));
@@ -329,9 +384,10 @@ const Page = computed(() => routes[route.value] || routes[first]);
   <component :is="Page" />
 </template>
 `,
-    'src/styles/site.css': siteCss(siteDir, pages, path.join(root, 'public/fonts')),
-    'README.md': `# Вёрстка из Figma — Vue\n\nСгенерировано figma-ds-builder. Компонентов: ${comps.components.length}, страниц: ${pages.length}.\n\n\`\`\`bash\nnpm install\nnpm run dev\n\`\`\`\n\nСтраницы: ${pages.map((p) => `#${p.route}`).join(', ')}.\nПроп \`ids\` у компонентов связывает элементы со слоями Figma (нужен для сверки), его можно удалить.\n`,
+    'src/styles/site.css': siteCss(siteDir, pages, path.join(root, 'public/fonts')) + resp.map((r) => r.css).join('\n') + '\n',
+    'README.md': `# Вёрстка из Figma — Vue\n\nСгенерировано figma-ds-builder. Компонентов: ${comps.components.length}, страниц: ${pages.length}.\n\n\`\`\`bash\nnpm install\nnpm run dev\n\`\`\`\n\nСтраницы: ${routesList.map((p) => `#${p.route}`).join(', ')}.\nПроп \`ids\` у компонентов связывает элементы со слоями Figma (нужен для сверки), его можно удалить.\n`,
   };
+  for (const r of resp) files[`src/pages/${r.component}.vue`] = vueResponsive(r);
   for (const c of comps.components) files[`src/components/${c.name}.vue`] = vueComponent(c);
   for (const p of pages) files[`src/pages/${p.component}.vue`] = vuePage(p, comps);
   writeFiles(root, files);

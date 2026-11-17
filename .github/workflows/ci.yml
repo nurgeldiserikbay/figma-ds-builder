@@ -10,6 +10,7 @@ jobs:
   test:
     name: ${{ matrix.os }} · Node ${{ matrix.node }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -37,8 +38,11 @@ jobs:
 
       - name: Тесты программы и плагина
         run: npm test
+        timeout-minutes: 15
         env:
           CHROME_PATH: ${{ steps.chrome.outputs.chrome-path }}
+          # на macOS тест зависал без вывода — подробный журнал браузера, чтобы видеть, где
+          DEBUG: ${{ runner.os == 'macOS' && 'pw:browser,pw:api' || '' }}
 
       - name: Сборка из zip (путь с пробелами и тире, как называет плагин)
         shell: bash

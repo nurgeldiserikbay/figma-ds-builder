@@ -41,7 +41,8 @@ export async function renderPage(browser, htmlPath, { width, height, scale = 1, 
       return { id: el.dataset.figmaId, x: r.x + scrollX, y: r.y + scrollY, w: r.width, h: r.height };
     }),
   );
-  await page.screenshot({ path: out, clip: { x: 0, y: 0, width, height } });
+  const overflowX = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 0.5);
+  if (out) await page.screenshot({ path: out, clip: { x: 0, y: 0, width, height } });
   await page.close();
-  return { fonts, boxes };
+  return { fonts, boxes, overflowX };
 }

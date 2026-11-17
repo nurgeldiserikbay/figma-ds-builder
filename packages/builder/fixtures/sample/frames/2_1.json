@@ -1,0 +1,438 @@
+{
+  "id": "2:1",
+  "name": "Landing / Mobile",
+  "type": "FRAME",
+  "x": 0,
+  "y": 0,
+  "w": 390,
+  "h": 760,
+  "fills": [
+    {
+      "type": "SOLID",
+      "color": {
+        "r": 0.9803921568627451,
+        "g": 0.9803921568627451,
+        "b": 0.9803921568627451,
+        "a": 1
+      }
+    }
+  ],
+  "children": [
+    {
+      "id": "1:140",
+      "name": "m/logo",
+      "type": "TEXT",
+      "x": 20,
+      "y": 20,
+      "w": 120,
+      "h": 28,
+      "text": {
+        "characters": "Acme",
+        "align": "LEFT",
+        "verticalAlign": "TOP",
+        "autoResize": "NONE",
+        "segments": [
+          {
+            "start": 0,
+            "end": 4,
+            "fontFamily": "Inter",
+            "fontStyle": "Bold",
+            "fontSize": 20,
+            "lineHeight": {
+              "unit": "PIXELS",
+              "value": 28
+            },
+            "letterSpacing": {
+              "unit": "PIXELS",
+              "value": 0
+            },
+            "fills": [
+              {
+                "type": "SOLID",
+                "color": {
+                  "r": 0.09411764705882353,
+                  "g": 0.09411764705882353,
+                  "b": 0.10588235294117647,
+                  "a": 1
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "1:141",
+      "name": "m/title",
+      "type": "TEXT",
+      "x": 20,
+      "y": 80,
+      "w": 350,
+      "h": 96,
+      "text": {
+        "characters": "Дизайн-система из любого макета",
+        "align": "LEFT",
+        "verticalAlign": "TOP",
+        "autoResize": "NONE",
+        "segments": [
+          {
+            "start": 0,
+            "end": 31,
+            "fontFamily": "Inter",
+            "fontStyle": "Bold",
+            "fontSize": 36,
+            "lineHeight": {
+              "unit": "PIXELS",
+              "value": 48
+            },
+            "letterSpacing": {
+              "unit": "PIXELS",
+              "value": -0.5
+            },
+            "fills": [
+              {
+                "type": "SOLID",
+                "color": {
+                  "r": 0.09411764705882353,
+                  "g": 0.09411764705882353,
+                  "b": 0.10588235294117647,
+                  "a": 1
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "1:142",
+      "name": "m/subtitle",
+      "type": "TEXT",
+      "x": 20,
+      "y": 192,
+      "w": 350,
+      "h": 72,
+      "text": {
+        "characters": "Плагин собирает токены и компоненты, а программа верстает страницы и проверяет их попиксельно.",
+        "align": "LEFT",
+        "verticalAlign": "TOP",
+        "autoResize": "NONE",
+        "segments": [
+          {
+            "start": 0,
+            "end": 94,
+            "fontFamily": "Inter",
+            "fontStyle": "Regular",
+            "fontSize": 16,
+            "lineHeight": {
+              "unit": "PIXELS",
+              "value": 24
+            },
+            "letterSpacing": {
+              "unit": "PIXELS",
+              "value": 0
+            },
+            "fills": [
+              {
+                "type": "SOLID",
+                "color": {
+                  "r": 0.3215686274509804,
+                  "g": 0.3215686274509804,
+                  "b": 0.3568627450980392,
+                  "a": 1
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "1:143",
+      "name": "Button / Primary",
+      "type": "GROUP",
+      "x": 20,
+      "y": 288,
+      "w": 350,
+      "h": 52,
+      "children": [
+        {
+          "id": "1:144",
+          "name": "bg",
+          "type": "RECTANGLE",
+          "x": 20,
+          "y": 288,
+          "w": 350,
+          "h": 52,
+          "fills": [
+            {
+              "type": "SOLID",
+              "color": {
+                "r": 0.23137254901960785,
+                "g": 0.5098039215686274,
+                "b": 0.9647058823529412,
+                "a": 1
+              }
+            }
+          ],
+          "radius": 10,
+          "strokeWeight": 1.5,
+          "strokeAlign": "INSIDE"
+        },
+        {
+          "id": "1:145",
+          "name": "label",
+          "type": "TEXT",
+          "x": 20,
+          "y": 288,
+          "w": 350,
+          "h": 52,
+          "text": {
+            "characters": "Начать",
+            "align": "CENTER",
+            "verticalAlign": "CENTER",
+            "autoResize": "NONE",
+            "segments": [
+              {
+                "start": 0,
+                "end": 6,
+                "fontFamily": "Inter",
+                "fontStyle": "Semi Bold",
+                "fontSize": 16,
+                "lineHeight": {
+                  "unit": "PIXELS",
+                  "value": 24
+                },
+                "letterSpacing": {
+                  "unit": "PIXELS",
+                  "value": 0
+                },
+                "fills": [
+                  {
+                    "type": "SOLID",
+                    "color": {
+                      "r": 1,
+                      "g": 1,
+                      "b": 1,
+                      "a": 1
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "1:149",
+      "name": "Card / Токены",
+      "type": "FRAME",
+      "x": 11,
+      "y": 372,
+      "w": 368,
+      "h": 300,
+      "fills": [
+        {
+          "type": "SOLID",
+          "color": {
+            "r": 1,
+            "g": 1,
+            "b": 1,
+            "a": 1
+          }
+        }
+      ],
+      "radius": 16,
+      "strokes": [
+        {
+          "type": "SOLID",
+          "color": {
+            "r": 0.8941176470588236,
+            "g": 0.8941176470588236,
+            "b": 0.9058823529411765,
+            "a": 1
+          }
+        }
+      ],
+      "strokeWeight": 1,
+      "strokeAlign": "INSIDE",
+      "effects": [
+        {
+          "type": "DROP_SHADOW",
+          "x": 0,
+          "y": 4,
+          "blur": 16,
+          "spread": 0,
+          "color": {
+            "r": 0,
+            "g": 0,
+            "b": 0,
+            "a": 0.06
+          }
+        }
+      ],
+      "children": [
+        {
+          "id": "1:146",
+          "name": "image",
+          "type": "RECTANGLE",
+          "x": 35,
+          "y": 396,
+          "w": 320,
+          "h": 140,
+          "fills": [
+            {
+              "type": "GRADIENT_LINEAR",
+              "css": "linear-gradient(135deg, #bfdbfe 0%, #ffffff 100%)"
+            }
+          ],
+          "radius": 12
+        },
+        {
+          "id": "1:147",
+          "name": "title",
+          "type": "TEXT",
+          "x": 35,
+          "y": 548,
+          "w": 320,
+          "h": 28,
+          "text": {
+            "characters": "Токены",
+            "align": "LEFT",
+            "verticalAlign": "TOP",
+            "autoResize": "NONE",
+            "segments": [
+              {
+                "start": 0,
+                "end": 6,
+                "fontFamily": "Inter",
+                "fontStyle": "Semi Bold",
+                "fontSize": 20,
+                "lineHeight": {
+                  "unit": "PIXELS",
+                  "value": 28
+                },
+                "letterSpacing": {
+                  "unit": "PIXELS",
+                  "value": 0
+                },
+                "fills": [
+                  {
+                    "type": "SOLID",
+                    "color": {
+                      "r": 0.09411764705882353,
+                      "g": 0.09411764705882353,
+                      "b": 0.10588235294117647,
+                      "a": 1
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "id": "1:148",
+          "name": "desc",
+          "type": "TEXT",
+          "x": 35,
+          "y": 588,
+          "w": 320,
+          "h": 48,
+          "text": {
+            "characters": "Цвета, шрифты, отступы и радиусы с нормализацией.",
+            "align": "LEFT",
+            "verticalAlign": "TOP",
+            "autoResize": "NONE",
+            "segments": [
+              {
+                "start": 0,
+                "end": 49,
+                "fontFamily": "Inter",
+                "fontStyle": "Regular",
+                "fontSize": 15,
+                "lineHeight": {
+                  "unit": "PIXELS",
+                  "value": 24
+                },
+                "letterSpacing": {
+                  "unit": "PIXELS",
+                  "value": 0
+                },
+                "fills": [
+                  {
+                    "type": "SOLID",
+                    "color": {
+                      "r": 0.3215686274509804,
+                      "g": 0.3215686274509804,
+                      "b": 0.3568627450980392,
+                      "a": 1
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "clipsContent": false,
+      "layout": {
+        "mode": "VERTICAL",
+        "gap": 12,
+        "padding": [
+          24,
+          24,
+          24,
+          24
+        ],
+        "primaryAlign": "MIN",
+        "counterAlign": "MIN"
+      }
+    },
+    {
+      "id": "1:150",
+      "name": "m/footer",
+      "type": "TEXT",
+      "x": 20,
+      "y": 712,
+      "w": 350,
+      "h": 24,
+      "text": {
+        "characters": "© 2026 Acme.",
+        "align": "LEFT",
+        "verticalAlign": "TOP",
+        "autoResize": "NONE",
+        "segments": [
+          {
+            "start": 0,
+            "end": 12,
+            "fontFamily": "Inter",
+            "fontStyle": "Regular",
+            "fontSize": 14,
+            "lineHeight": {
+              "unit": "PIXELS",
+              "value": 24
+            },
+            "letterSpacing": {
+              "unit": "PIXELS",
+              "value": 0
+            },
+            "fills": [
+              {
+                "type": "SOLID",
+                "color": {
+                  "r": 0.3215686274509804,
+                  "g": 0.3215686274509804,
+                  "b": 0.3568627450980392,
+                  "a": 1
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "clipsContent": true
+}

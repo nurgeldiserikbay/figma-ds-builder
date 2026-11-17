@@ -122,6 +122,17 @@ const root = frame('Landing / Desktop', 0, 0, 1280, 900, [
 ], { fills: solid('#fafafa'), clip: true });
 root.id = '1:1';
 
+// тот же лендинг под мобильный (390): фреймы «Landing / Desktop» и «Landing / Mobile» → одна адаптивная страница
+const mobile = frame('Landing / Mobile', 0, 0, 390, 760, [
+  text('m/logo', 20, 20, 120, 28, 'Acme', { size: 20, lh: 28, style: 'Bold' }),
+  text('m/title', 20, 80, 350, 96, 'Дизайн-система из любого макета', { size: 36, lh: 48, style: 'Bold', ls: -0.5 }),
+  text('m/subtitle', 20, 192, 350, 72, 'Плагин собирает токены и компоненты, а программа верстает страницы и проверяет их попиксельно.', { size: 16, lh: 24, color: MUTED }),
+  button('Button / Primary', 20, 288, 350, 52, 'Начать', true),
+  card(11, 372, 'Токены', 'Цвета, шрифты, отступы и радиусы с нормализацией.', '#bfdbfe'),
+  text('m/footer', 20, 712, 350, 24, '© 2026 Acme.', { size: 14, lh: 24, color: MUTED }),
+], { fills: solid('#fafafa'), clip: true });
+mobile.id = '2:1';
+
 const tokens = {
   color: {
     blue: { 500: { $type: 'color', $value: BLUE } },
@@ -134,25 +145,31 @@ const tokens = {
 fs.rmSync(dir, { recursive: true, force: true });
 fs.mkdirSync(path.join(dir, 'frames'), { recursive: true });
 fs.writeFileSync(path.join(dir, 'frames', '1_1.json'), JSON.stringify(root, null, 2));
+fs.writeFileSync(path.join(dir, 'frames', '2_1.json'), JSON.stringify(mobile, null, 2));
 fs.writeFileSync(path.join(dir, 'tokens.json'), JSON.stringify(tokens, null, 2));
 fs.writeFileSync(path.join(dir, 'manifest.json'), JSON.stringify({
   format: 'ds-package', version: 1, file: 'Sample landing (fixture)', createdAt: new Date().toISOString(), scale: 1,
   tokens: 'tokens.json',
-  frames: [{ id: '1:1', name: 'Landing / Desktop', page: 'Landing', width: 1280, height: 900, tree: 'frames/1_1.json', png: 'frames/1_1.png' }],
+  frames: [
+    { id: '1:1', name: 'Landing / Desktop', page: 'Landing', width: 1280, height: 900, tree: 'frames/1_1.json', png: 'frames/1_1.png' },
+    { id: '2:1', name: 'Landing / Mobile', page: 'Landing', width: 390, height: 760, tree: 'frames/2_1.json', png: 'frames/2_1.png' },
+  ],
 }, null, 2));
 
 // синтетический эталон: режим absolute
-const tmp = path.join(dir, '.ref');
-fs.mkdirSync(tmp, { recursive: true });
-const gen = generateFrame(root, { mode: 'absolute', tokens: loadTokens(tokens), assetUrl: (r) => r });
-// шрифт — тот же, что подключит ds-build (Inter из npm), чтобы тест не зависел от шрифтов системы
 const fonts = ensureFonts(['Inter'], defaultCacheDir());
-fs.writeFileSync(path.join(tmp, 'fonts.css'), buildFontsCss(fonts.dir, fonts.found));
-fs.writeFileSync(path.join(tmp, 'index.html'), gen.html.replace('../tokens.css', 'tokens.css').replace('<link rel="stylesheet" href="tokens.css">', '<link rel="stylesheet" href="fonts.css">\n<link rel="stylesheet" href="tokens.css">'));
-fs.writeFileSync(path.join(tmp, 'styles.css'), gen.css);
-fs.writeFileSync(path.join(tmp, 'tokens.css'), loadTokens(tokens).css());
 const browser = await openBrowser();
-await renderPage(browser, path.join(tmp, 'index.html'), { width: 1280, height: 900, out: path.join(dir, 'frames', '1_1.png') });
+for (const [tree, file, w, h] of [[root, '1_1', 1280, 900], [mobile, '2_1', 390, 760]]) {
+  const tmp = path.join(dir, '.ref');
+  fs.mkdirSync(tmp, { recursive: true });
+  const gen = generateFrame(tree, { mode: 'absolute', tokens: loadTokens(tokens), assetUrl: (r) => r });
+  // шрифт — тот же, что подключит ds-build (Inter из npm), чтобы тест не зависел от шрифтов системы
+  fs.writeFileSync(path.join(tmp, 'fonts.css'), buildFontsCss(fonts.dir, fonts.found));
+  fs.writeFileSync(path.join(tmp, 'index.html'), gen.html.replace('../tokens.css', 'tokens.css').replace('<link rel="stylesheet" href="tokens.css">', '<link rel="stylesheet" href="fonts.css">\n<link rel="stylesheet" href="tokens.css">'));
+  fs.writeFileSync(path.join(tmp, 'styles.css'), gen.css);
+  fs.writeFileSync(path.join(tmp, 'tokens.css'), loadTokens(tokens).css());
+  await renderPage(browser, path.join(tmp, 'index.html'), { width: w, height: h, out: path.join(dir, 'frames', `${file}.png`) });
+  fs.rmSync(tmp, { recursive: true, force: true });
+}
 await browser.close();
-fs.rmSync(tmp, { recursive: true, force: true });
 console.log('Fixture готов:', dir);
