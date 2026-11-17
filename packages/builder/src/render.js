@@ -12,10 +12,16 @@ export async function openBrowser() {
     // sRGB без управления цветом: скриншоты одинаковы на любом мониторе и совпадают с Figma
     const args = ['--force-color-profile=srgb', '--disable-lcd-text', '--font-render-hinting=none',
       ...(process.env.DS_CHROME_ARGS || '').split(/\s+/).filter(Boolean)];
-    return await chromium.launch(executablePath ? { executablePath, args } : { channel: 'chrome', args });
+    if (executablePath) return await chromium.launch({ executablePath, args });
+    // Google Chrome, а если его нет — Microsoft Edge (тот же Chromium, есть на любом Windows)
+    let first;
+    for (const channel of ['chrome', 'msedge']) {
+      try { return await chromium.launch({ channel, args }); } catch (e) { first ||= e; }
+    }
+    throw first;
   } catch (e) {
     throw new Error(
-      'Не удалось запустить Chrome. Установите Google Chrome или укажите путь в переменной CHROME_PATH.\n' + e.message,
+      'Не удалось запустить браузер для проверки. Установите Google Chrome (или Microsoft Edge) либо укажите путь к нему в CHROME_PATH.\n' + e.message,
     );
   }
 }

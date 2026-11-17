@@ -61,6 +61,14 @@ for (const [name, html, w, h] of [['icon', icon, 128, 128], ['cover', cover, 192
   await page.evaluate(() => document.fonts.ready);
   await page.screenshot({ path: path.join(here, `${name}.png`), omitBackground: name === 'icon' });
   await page.close();
+  if (name === 'icon') {
+    // иконка установленной программы — та же, 512×512
+    const big = await browser.newPage({ viewport: { width: w, height: h }, deviceScaleFactor: 4 });
+    await big.goto(pathToFileURL(file).href);
+    await big.evaluate(() => document.fonts.ready);
+    await big.screenshot({ path: path.join(here, 'icon-512.png'), omitBackground: true });
+    await big.close();
+  }
   fs.rmSync(file);
 }
 await browser.close();

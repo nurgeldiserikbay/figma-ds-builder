@@ -3,8 +3,8 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { execFileSync, execSync } from 'node:child_process';
-import { pathToFileURL } from 'node:url';
+import { execFileSync } from 'node:child_process';
+import { pathToFileURL, fileURLToPath } from 'node:url';
 
 export const slugOf = (family) => family.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 
@@ -33,8 +33,10 @@ function runNpm(args, opts) {
   const cands = [process.env.npm_execpath, path.join(path.dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js')];
   const cli = cands.find((c) => c && /npm-cli\.js$/.test(c) && fs.existsSync(c));
   if (cli) return execFileSync(process.execPath, [cli, ...args], opts);
-  if (process.platform !== 'win32') return execFileSync('npm', args, opts);
-  return execSync(['npm', ...args].map((a) => (/^[\w@./:=-]+$/.test(a) ? a : `"${a}"`)).join(' '), opts);
+  // npm нет (установленная программа): скачиваем пакет напрямую из реестра
+  const pkg = args.find((a) => a.startsWith('@fontsource/'));
+  return execFileSync(process.execPath, [fileURLToPath(new URL('./fetch-npm.js', import.meta.url)), opts.cwd, pkg],
+    { ...opts, env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' } });
 }
 
 export function ensureFonts(families, cacheDir, { log = () => {} } = {}) {

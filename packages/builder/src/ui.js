@@ -69,7 +69,7 @@ export function buildArgs(zip, out, o = {}) {
   return a;
 }
 
-export async function startUi({ port = 0, open = true, home = defaultHome(), log = console.log } = {}) {
+export async function startUi({ port = 0, open = true, home = defaultHome(), log = console.log, pluginDir = null } = {}) {
   fs.mkdirSync(path.join(home, '.uploads'), { recursive: true });
   const token = crypto.randomBytes(18).toString('base64url');
   const jobs = new Map();
@@ -94,7 +94,13 @@ export async function startUi({ port = 0, open = true, home = defaultHome(), log
 
     try {
       if (req.method === 'GET' && u.pathname === '/') {
-        return send(200, page.replace('__HOME__', JSON.stringify(home).slice(1, -1).replace(/</g, '\\u003c')), 'text/html; charset=utf-8');
+        return send(200, page.replace('__HOME__', JSON.stringify(home).slice(1, -1).replace(/</g, '\\u003c'))
+          .replace('__PLUGIN__', pluginDir ? '1' : ''), 'text/html; charset=utf-8');
+      }
+      if (req.method === 'POST' && u.pathname === '/api/plugin') {
+        if (!pluginDir) return send(404, { error: 'плагин не входит в эту установку' });
+        openPath(pluginDir);
+        return send(200, { ok: true });
       }
       if (req.method === 'GET' && u.pathname === '/api/builds') {
         const list = fs.readdirSync(home, { withFileTypes: true })
@@ -114,7 +120,8 @@ export async function startUi({ port = 0, open = true, home = defaultHome(), log
         const id = crypto.randomBytes(6).toString('hex');
         const job = { id, name, lines: [], listeners: new Set(), done: false, code: null };
         const push = (line) => { job.lines.push(line); for (const l of job.listeners) l(line); };
-        const child = spawn(process.execPath, [CLI, ...buildArgs(zip, out, opts)], { env: process.env, windowsHide: true });
+        // в установленной программе (Electron) тот же исполняемый файл работает как Node
+        const child = spawn(process.execPath, [CLI, ...buildArgs(zip, out, opts)], { env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' }, windowsHide: true });
         let buf = '';
         const onData = (d) => { buf += d; const parts = buf.split(/\r?\n/); buf = parts.pop(); parts.forEach(push); };
         child.stdout.setEncoding('utf8').on('data', onData);

@@ -1,0 +1,98 @@
+{
+  "name": "ds-builder-desktop",
+  "productName": "DS Builder",
+  "version": "0.2.0",
+  "description": "Вёрстка из макета Figma с проверкой пиксель в пиксель — программа с окном",
+  "author": "nurgeldiserikbay",
+  "license": "MIT",
+  "type": "module",
+  "main": "main.js",
+  "private": true,
+  "scripts": {
+    "prepare-app": "node prepare.js",
+    "start": "node prepare.js && electron .",
+    "smoke": "node prepare.js && electron . --smoke",
+    "dist": "node prepare.js && electron-builder --publish never"
+  },
+  "dependencies": {
+    "esbuild": "^0.28.2",
+    "pixelmatch": "^7.1.0",
+    "playwright-core": "^1.56.0",
+    "pngjs": "^7.0.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "vue": "^3.5.45"
+  },
+  "overrides": {
+    "csstype": "3.1.3"
+  },
+  "devDependencies": {
+    "electron": "^45.3.3",
+    "electron-builder": "^26.18.0"
+  },
+  "build": {
+    "appId": "io.github.nurgeldiserikbay.dsbuilder",
+    "productName": "DS Builder",
+    "asar": false,
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "app/**/*",
+      "build/icon.png",
+      "package.json",
+      "node_modules/**/*"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "shortcutName": "DS Builder",
+      "artifactName": "DS-Builder-Setup-${version}.${ext}"
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png",
+      "category": "public.app-category.developer-tools",
+      "artifactName": "DS-Builder-${version}-mac-${arch}.${ext}"
+    },
+    "linux": {
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png",
+      "category": "Development",
+      "artifactName": "DS-Builder-${version}-linux-${arch}.${ext}"
+    }
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nurgeldiserikbay/figma-ds-builder.git"
+  },
+  "homepage": "https://nurgeldiserikbay.github.io/figma-ds-builder/"
+}

@@ -424,7 +424,8 @@ export const out = { ${pages.map((p) => `${jsStr(p.component)}: renderToStaticMa
   const outFile = path.join(tmp, 'bundle.cjs');
   await esbuild.build({
     entryPoints: [path.join(tmp, 'entry.jsx')], bundle: true, platform: 'node', format: 'cjs', outfile: outFile,
-    jsx: 'automatic', nodePaths: [path.join(here, '../node_modules')], logLevel: 'silent',
+    // где лежит react: в репозитории — packages/builder/node_modules, в установленной программе — выше
+    jsx: 'automatic', nodePaths: [path.dirname(path.dirname(createRequire(import.meta.url).resolve('react/package.json')))], logLevel: 'silent',
   });
   const { out } = require(outFile);
   fs.rmSync(tmp, { recursive: true, force: true });

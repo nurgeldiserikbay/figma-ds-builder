@@ -22,9 +22,9 @@
 
 <fieldset>
   <legend>Что выгружать</legend>
-  <label><input type="radio" name="scope" value="selection" checked> Выделенные фреймы / секции</label>
-  <label><input type="radio" name="scope" value="page"> Все фреймы текущей страницы</label>
-  <label><input type="radio" name="scope" value="all"> Все фреймы всех страниц</label>
+  <label><input type="radio" name="scope" value="all" checked> Весь файл — все фреймы всех страниц</label>
+  <label><input type="radio" name="scope" value="page"> Только текущая страница</label>
+  <label><input type="radio" name="scope" value="selection"> Только выделенные фреймы / секции</label>
   <div class="hint" id="count"></div>
 </fieldset>
 
@@ -92,13 +92,19 @@ function run(what) { busy(true); status.textContent = 'Готовлю…'; paren
 document.getElementById('png').onclick = function () { run('png'); };
 document.getElementById('pkg').onclick = function () { run('pkg'); };
 document.querySelectorAll('input[name="scope"]').forEach(function (r) { r.onchange = count; });
-function count() { parent.postMessage({ pluginMessage: { type: 'count', scope: val('scope') } }, '*'); }
-count();
+function count() { document.getElementById('count').textContent = 'Считаю фреймы…'; parent.postMessage({ pluginMessage: { type: 'count', scope: val('scope') } }, '*'); }
 
 onmessage = function (e) {
   var m = e.data.pluginMessage;
   if (!m) return;
-  if (m.type === 'count') document.getElementById('count').textContent = 'Фреймов: ' + m.count;
+  if (m.type === 'init') {
+    var r = document.querySelector('input[name="scope"][value="' + m.scope + '"]');
+    if (r) r.checked = true;
+    count();
+  }
+  else if (m.type === 'count') document.getElementById('count').textContent = m.count
+    ? 'Будет выгружено фреймов: ' + m.count + (m.pages > 1 ? ' (страниц Figma: ' + m.pages + ')' : '')
+    : (val('scope') === 'selection' ? 'Ничего не выделено — выделите фреймы на холсте' : 'Фреймов нет');
   else if (m.type === 'progress') status.textContent = m.text;
   else if (m.type === 'imported') { status.textContent = m.text; busy(false); }
   else if (m.type === 'warning') { var w = document.createElement('div'); w.className = 'err'; w.style.whiteSpace = 'pre-wrap'; w.textContent = m.text; status.appendChild(w); }

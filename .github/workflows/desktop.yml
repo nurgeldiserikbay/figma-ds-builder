@@ -1,0 +1,81 @@
+name: Программа с окном
+
+# Установщики DS Builder: Windows (.exe), macOS Apple Silicon (.dmg), Linux (.AppImage).
+# Перед выкладкой каждая собранная программа проверяется: собирает тестовый макет без окна.
+# По тегу v* — установщики прикладываются к GitHub Release; вручную (Run workflow) — только к артефактам запуска.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+
+      # браузер для проверки: на macOS — уже установленный Google Chrome (Chromium из setup-chrome там падает)
+      - id: chrome
+        if: runner.os != 'macOS'
+        uses: browser-actions/setup-chrome@v1
+        with: { chrome-version: stable }
+
+      - name: Тестовый макет
+        shell: bash
+        run: |
+          npm --prefix packages/builder install --silent
+          node packages/builder/fixtures/make-fixture.js
+          node -e "import('./packages/builder/test/zip.js').then(({zipDir})=>require('fs').writeFileSync('fixture.zip', zipDir('packages/builder/fixtures/sample')))"
+        env: { CHROME_PATH: '${{ steps.chrome.outputs.chrome-path }}' }
+
+      - name: Установщик
+        shell: bash
+        working-directory: packages/desktop
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'   # без подписи: сертификатов пока нет
+        run: |
+          npm install --silent
+          npm run dist
+
+      - name: Проверка собранной программы
+        shell: bash
+        env:
+          CHROME_PATH: ${{ steps.chrome.outputs.chrome-path }}
+          DS_BUILD_HOME: ${{ runner.temp }}/ds-build-smoke
+        run: |
+          cd packages/desktop/release
+          case "$RUNNER_OS" in
+            Windows) "./win-unpacked/DS Builder.exe" --smoke "$GITHUB_WORKSPACE/fixture.zip" ;;
+            macOS)   "./mac-arm64/DS Builder.app/Contents/MacOS/DS Builder" --smoke "$GITHUB_WORKSPACE/fixture.zip" ;;
+            Linux)   xvfb-run -a ./linux-unpacked/ds-builder-desktop --no-sandbox --smoke "$GITHUB_WORKSPACE/fixture.zip" ;;
+          esac 2>&1 | tee smoke.log
+          grep -q "SMOKE OK" smoke.log
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DS-Builder-${{ runner.os }}
+          path: |
+            packages/desktop/release/*.exe
+            packages/desktop/release/*.dmg
+            packages/desktop/release/*.AppImage
+          if-no-files-found: error
+
+      - name: В GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        env: { GH_TOKEN: '${{ github.token }}' }
+        run: |
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 || gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes
+          shopt -s nullglob
+          files=(packages/desktop/release/*.exe packages/desktop/release/*.dmg packages/desktop/release/*.AppImage)
+          gh release upload "$GITHUB_REF_NAME" "${files[@]}" --clobber

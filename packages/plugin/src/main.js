@@ -3,6 +3,15 @@
 
 figma.showUI(__html__, { width: 360, height: 560, themeColors: true });
 
+// выбор «что выгружать»: последний выбор пользователя; если ничего не выделено — весь файл
+(async function () {
+  var saved = null;
+  try { saved = await figma.clientStorage.getAsync('scope'); } catch (e) { saved = null; }
+  var selected = figma.currentPage.selection.length;
+  var scope = selected ? 'selection' : (saved && saved !== 'selection' ? saved : 'all');
+  figma.ui.postMessage({ type: 'init', scope: scope, selected: selected });
+})();
+
 function isFrameLike(n) {
   return n.type === 'FRAME' || n.type === 'COMPONENT' || n.type === 'COMPONENT_SET' || n.type === 'INSTANCE';
 }
@@ -75,7 +84,9 @@ figma.ui.onmessage = async function (msg) {
   try {
     if (msg.type === 'count') {
       var fr = await collectFrames(msg.scope);
-      figma.ui.postMessage({ type: 'count', count: fr.length });
+      var pages = {};
+      fr.forEach(function (f) { var p = f.parent; while (p && p.type !== 'PAGE') p = p.parent; pages[p ? p.id : '-'] = true; });
+      figma.ui.postMessage({ type: 'count', count: fr.length, pages: Object.keys(pages).length });
       return;
     }
     if (msg.type === 'import-tokens') {
@@ -90,6 +101,7 @@ figma.ui.onmessage = async function (msg) {
       return;
     }
     if (msg.type !== 'export') return;
+    try { await figma.clientStorage.setAsync('scope', msg.scope); } catch (e) { /* не критично */ }
     var frames = await collectFrames(msg.scope);
     if (!frames.length) {
       figma.ui.postMessage({ type: 'error', text: msg.scope === 'selection' ? 'Выделите фреймы или секцию' : 'На странице нет фреймов' });

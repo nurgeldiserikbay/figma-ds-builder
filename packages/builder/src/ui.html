@@ -131,7 +131,7 @@
   .builds .v { grid-row: span 2; align-self: center; font-size: 13px; font-weight: 600; white-space: nowrap; }
   .v.ok { color: var(--ok); } .v.bad { color: var(--redline); }
   .links { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 14px; margin-top: 4px; }
-  .links button, .foot button { border: 0; background: none; padding: 0; color: #0A63C9; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; font-size: inherit; }
+  .linkbtn, .links button, .foot button { border: 0; background: none; padding: 0; color: #0A63C9; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; font-size: inherit; }
   .foot { margin-top: 28px; color: var(--muted); font-size: 13px; }
   @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 </style>
@@ -149,9 +149,12 @@
         <li id="s1">
           <h2>Выгрузите макет из Figma</h2>
           <p>В Figma откройте плагин <b>DS Builder</b>, выделите нужные фреймы и нажмите <b>«Пакет для вёрстки»</b>. Скачается файл <b>«… — ds-package.zip»</b>. Распаковывать его не нужно.</p>
-          <details class="howto"><summary>Плагина ещё нет в Figma?</summary>
-            <p>Откройте Figma Desktop, затем <b>Plugins → Development → Import plugin from manifest…</b> и выберите файл
-            <code>packages/plugin/dist/manifest.json</code> в папке проекта. Если файла нет, выполните <code>npm run setup</code>.</p></details>
+          <details class="howto" id="howto"><summary>Плагина ещё нет в Figma?</summary>
+            <p data-mode="repo">Откройте Figma Desktop, затем <b>Plugins → Development → Import plugin from manifest…</b> и выберите файл
+            <code>packages/plugin/dist/manifest.json</code> в папке проекта. Если файла нет, выполните <code>npm run setup</code>.</p>
+            <p data-mode="app" hidden>Плагин входит в программу. Нажмите <button type="button" class="linkbtn" id="pluginBtn">открыть папку с плагином</button>,
+            затем в Figma Desktop выберите <b>Plugins → Development → Import plugin from manifest…</b> и укажите в этой папке файл <code>manifest.json</code>.
+            Это нужно сделать один раз.</p></details>
         </li>
         <li id="s2">
           <h2>Добавьте этот файл сюда</h2>
@@ -203,7 +206,7 @@
   <ul class="builds" id="builds" hidden></ul>
 
   <p class="foot">Файлы сборок сохраняются в <span id="home">__HOME__</span> · <button type="button" data-open=".">открыть папку</button><br>
-  Программа работает только на этом компьютере. Пока пользуетесь ею, не закрывайте окно терминала, в котором её запустили.</p>
+  Программа работает только на этом компьютере, макеты никуда не отправляются.</p>
 </main>
 
 <script>
@@ -291,7 +294,7 @@ form.addEventListener('submit', async (ev) => {
   let res;
   try {
     res = await fetch(`/api/build?file=${encodeURIComponent(file.name)}&opts=${encodeURIComponent(JSON.stringify(o))}`, { method: 'POST', body: file });
-  } catch (e) { res = { ok: false, json: async () => ({ error: 'Программа не отвечает. Проверьте, что окно терминала с ней не закрыто.' }) }; }
+  } catch (e) { res = { ok: false, json: async () => ({ error: 'Программа не отвечает. Перезапустите её.' }) }; }
   const data = await res.json();
   if (!res.ok) { running = false; job.hidden = true; $('start').hidden = false; $('err').textContent = data.error; updateRun(); return; }
   follow(data.id);
@@ -344,7 +347,7 @@ function follow(id) {
     $('job').classList.add('done');
     updateRun(); loadBuilds();
   });
-  es.onerror = () => { if (running) $('jobSub').textContent = 'Связь с программой прервалась. Если окно терминала закрыто, запустите npm run ui снова.'; };
+  es.onerror = () => { if (running) $('jobSub').textContent = 'Связь с программой прервалась. Перезапустите программу.'; };
 }
 
 async function loadBuilds() {
@@ -370,6 +373,12 @@ document.addEventListener('click', (ev) => {
   const b = ev.target.closest('[data-open]');
   if (b) fetch(`/api/open?path=${encodeURIComponent(b.dataset.open)}`, { method: 'POST' });
 });
+// установленная программа: плагин лежит рядом с ней
+if ('__PLUGIN__' === '1') {
+  document.querySelector('[data-mode="repo"]').hidden = true;
+  document.querySelector('[data-mode="app"]').hidden = false;
+  $('pluginBtn').addEventListener('click', () => fetch('/api/plugin', { method: 'POST' }));
+}
 updateRun();
 loadBuilds();
 </script>

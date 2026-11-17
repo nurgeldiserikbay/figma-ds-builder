@@ -22,6 +22,7 @@ import { findComponents } from './components.js';
 import { preparePages, exportReact, exportVue, renderReact, renderVue, checkPageHtml } from './frameworks.js';
 import { groupFrames, writeResponsive, textsOf } from './responsive.js';
 import { exportHtml } from './export-html.js';
+import { unzipFile } from './unzip.js';
 
 const HELP = `
 ds-build ui [--port 0] [--home папка] [--no-open]
@@ -108,12 +109,7 @@ function parseArgs(argv) {
 function resolvePackageDir(input) {
   if (!input.endsWith('.zip')) return input;
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ds-package-'));
-  // встроенных средств распаковки zip в Node нет: используем системные
-  if (process.platform === 'win32') {
-    execFileSync('powershell', ['-NoProfile', '-Command', `Expand-Archive -Path '${input}' -DestinationPath '${dir}' -Force`]);
-  } else {
-    execFileSync('unzip', ['-q', input, '-d', dir]);
-  }
+  unzipFile(input, dir);
   // zip может содержать папку верхнего уровня
   if (fs.existsSync(path.join(dir, 'manifest.json'))) return dir;
   const sub = fs.readdirSync(dir).map((n) => path.join(dir, n)).find((p) => fs.existsSync(path.join(p, 'manifest.json')));

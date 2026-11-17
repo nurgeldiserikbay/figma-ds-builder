@@ -48,9 +48,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" "$RUNNER_TEMP/ds-builder-figma-plugin-${GITHUB_REF_NAME}.zip" \
-            --title "$GITHUB_REF_NAME" --generate-notes \
-            --notes "Плагин: распакуйте архив и в Figma выберите Plugins → Development → Import plugin from manifest → manifest.json. Программа: npx figma-ds-build ui"
+          # релиз мог уже создать workflow «Программа с окном»
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 || gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes
+          gh release upload "$GITHUB_REF_NAME" "$RUNNER_TEMP/ds-builder-figma-plugin-${GITHUB_REF_NAME}.zip" --clobber
 
       - name: npm
         env:
