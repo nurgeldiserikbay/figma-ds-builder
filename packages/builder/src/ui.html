@@ -105,6 +105,7 @@
 
       <fieldset>
         <legend>Что собрать</legend>
+        <label class="opt"><input type="checkbox" name="html" checked><span>HTML и CSS<small>чистая папка: открыть с диска или выложить на хостинг</small></span></label>
         <label class="opt"><input type="checkbox" name="react"><span>React<small>проект на Vite с компонентами</small></span></label>
         <label class="opt"><input type="checkbox" name="vue"><span>Vue<small>проект на Vite с компонентами</small></span></label>
         <label class="opt"><input type="checkbox" name="responsive" checked><span>Адаптивные страницы<small>Desktop и Mobile одной страницы — в одну</small></span></label>
@@ -229,7 +230,9 @@ async function loadBuilds() {
       <div><div class="m">${esc(when)}</div><div class="links">
         <a href="${base}/report.html" target="_blank" rel="noopener">отчёт</a>
         ${b.ds ? `<a href="${base}/design-system/design-system.md" target="_blank" rel="noopener">дизайн-система</a>` : ''}
+        ${b.html ? `<a href="${base}/html/index.html" target="_blank" rel="noopener">HTML</a>` : ''}
         <button type="button" data-open="${esc(b.name)}">папка</button>
+        ${b.html ? `<button type="button" data-open="${esc(b.name)}/html">папка HTML</button>` : ''}
         ${b.react ? `<button type="button" data-open="${esc(b.name)}/react">React</button>` : ''}
         ${b.vue ? `<button type="button" data-open="${esc(b.name)}/vue">Vue</button>` : ''}
       </div></div></li>`;

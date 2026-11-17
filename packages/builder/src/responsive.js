@@ -78,7 +78,7 @@ export function groupFrames(frames, manual = {}) {
 
 /** CSS переключения: вариант i — от своей ширины до следующей (самый узкий — и ниже). */
 export function responsiveCss(widths, prefix = 'bp') {
-  const L = [`.${prefix} { display: none; }`, `.${prefix} > [data-figma-id] { margin-left: auto; margin-right: auto; }`];
+  const L = [`.${prefix} { display: none; }`, `.${prefix} > * { margin-left: auto; margin-right: auto; }`];
   widths.forEach((w, i) => {
     const min = i === 0 ? null : Math.round(w);
     const max = i === widths.length - 1 ? null : Math.round(widths[i + 1]) - 0.02;
@@ -107,7 +107,7 @@ ${bodies.join('\n')}
 <script>
 // уже самого узкого макета (${smallest}px) — пропорциональное уменьшение, без горизонтальной прокрутки
 (function () {
-  var first = document.querySelector('.bp-0 > [data-figma-id]');
+  var first = document.querySelector('.bp-0 > *');
   function fit() { first.style.zoom = innerWidth < ${smallest} ? String(innerWidth / ${smallest}) : ''; }
   fit(); addEventListener('resize', fit);
 })();

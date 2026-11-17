@@ -21,6 +21,7 @@ import { familiesOf, ensureFonts, buildFontsCss, defaultCacheDir } from './fonts
 import { findComponents } from './components.js';
 import { preparePages, exportReact, exportVue, renderReact, renderVue, checkPageHtml } from './frameworks.js';
 import { groupFrames, writeResponsive, textsOf } from './responsive.js';
+import { exportHtml } from './export-html.js';
 
 const HELP = `
 ds-build ui [--port 0] [--home папка] [--no-open]
@@ -52,9 +53,11 @@ ds-build build <пакет | пакет.zip> [опции]
   --group "Имя=Фрейм A,Фрейм B"
                        объединить фреймы одной страницы под разные ширины (по умолчанию — по именам:
                        «Home / Desktop» и «Home / Mobile» → «Home»); --no-responsive — не объединять
-  --framework <список> react, vue или react,vue: проект на Vite с компонентами (повторяющиеся блоки →
-                       компоненты с параметрами) и страницами; каждая страница проверяется — серверный
-                       рендер должен совпасть с HTML-версией пиксель в пиксель
+  --framework <список> html, react, vue (через запятую):
+                       html  — чистая папка html/: страницы, css/, fonts/, assets/, без служебных атрибутов;
+                               открывается с диска и выкладывается на любой хостинг
+                       react, vue — проект на Vite с компонентами (повторяющиеся блоки → компоненты с параметрами);
+                       каждая страница проверяется — рендер должен совпасть с рабочей вёрсткой пиксель в пиксель
   --no-refine          не подбирать поправки после сверки с эталоном
   --no-semantic        без семантических тегов (только div)
   --svg-files          векторы — файлами <img src="….svg">; по умолчанию небольшие SVG вставляются в страницу
@@ -465,13 +468,38 @@ async function build(args) {
       }
     }
 
+    // чистый HTML/CSS: самостоятельная папка html/, проверка — тот же рендер, что у рабочей вёрстки
+    if (args.frameworks.includes('html') && fwPages.length) {
+      const ex = exportHtml(out, fwPages, responsive.map((r) => ({ name: r.name, dir: r.dir, widths: r.widths })));
+      console.log(`HTML/CSS: ${path.relative(process.cwd(), ex.root) || ex.root}`);
+      if (browser) {
+        for (const p of ex.pages) {
+          const checks = p.widths
+            ? p.widths.map((w) => ({ w, h: fwPages.find((f) => Math.round(f.width) === w && responsive.find((r) => r.dir === p.from)?.components.includes(f))?.height, ref: path.join(out, p.from, `render-${w}.png`) }))
+            : [{ w: p.width, h: p.height, ref: path.join(out, p.from, 'render.png') }];
+          const bad = [];
+          for (const c of checks) {
+            if (!c.h || !fs.existsSync(c.ref)) continue;
+            const png = path.join(out, '.html-check.png');
+            await renderPage(browser, path.join(ex.root, p.file), { width: c.w, height: c.h, scale: pkg.scale, out: png });
+            const d = comparePng(c.ref, png, path.join(out, '.html-check-diff.png'));
+            if (d.mismatched) bad.push(`${c.w}px: ${d.mismatched} px`);
+          }
+          fs.rmSync(path.join(out, '.html-check.png'), { force: true });
+          fs.rmSync(path.join(out, '.html-check-diff.png'), { force: true });
+          console.log(`  ${p.title}: ${bad.length ? `ОТЛИЧАЕТСЯ от рабочей вёрстки (${bad.join(', ')})` : 'совпадает с рабочей вёрсткой'}`);
+          if (bad.length) process.exitCode = 2;
+        }
+      }
+    }
+
     // компоненты и фреймворки: из того же дерева элементов; проверка — совпадение с HTML-версией
-    if (args.frameworks.length && fwPages.length) {
+    if (args.frameworks.some((f) => f !== 'html') && fwPages.length) {
       const pages = preparePages(fwPages);
       const groupsFw = responsive.map((r) => ({ name: r.name, members: r.components.map((c) => pages[fwPages.indexOf(c)]), widths: r.widths }));
       const comps = findComponents(pages);
       console.log(`Компоненты: ${comps.components.length}${comps.components.length ? ' — ' + comps.components.slice(0, 8).map((c) => `${c.name}×${c.instances.length}${c.props.length ? ` (${c.props.map((p) => p.name).join(', ')})` : ''}`).join(', ') : ''}`);
-      for (const fw of args.frameworks) {
+      for (const fw of args.frameworks.filter((f) => f !== 'html')) {
         if (!['react', 'vue'].includes(fw)) { console.log(`  неизвестный фреймворк: ${fw}`); continue; }
         const dir = fw === 'react' ? exportReact(out, pages, comps, groupsFw) : exportVue(out, pages, comps, groupsFw);
         console.log(`${fw === 'react' ? 'React' : 'Vue'}: ${path.relative(process.cwd(), dir) || dir}`);

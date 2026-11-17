@@ -42,6 +42,7 @@ function summary(home, name) {
       frames: results.length,
       passed: results.filter((x) => x.pass === true).length,
       failed: results.filter((x) => x.pass === false).length,
+      html: fs.existsSync(path.join(dir, 'html', 'index.html')),
       react: fs.existsSync(path.join(dir, 'react', 'package.json')),
       vue: fs.existsSync(path.join(dir, 'vue', 'package.json')),
       ds: fs.existsSync(path.join(dir, 'design-system', 'design-system.md')),
@@ -57,7 +58,7 @@ function openPath(p) {
 /** Аргументы ds-build build из настроек окна (только известные ключи). */
 export function buildArgs(zip, out, o = {}) {
   const a = ['build', zip, '--out', out];
-  const fw = ['react', 'vue'].filter((f) => o[f]);
+  const fw = ['html', 'react', 'vue'].filter((f) => o[f]);
   if (fw.length) a.push('--framework', fw.join(','));
   if (o.ai) a.push('--ai');
   if (o.semantic === false) a.push('--no-semantic');
