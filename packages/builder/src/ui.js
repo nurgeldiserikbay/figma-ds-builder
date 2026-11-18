@@ -64,6 +64,8 @@ export function buildArgs(zips, out, o = {}) {
   if (o.semantic === false) a.push('--no-semantic');
   if (o.responsive === false) a.push('--no-responsive');
   if (o.layout && ['auto', 'flow', 'absolute'].includes(o.layout)) a.push('--layout', o.layout);
+  const jobs = parseInt(o.jobs, 10);
+  if (jobs >= 1 && jobs <= 16) a.push('--jobs', String(jobs));
   if (Number.isFinite(+o.threshold) && o.threshold !== '' && o.threshold !== undefined) a.push('--threshold', String(+o.threshold));
   if (Number.isFinite(+o.textThreshold) && o.textThreshold !== '' && o.textThreshold !== undefined) a.push('--text-threshold', String(+o.textThreshold));
   return a;

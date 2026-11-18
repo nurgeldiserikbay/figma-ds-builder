@@ -284,7 +284,44 @@ async function build(args) {
       const parentOf = new Map();
       (function walk(n) { for (const c of n.children || []) { parentOf.set(c.id, n.id); walk(c); } })(tree);
 
-      const runAttempt = async (mode, absIds = null) => {
+      // автодоработка: подбор поправок для слоёв с наибольшим расхождением.
+      // Запускаем и при прохождении порога: сдвиг строки на 1–2px укладывается в допуск для текста, но исправляется поправкой.
+      // Самая дорогая часть проверки — поэтому на запасных попытках раскладки не делается, только на выбранной.
+      const refineAttempt = async (att) => {
+        att.refined = true;
+        const attemptDir = att.dir;
+        const textMiss = att.diff?.sources?.top.some((t) => t.type === 'TEXT' && t.pixels >= 150);
+        if (!(args.refine && att.diff?.sources && (!pixelOk(att.diff, args) || textMiss))) return;
+        const patches = await refinePage(browser, path.join(attemptDir, 'index.html'), {
+          refPath: path.join(fdir, 'reference.png'), tree, sources: att.diff.sources,
+          width: f.width, height: f.height, scale: pkg.scale,
+        });
+        if (!patches.length) return;
+        const cssFile = path.join(attemptDir, 'styles.css');
+        const cssBefore = fs.readFileSync(cssFile, 'utf8');
+        const saved = { diff: att.diff, percent: att.percent, geometry: att.geometry, png: fs.readFileSync(path.join(attemptDir, 'render.png')), diffPng: fs.readFileSync(path.join(attemptDir, 'diff.png')) };
+        fs.appendFileSync(cssFile, patchesCss(patches));
+        const re = await renderPage(browser, path.join(attemptDir, 'index.html'), {
+          width: f.width, height: f.height, scale: pkg.scale, out: path.join(attemptDir, 'render.png'),
+        });
+        att.geometry = checkGeometry(tree, re.boxes);
+        const before = att.percent;
+        att.diff = comparePng(path.join(fdir, 'reference.png'), path.join(attemptDir, 'render.png'), path.join(attemptDir, 'diff.png'));
+        att.percent = att.diff.percent;
+        if (att.diff.mismatched) att.diff.sources = attributeDiff(tree, path.join(attemptDir, 'diff.png'), { scale: pkg.scale });
+        // поправки вместе сделали хуже (или сдвинули блоки) — откат
+        if (att.percent > before || (att.geometry?.failed || 0) > (saved.geometry?.failed || 0)) {
+          fs.writeFileSync(cssFile, cssBefore);
+          fs.writeFileSync(path.join(attemptDir, 'render.png'), saved.png);
+          fs.writeFileSync(path.join(attemptDir, 'diff.png'), saved.diffPng);
+          Object.assign(att, { diff: saved.diff, percent: saved.percent, geometry: saved.geometry });
+        } else {
+          att.refine = { before, after: att.percent, patches };
+        }
+      };
+      const okOf = (att) => !att.gen.stats.missing.length && (!att.geometry || att.geometry.failed === 0) && (!hasRef || pixelOk(att.diff, args));
+
+      const runAttempt = async (mode, absIds = null, refineNow = true) => {
         const gen = generateFrame(tree, { mode, absIds, svgText, inlineSvg: args.inlineSvg, tokens, assetUrl: (rel) => `../assets/${rel}`, title: f.name, extraCss, semantic: args.semantic, names });
         // пробные варианты — рядом с папкой фрейма (та же глубина, пути к assets не меняются)
         const attemptDir = args.layout === 'auto' ? path.join(out, `${dirName}.try-${mode}${absIds ? `-${attempts.length}` : ''}`) : fdir;
@@ -302,46 +339,14 @@ async function build(args) {
             att.diff = comparePng(path.join(fdir, 'reference.png'), path.join(attemptDir, 'render.png'), path.join(attemptDir, 'diff.png'));
             att.percent = att.diff.percent;
             if (att.diff.mismatched) att.diff.sources = attributeDiff(tree, path.join(attemptDir, 'diff.png'), { scale: pkg.scale, top: 30 });
-            // автодоработка: подбор поправок для слоёв с наибольшим расхождением
-            // запускаем и при прохождении порога: сдвиг строки на 1–2px укладывается в допуск для текста,
-            // но исправляется поправкой
-            const textMiss = att.diff.sources?.top.some((t) => t.type === 'TEXT' && t.pixels >= 150);
-            if (args.refine && att.diff.sources && (!pixelOk(att.diff, args) || textMiss)) {
-              const patches = await refinePage(browser, path.join(attemptDir, 'index.html'), {
-                refPath: path.join(fdir, 'reference.png'), tree, sources: att.diff.sources,
-                width: f.width, height: f.height, scale: pkg.scale,
-              });
-              if (patches.length) {
-                const cssFile = path.join(attemptDir, 'styles.css');
-                const cssBefore = fs.readFileSync(cssFile, 'utf8');
-                const saved = { diff: att.diff, percent: att.percent, geometry: att.geometry, png: fs.readFileSync(path.join(attemptDir, 'render.png')), diffPng: fs.readFileSync(path.join(attemptDir, 'diff.png')) };
-                fs.appendFileSync(cssFile, patchesCss(patches));
-                const re = await renderPage(browser, path.join(attemptDir, 'index.html'), {
-                  width: f.width, height: f.height, scale: pkg.scale, out: path.join(attemptDir, 'render.png'),
-                });
-                att.geometry = checkGeometry(tree, re.boxes);
-                const before = att.percent;
-                att.diff = comparePng(path.join(fdir, 'reference.png'), path.join(attemptDir, 'render.png'), path.join(attemptDir, 'diff.png'));
-                att.percent = att.diff.percent;
-                if (att.diff.mismatched) att.diff.sources = attributeDiff(tree, path.join(attemptDir, 'diff.png'), { scale: pkg.scale });
-                // поправки вместе сделали хуже (или сдвинули блоки) — откат
-                if (att.percent > before || (att.geometry?.failed || 0) > (saved.geometry?.failed || 0)) {
-                  fs.writeFileSync(cssFile, cssBefore);
-                  fs.writeFileSync(path.join(attemptDir, 'render.png'), saved.png);
-                  fs.writeFileSync(path.join(attemptDir, 'diff.png'), saved.diffPng);
-                  Object.assign(att, { diff: saved.diff, percent: saved.percent, geometry: saved.geometry });
-                } else {
-                  att.refine = { before, after: att.percent, patches };
-                }
-              }
-            }
+            if (refineNow) await refineAttempt(att);
           }
         }
         attempts.push(att);
         if (attemptDir !== fdir && hasRef) fs.copyFileSync(path.join(fdir, 'reference.png'), path.join(attemptDir, 'reference.png'));
         const complete = !gen.stats.missing.length;
         if (!complete) console.log(`  ✗ не свёрстаны слои: ${gen.stats.missing.slice(0, 5).map((m) => m.name).join(', ')}${gen.stats.missing.length > 5 ? '…' : ''}`);
-        att.ok = complete && (!att.geometry || att.geometry.failed === 0) && (!hasRef || pixelOk(att.diff, args));
+        att.ok = okOf(att);
         return att;
       };
 
@@ -385,17 +390,19 @@ async function build(args) {
             if (p && !pinned.has(p)) { pinned.add(p); grew = true; }
           }
           if (!grew) break;
-          att = await runAttempt('hybrid', new Set(pinned));
+          att = await runAttempt('hybrid', new Set(pinned), false);
           if (att.ok) chosen = att;
           else if (score(att) >= score(attempts[0])) break; // не помогает — дальше полный запасной режим
         }
         if (!chosen) {
-          att = await runAttempt('absolute');
+          att = await runAttempt('absolute', null, false);
           if (att.ok) chosen = att;
         }
       }
       // чистая раскладка (первая попытка) остаётся, если запасные не лучше заметно (на 20%)
       if (!chosen) chosen = attempts.reduce((a, b) => (score(b) < score(a) * 0.8 ? b : a));
+      // запасной вариант дорабатываем один раз — уже выбранный
+      if (browser && hasRef && !chosen.refined) { await refineAttempt(chosen); chosen.ok = okOf(chosen); }
       chosen.chosen = true;
 
       // выбранный вариант кладём в папку фрейма
