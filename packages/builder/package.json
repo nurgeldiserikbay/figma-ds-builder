@@ -1,6 +1,6 @@
 {
   "name": "figma-ds-build",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "description": "Вёрстка из Figma с гарантией pixel perfect: архив из плагина → дизайн-система, HTML/CSS, React, Vue → сверка с макетом и автодоработка.",
   "keywords": [
     "figma",

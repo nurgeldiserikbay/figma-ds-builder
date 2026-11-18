@@ -128,6 +128,8 @@
   .builds li + li { border-top: 1px solid var(--rule); }
   .builds .t { font-weight: 600; word-break: break-word; }
   .builds .m { color: var(--muted); font-size: 13px; }
+  .builds .del { color: var(--muted); margin-left: auto; }
+  .builds .del.armed { color: var(--redline); font-weight: 600; }
   .builds .v { grid-row: span 2; align-self: center; font-size: 13px; font-weight: 600; white-space: nowrap; }
   .v.ok { color: var(--ok); } .v.bad { color: var(--redline); }
   .links { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 14px; margin-top: 4px; }
@@ -385,12 +387,27 @@ async function loadBuilds() {
         <button type="button" data-open="${esc(b.name)}">папка</button>
         ${b.react ? `<button type="button" data-open="${esc(b.name)}/react">React</button>` : ''}
         ${b.vue ? `<button type="button" data-open="${esc(b.name)}/vue">Vue</button>` : ''}
+        <button type="button" class="del" data-del="${esc(b.name)}">удалить</button>
       </div></div></li>`;
   }).join('');
 }
-document.addEventListener('click', (ev) => {
+document.addEventListener('click', async (ev) => {
   const b = ev.target.closest('[data-open]');
   if (b) fetch(`/api/open?path=${encodeURIComponent(b.dataset.open)}`, { method: 'POST' });
+  // удаление в два нажатия: «удалить» → «точно удалить? папка сотрётся»
+  const d = ev.target.closest('[data-del]');
+  if (!d) return;
+  if (!d.dataset.armed) {
+    d.dataset.armed = '1';
+    d.textContent = 'точно удалить? Папка сборки сотрётся';
+    d.classList.add('armed');
+    setTimeout(() => { if (d.isConnected) { delete d.dataset.armed; d.textContent = 'удалить'; d.classList.remove('armed'); } }, 4000);
+    return;
+  }
+  d.disabled = true; d.textContent = 'удаляю…';
+  const r = await fetch(`/api/builds?name=${encodeURIComponent(d.dataset.del)}`, { method: 'DELETE' }).then((x) => x.json()).catch(() => ({ error: 'нет связи с программой' }));
+  if (r.error) { d.disabled = false; delete d.dataset.armed; d.classList.remove('armed'); d.textContent = r.error; return; }
+  loadBuilds();
 });
 // установленная программа: плагин лежит рядом с ней
 if ('__PLUGIN__' === '1') {

@@ -97,6 +97,18 @@ assert.equal((await req('/out/..%2F..%2Fetc%2Fpasswd', { headers: H })).status, 
 assert.equal((await req(`/api/open?path=${encodeURIComponent('../..')}`, { method: 'POST', headers: H })).status, 400);
 assert.ok(!fs.readdirSync(path.join(home, '.uploads')).length, 'загруженный архив удалён');
 
+// удаление сборки: только папка сборки внутри home
+const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'ds-ui-outside-'));
+fs.writeFileSync(path.join(outside, 'report.json'), '[]');
+for (const bad of ['', '..', '../' + path.basename(outside), '.uploads', 'нет-такой'])
+  assert.notEqual((await req(`/api/builds?name=${encodeURIComponent(bad)}`, { method: 'DELETE', headers: H })).status, 200, `нельзя удалить «${bad}»`);
+assert.ok(fs.existsSync(outside), 'папка вне home цела');
+fs.rmSync(outside, { recursive: true, force: true });
+assert.equal((await req(`/api/builds?name=${encodeURIComponent(name)}`, { method: 'DELETE' })).status, 403, 'без ключа — нельзя удалить');
+assert.equal((await req(`/api/builds?name=${encodeURIComponent(name)}`, { method: 'DELETE', headers: H })).status, 200);
+assert.ok(!fs.existsSync(path.join(home, name)), 'папка сборки удалена');
+assert.ok(!JSON.parse((await req('/api/builds', { headers: H })).text).builds.some((b) => b.name === name), 'сборки нет в списке');
+
 server.close();
 fs.rmSync(home, { recursive: true, force: true });
-console.log('Окно ds-build: ключ, загрузка, ход сборки, отчёт, защита путей — OK');
+console.log('Окно ds-build: ключ, загрузка, ход сборки, отчёт, удаление, защита путей — OK');

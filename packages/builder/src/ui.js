@@ -95,7 +95,8 @@ export async function startUi({ port = 0, open = true, home = defaultHome(), log
 
     try {
       if (req.method === 'GET' && u.pathname === '/') {
-        return send(200, page.replace('__HOME__', JSON.stringify(home).slice(1, -1).replace(/</g, '\\u003c'))
+        const htmlText = (t) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        return send(200, page.replace('__HOME__', () => htmlText(home))
           .replace('__PLUGIN__', pluginDir ? '1' : ''), 'text/html; charset=utf-8');
       }
       if (req.method === 'POST' && u.pathname === '/api/plugin') {
@@ -109,6 +110,18 @@ export async function startUi({ port = 0, open = true, home = defaultHome(), log
           .map((d) => summary(home, d.name)).filter(Boolean)
           .sort((a, b) => b.when.localeCompare(a.when));
         return send(200, { home, builds: list, running: [...jobs.values()].filter((j) => !j.done).map((j) => ({ id: j.id, name: j.name })) });
+      }
+      // удалить сборку из списка вместе с папкой (только папку сборки внутри home и не ту, что сейчас идёт)
+      if (req.method === 'DELETE' && u.pathname === '/api/builds') {
+        const name = u.searchParams.get('name') || '';
+        const dir = path.resolve(home, name);
+        if (!name || /[\\/]/.test(name) || name.startsWith('.') || path.dirname(dir) !== home) return send(400, { error: 'неверное имя сборки' });
+        if (!fs.existsSync(path.join(dir, 'report.json'))) return send(404, { error: 'нет такой сборки' });
+        if ([...jobs.values()].some((j) => !j.done && j.name === name)) return send(409, { error: 'сборка ещё идёт' });
+        try { fs.rmSync(dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 200 }); } catch (e) {
+          return send(500, { error: 'Не удалось удалить: какой-то файл открыт в другой программе. Закройте его и попробуйте снова.' });
+        }
+        return send(200, { ok: true });
       }
       // большой файл плагин выгружает частями: части загружаются по одной (upload), затем — одна сборка
       if (req.method === 'POST' && u.pathname === '/api/upload') {
