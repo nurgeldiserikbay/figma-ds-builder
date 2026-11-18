@@ -143,6 +143,17 @@ function geometry(node, ox, oy) {
   };
 }
 
+/** Один сломанный слой не останавливает выгрузку: остаётся его рамка, причина — в предупреждениях. */
+function serializeSafe(node, ox, oy, ctx) {
+  try { return serialize(node, ox, oy, ctx); } catch (e) {
+    var msg = e && e.message ? e.message : String(e);
+    if (ctx.errors) ctx.errors.push('«' + node.name + '»: ' + msg);
+    var o = { id: node.id, name: node.name, type: node.type, visible: node.visible !== false, error: msg };
+    try { var g = geometry(node, ox, oy); o.x = g.x; o.y = g.y; o.w = g.w; o.h = g.h; o.rotation = g.rotation; } catch (e2) { o.x = o.y = o.w = o.h = 0; }
+    return o;
+  }
+}
+
 function serialize(node, ox, oy, ctx) {
   ctx.count++;
   var g = geometry(node, ox, oy);
@@ -174,7 +185,10 @@ function serialize(node, ox, oy, ctx) {
   if ('constraints' in node && node.constraints) o.constraints = { h: node.constraints.horizontal, v: node.constraints.vertical };
 
   if (node.type === 'INSTANCE') {
-    o.component = { name: node.name, variant: node.variantProperties || undefined };
+    // набор вариантов с ошибкой (красное предупреждение в Figma) — variantProperties бросает исключение
+    var variant;
+    try { variant = node.variantProperties || undefined; } catch (e) { variant = undefined; }
+    o.component = { name: node.name, variant: variant };
     ctx.instances.push(node);
   }
 
@@ -197,7 +211,7 @@ function serialize(node, ox, oy, ctx) {
     return o;
   }
   if ('children' in node) {
-    o.children = node.children.map(function (c) { return serialize(c, ox, oy, ctx); });
+    o.children = node.children.map(function (c) { return serializeSafe(c, ox, oy, ctx); });
   }
   return o;
 }
@@ -222,8 +236,13 @@ async function buildLayoutPackage(frames, opts) {
     var f = frames[i];
     progress('Фрейм ' + (i + 1) + ' из ' + frames.length + ': ' + f.name, i);
     var t = f.absoluteTransform;
-    var ctx = { images: images, vectors: [], instances: [], count: 0, fonts: fonts };
-    var tree = serialize(f, t[0][2], t[1][2], ctx);
+    var ctx = { images: images, vectors: [], instances: [], count: 0, fonts: fonts, errors: [] };
+    var tree;
+    try { tree = serialize(f, t[0][2], t[1][2], ctx); } catch (e) {
+      warnings.push('Фрейм «' + f.name + '» пропущен: ' + (e && e.message ? e.message : e));
+      continue;
+    }
+    if (ctx.errors.length) warnings.push('Фрейм «' + f.name + '»: не прочитаны слои (' + ctx.errors.length + '), остались только их рамки: ' + ctx.errors.slice(0, 3).join('; ') + (ctx.errors.length > 3 ? '; …' : ''));
     var fid = fileId(f.id);
     files.push({ path: 'frames/' + fid + '.json', data: JSON.stringify(tree) });
 
