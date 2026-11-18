@@ -28,6 +28,42 @@ const assetRel = (src) => (src.startsWith(ASSET_PREFIX) ? src.slice(ASSET_PREFIX
 
 function pathKey(p) { return p.join('.'); }
 
+/**
+ * Векторы (inline SVG) — в одном модуле icons.js, одинаковые один раз; в коде страниц — icons.имя.
+ * Агенту не нужно читать килобайты путей SVG, чтобы понять страницу.
+ */
+function iconRegistry() {
+  const byText = new Map();
+  const used = new Set();
+  return {
+    ref(svg, hint) {
+      if (!byText.has(svg)) {
+        let base = String(hint || 'icon').replace(/-[a-z0-9]{4,6}$/, '').replace(/[^a-zA-Z0-9]+(.)?/g, (m, ch) => (ch ? ch.toUpperCase() : '')).replace(/^[^a-zA-Z]+/, '');
+        base = base ? base[0].toLowerCase() + base.slice(1) : 'icon';
+        let n = base, k = 2;
+        while (used.has(n)) n = `${base}${k++}`;
+        used.add(n);
+        byText.set(svg, n);
+      }
+      return byText.get(svg);
+    },
+    get size() { return byText.size; },
+    object() { return Object.fromEntries([...byText].map(([t, n]) => [n, t])); },
+    module() {
+      return `// Векторы из макета (SVG). Страницы и компоненты ссылаются на них как icons.имя.\n// Файл большой: читать целиком не нужно — заменить иконку можно, поправив одну строку.\nexport const icons = {\n${[...byText].map(([t, n]) => `  ${n}: ${jsStr(t)},`).join('\n')}\n};\n`;
+    },
+  };
+}
+
+/**
+ * Какие слои Figma нужны отдаваемому коду: только те, на которые ссылается CSS поправок ([data-figma-id="…"]).
+ * Остальные data-figma-id и все data-name — служебные, в коде проекта они только тратят токены.
+ */
+export function keptIds(css) {
+  return new Set([...css.matchAll(/\[data-figma-id="([^"]+)"\]/g)].map((m) => m[1]));
+}
+const shipCss = (css) => css.replace(/\[data-figma-id\] > span:has\(/g, 'span:has(');
+
 function propMap(comp) {
   const m = new Map();
   for (const pr of comp.props) {
@@ -49,6 +85,35 @@ function vuePropValue(kind, v) {
   return jsStr(v ?? '');
 }
 
+/** c.keep = null — проверка (все метки слоёв); Set — отдаваемый код (только нужные CSS поправок). */
+function keepAttr(k, v, pk, c) {
+  if (!c.keep) return true;
+  if (k === 'data-name') return false;
+  if (k !== 'data-figma-id') return true;
+  return c.mode === 'comp' ? c.keepIdx.has(c.idIndex.get(pk)) : c.keep.has(v);
+}
+/** Индексы слоёв компонента, нужные хотя бы одному его экземпляру. */
+function keepIdxOf(comp, keep, instanceOf) {
+  if (!keep) return new Set(comp.idPaths.map((p, i) => i));
+  const out = new Set();
+  for (const el of comp.instances || []) {
+    const ids = instanceOf?.get(el)?.ids || [];
+    ids.forEach((id, i) => { if (keep.has(id)) out.add(i); });
+  }
+  return out;
+}
+function idsFor(inst, keep) {
+  if (!keep) return inst.ids;
+  if (!inst.ids.some((id) => keep.has(id))) return null;
+  return inst.ids.map((id) => (keep.has(id) ? id : null));
+}
+const dataName = (el) => (el.attrs || []).find(([k]) => k === 'data-name')?.[1];
+/** Значение html-параметра компонента: ссылка на icons.js. */
+function htmlProp(v, c, hint) {
+  c.usesIcons = true;
+  return `icons.${c.icons.ref(v ?? '', hint)}`;
+}
+
 // ---------------------------------------------------------------------------------------------
 // React (JSX)
 // ---------------------------------------------------------------------------------------------
@@ -61,9 +126,11 @@ function jsx(el, c, depth, p = []) {
     c.used.add(inst.comp.name);
     const props = inst.comp.props.map((pr) => {
       if (pr.kind === 'src' && assetRel(inst.values[pr.name] || '')) c.usesAsset = true;
+      if (pr.kind === 'html') return `${pr.name}={${htmlProp(inst.values[pr.name], c, pr.name)}}`;
       return `${pr.name}={${reactPropValue(pr.kind, inst.values[pr.name])}}`;
     });
-    props.push(`ids={${JSON.stringify(inst.ids)}}`);
+    const ids = idsFor(inst, c.keep);
+    if (ids) props.push(`ids={${JSON.stringify(ids)}}`);
     if (el.style) props.push(`style={${styleObjJs(el.style)}}`);
     return `${pad}<${inst.comp.name} ${props.join(' ')} />`;
   }
@@ -76,7 +143,8 @@ function jsx(el, c, depth, p = []) {
   else if (el.cls) attrs.push(`className="${el.cls}"`);
   if (el.html !== undefined) {
     attrs.push(pp.style ? `style={${pp.style}}` : `style={${styleObjJs(el.style)}}`);
-    attrs.push(`dangerouslySetInnerHTML={{ __html: ${pp.html || jsStr(el.html)} }}`);
+    c.usesIcons ||= !pp.html;
+    attrs.push(`dangerouslySetInnerHTML={{ __html: ${pp.html || `icons.${c.icons.ref(el.html, c.hint || el.cls)}`} }}`);
     return `${pad}<span ${attrs.join(' ')} />`;
   }
   if (el.tag === 'img') {
@@ -93,20 +161,27 @@ function jsx(el, c, depth, p = []) {
   else if (pp.style) attrs.push(`style={${pp.style}}`);
   else if (el.style) attrs.push(`style={${styleObjJs(el.style)}}`);
   for (const [k, v] of el.attrs || []) {
+    if (!keepAttr(k, v, pk, c)) continue;
     if (k === 'data-figma-id' && c.mode === 'comp') attrs.push(`data-figma-id={ids?.[${c.idIndex.get(pk)}]}`);
     else attrs.push(`${k}=${jsStr(v)}`);
   }
   const kids = el.children || [];
   if (!kids.length) return `${pad}<${el.tag} ${attrs.join(' ')} />`;
+  const prevHint = c.hint;
+  c.hint = dataName(el) || prevHint; // имя иконки — по слою Figma вокруг неё («icon/check» → iconCheck)
   const inner = kids.map((k, i) => jsx(k, c, depth + 1, [...p, i])).join('\n');
+  c.hint = prevHint;
   return `${pad}<${el.tag} ${attrs.join(' ')}>\n${inner}\n${pad}</${el.tag}>`;
 }
 
-function reactComponent(comp) {
-  const c = { mode: 'comp', propAt: propMap(comp), idIndex: new Map(comp.idPaths.map((p, i) => [p, i])), used: new Set() };
+function reactComponent(comp, o = {}) {
+  const keepIdx = keepIdxOf(comp, o.keep, o.instanceOf);
+  const c = { mode: 'comp', propAt: propMap(comp), idIndex: new Map(comp.idPaths.map((p, i) => [p, i])), used: new Set(), keep: o.keep, keepIdx, icons: o.icons };
   const body = jsx(comp.template, c, 2);
-  const args = [...comp.props.map((p) => p.name), 'ids', 'style'].join(', ');
-  return `${c.usesAsset ? "import { asset } from '../assets.js';\n\n" : ''}/** Компонент из макета: ${comp.instances.length} использований. ids — слои Figma (для сверки), можно не передавать. */
+  const withIds = keepIdx.size > 0;
+  const args = [...comp.props.map((p) => p.name), ...(withIds ? ['ids'] : []), 'style'].join(', ');
+  const imports = [c.usesAsset && "import { asset } from '../assets.js';", c.usesIcons && "import { icons } from '../icons.js';"].filter(Boolean);
+  return `${imports.length ? imports.join('\n') + '\n\n' : ''}/** Компонент из макета: ${comp.instances.length} использований.${withIds ? ' ids — слои Figma, к которым привязаны поправки в CSS.' : ''} */
 export default function ${comp.name}({ ${args} }) {
   return (
 ${body}
@@ -115,10 +190,11 @@ ${body}
 `;
 }
 
-function reactPage(page, comps) {
-  const c = { mode: 'page', instanceOf: comps.instanceOf, used: new Set() };
+function reactPage(page, comps, o = {}) {
+  const c = { mode: 'page', instanceOf: comps.instanceOf, used: new Set(), keep: o.keep, icons: o.icons };
   const body = jsx(page.root, c, 2);
   const imports = [...c.used].sort().map((n) => `import ${n} from '../components/${n}.jsx';`);
+  if (c.usesIcons) imports.unshift("import { icons } from '../icons.js';");
   if (c.usesAsset) imports.unshift("import { asset } from '../assets.js';");
   return `${imports.join('\n')}${imports.length ? '\n\n' : ''}export default function ${page.component}() {
   return (
@@ -140,9 +216,11 @@ function vueTpl(el, c, depth, p = []) {
     c.used.add(inst.comp.name);
     const props = inst.comp.props.map((pr) => {
       if (pr.kind === 'src' && assetRel(inst.values[pr.name] || '')) c.usesAsset = true;
+      if (pr.kind === 'html') return `:${pr.name}="${htmlProp(inst.values[pr.name], c, pr.name)}"`;
       return `:${pr.name}="${escAttr(vuePropValue(pr.kind, inst.values[pr.name]))}"`;
     });
-    props.push(`:ids="${escAttr(JSON.stringify(inst.ids))}"`);
+    const ids = idsFor(inst, c.keep);
+    if (ids) props.push(`:ids="${escAttr(JSON.stringify(ids))}"`);
     if (el.style) props.push(`style="${escAttr(el.style)}"`);
     return `${pad}<${inst.comp.name} ${props.join(' ')} />`;
   }
@@ -155,7 +233,8 @@ function vueTpl(el, c, depth, p = []) {
   else if (el.cls) attrs.push(`class="${el.cls}"`);
   if (el.html !== undefined) {
     attrs.push(pp.style ? `:style="${pp.style}"` : `style="${escAttr(el.style)}"`);
-    attrs.push(`v-html="${pp.html || escAttr(jsStr(el.html))}"`);
+    c.usesIcons ||= !pp.html;
+    attrs.push(`v-html="${pp.html || `icons.${c.icons.ref(el.html, c.hint || el.cls)}`}"`);
     return `${pad}<span ${attrs.join(' ')}></span>`;
   }
   if (el.tag === 'img') {
@@ -171,28 +250,33 @@ function vueTpl(el, c, depth, p = []) {
   else if (pp.style) attrs.push(`:style="${pp.style}"`);
   else if (el.style) attrs.push(`style="${escAttr(el.style)}"`);
   for (const [k, v] of el.attrs || []) {
+    if (!keepAttr(k, v, pk, c)) continue;
     if (k === 'data-figma-id' && c.mode === 'comp') attrs.push(`:data-figma-id="ids?.[${c.idIndex.get(pk)}]"`);
     else attrs.push(`${k}="${escAttr(v)}"`);
   }
   const kids = el.children || [];
   if (!kids.length) return `${pad}<${el.tag} ${attrs.join(' ')}></${el.tag}>`;
+  const prevHint = c.hint;
+  c.hint = dataName(el) || prevHint;
   const inner = kids.map((k, i) => vueTpl(k, c, depth + 1, [...p, i])).join('\n');
+  c.hint = prevHint;
   return `${pad}<${el.tag} ${attrs.join(' ')}>\n${inner}\n${pad}</${el.tag}>`;
 }
 
-function vueComponentParts(comp) {
-  const c = { mode: 'comp', propAt: propMap(comp), idIndex: new Map(comp.idPaths.map((p, i) => [p, i])), used: new Set() };
+function vueComponentParts(comp, o = {}) {
+  const keepIdx = keepIdxOf(comp, o.keep, o.instanceOf);
+  const c = { mode: 'comp', propAt: propMap(comp), idIndex: new Map(comp.idPaths.map((p, i) => [p, i])), used: new Set(), keep: o.keep, keepIdx, icons: o.icons };
   const template = vueTpl(comp.template, c, 1);
-  const props = [...comp.props.map((p) => p.name), 'ids', 'style'];
-  return { template, props, usesAsset: c.usesAsset };
+  const props = [...comp.props.map((p) => p.name), ...(keepIdx.size ? ['ids'] : []), 'style'];
+  return { template, props, usesAsset: c.usesAsset, usesIcons: c.usesIcons, withIds: keepIdx.size > 0 };
 }
 
-function vueComponent(comp) {
-  const { template, props, usesAsset } = vueComponentParts(comp);
+function vueComponent(comp, o = {}) {
+  const { template, props, usesAsset, usesIcons, withIds } = vueComponentParts(comp, o);
   const kinds = Object.fromEntries(comp.props.map((p) => [p.name, p.kind]));
   const defs = props.map((p) => (p === 'ids' ? 'ids: Array' : p === 'style' || kinds[p] === 'style' ? `${p}: [String, Object]` : `${p}: String`)).join(', ');
   return `<script setup>
-${usesAsset ? "import { asset } from '../assets.js';\n" : ''}// Компонент из макета: ${comp.instances.length} использований. ids — слои Figma (для сверки), можно не передавать.
+${usesAsset ? "import { asset } from '../assets.js';\n" : ''}${usesIcons ? "import { icons } from '../icons.js';\n" : ''}// Компонент из макета: ${comp.instances.length} использований.${withIds ? ' ids — слои Figma, к которым привязаны поправки в CSS.' : ''}
 defineProps({ ${defs} });
 </script>
 
@@ -202,16 +286,16 @@ ${template}
 `;
 }
 
-function vuePageParts(page, comps) {
-  const c = { mode: 'page', instanceOf: comps.instanceOf, used: new Set() };
+function vuePageParts(page, comps, o = {}) {
+  const c = { mode: 'page', instanceOf: comps.instanceOf, used: new Set(), keep: o.keep, icons: o.icons };
   const template = vueTpl(page.root, c, 1);
-  return { template, used: [...c.used].sort(), usesAsset: c.usesAsset };
+  return { template, used: [...c.used].sort(), usesAsset: c.usesAsset, usesIcons: c.usesIcons };
 }
 
-function vuePage(page, comps) {
-  const { template, used, usesAsset } = vuePageParts(page, comps);
+function vuePage(page, comps, o = {}) {
+  const { template, used, usesAsset, usesIcons } = vuePageParts(page, comps, o);
   return `<script setup>
-${usesAsset ? "import { asset } from '../assets.js';\n" : ''}${used.map((n) => `import ${n} from '../components/${n}.vue';`).join('\n')}
+${usesAsset ? "import { asset } from '../assets.js';\n" : ''}${usesIcons ? "import { icons } from '../icons.js';\n" : ''}${used.map((n) => `import ${n} from '../components/${n}.vue';`).join('\n')}
 </script>
 
 <template>
@@ -224,20 +308,24 @@ ${template}
 // Проекты
 // ---------------------------------------------------------------------------------------------
 
-/** Общий CSS: шрифты (с копированием файлов), токены, стили страниц — без повторов. */
+/**
+ * Общий CSS: токены и стили страниц без повторов; шрифты (@font-face, с копированием файлов) — отдельно,
+ * в fonts.css: там сотни строк диапазонов символов, агенту их читать незачем.
+ */
 function siteCss(siteDir, pages, fontsOut) {
   const parts = [];
+  let fonts = '';
   const fontsCss = path.join(siteDir, 'fonts.css');
   if (fs.existsSync(fontsCss)) {
     fs.mkdirSync(fontsOut, { recursive: true });
-    parts.push(fs.readFileSync(fontsCss, 'utf8').replace(/url\((file:[^)]+)\)/g, (m, u) => {
+    fonts = (fs.readFileSync(fontsCss, 'utf8').replace(/url\((file:[^)]+)\)/g, (m, u) => {
       const file = fileURLToPath(u);
       const name = path.basename(file);
       if (fs.existsSync(file)) fs.copyFileSync(file, path.join(fontsOut, name));
       return `url(/fonts/${name})`;
     }));
   }
-  for (const f of fs.readdirSync(siteDir).filter((n) => /^extra-\d+\.css$/.test(n))) parts.push(fs.readFileSync(path.join(siteDir, f), 'utf8'));
+  for (const f of fs.readdirSync(siteDir).filter((n) => /^extra-\d+\.css$/.test(n))) fonts += '\n' + fs.readFileSync(path.join(siteDir, f), 'utf8');
   parts.push(fs.readFileSync(path.join(siteDir, 'tokens.css'), 'utf8'));
   const seen = new Set();
   for (const p of pages) {
@@ -247,7 +335,14 @@ function siteCss(siteDir, pages, fontsOut) {
       parts.push(line.replace(/url\("\.\.\/assets\//g, 'url("/assets/'));
     }
   }
-  return parts.join('\n') + '\n';
+  return { fonts: fonts ? fonts + '\n' : '', css: parts.join('\n') + '\n' };
+}
+
+/** Общее для React и Vue: CSS проекта, нужные метки слоёв, реестр иконок. */
+function shipOptions(siteDir, pages, comps, root, resp) {
+  const sc = siteCss(siteDir, pages, path.join(root, 'public/fonts'));
+  const raw = sc.css + resp.map((r) => r.css).join('\n') + '\n';
+  return { fonts: sc.fonts, css: shipCss(raw), keep: keptIds(raw), icons: iconRegistry(), instanceOf: comps.instanceOf };
 }
 
 function writeFiles(root, files) {
@@ -319,11 +414,12 @@ ${r.members.map((m, i) => `  <div class="${r.prefix} ${r.prefix}-${i}"${i === 0 
 `;
 }
 
-export function exportReact(siteDir, pages, comps, groups = []) {
+export function exportReact(siteDir, pages, comps, groups = [], meta = {}) {
   const root = path.join(siteDir, 'react');
   fs.rmSync(root, { recursive: true, force: true });
   const resp = respInfo(groups);
   const routesList = [...resp, ...pages];
+  const o = shipOptions(siteDir, pages, comps, root, resp);
   const files = {
     'package.json': JSON.stringify({ name: 'figma-ds-site-react', private: true, type: 'module',
       scripts: { dev: 'vite', build: 'vite build', preview: 'vite preview' },
@@ -332,7 +428,7 @@ export function exportReact(siteDir, pages, comps, groups = []) {
     'vite.config.js': "import { defineConfig } from 'vite';\nimport react from '@vitejs/plugin-react';\n\nexport default defineConfig({ plugins: [react()] });\n",
     'index.html': `<!DOCTYPE html>\n<html lang="ru">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1">\n<title>${pages[0]?.title || 'Сайт'}</title>\n</head>\n<body>\n<div id="root"></div>\n<script type="module" src="/src/main.jsx"></script>\n</body>\n</html>\n`,
     'src/assets.js': "export const asset = (p) => import.meta.env.BASE_URL + 'assets/' + p;\n",
-    'src/main.jsx': "import { createRoot } from 'react-dom/client';\nimport App from './App.jsx';\nimport './styles/site.css';\n\ncreateRoot(document.getElementById('root')).render(<App />);\n",
+    'src/main.jsx': "import { createRoot } from 'react-dom/client';\nimport App from './App.jsx';\nimport './styles/fonts.css';\nimport './styles/site.css';\n\ncreateRoot(document.getElementById('root')).render(<App />);\n",
     'src/App.jsx': `import { useEffect, useState } from 'react';
 ${routesList.map((p) => `import ${p.component} from './pages/${p.component}.jsx';`).join('\n')}
 
@@ -351,22 +447,26 @@ export default function App() {
   return <Page />;
 }
 `,
-    'src/styles/site.css': siteCss(siteDir, pages, path.join(root, 'public/fonts')) + resp.map((r) => r.css).join('\n') + '\n',
-    'README.md': `# Вёрстка из Figma — React\n\nСгенерировано figma-ds-builder. Компонентов: ${comps.components.length}, страниц: ${pages.length}.\n\n\`\`\`bash\nnpm install\nnpm run dev\n\`\`\`\n\nСтраницы: ${routesList.map((p) => `#${p.route}`).join(', ')}.\nПроп \`ids\` у компонентов связывает элементы со слоями Figma (нужен для сверки), его можно удалить.\n`,
+    'src/styles/site.css': o.css,
+    'src/styles/fonts.css': o.fonts,
+    'README.md': `# Вёрстка из Figma — React\n\nСгенерировано DS Builder. Компонентов: ${comps.components.length}, страниц: ${pages.length}.\n\n\`\`\`bash\nnpm install\nnpm run dev\n\`\`\`\n\nСтраницы: ${routesList.map((p) => `#${p.route}`).join(', ')}.\nКарта проекта для ИИ-агента — AGENTS.md.\n`,
   };
   for (const r of resp) files[`src/pages/${r.component}.jsx`] = reactResponsive(r);
-  for (const c of comps.components) files[`src/components/${c.name}.jsx`] = reactComponent(c);
-  for (const p of pages) files[`src/pages/${p.component}.jsx`] = reactPage(p, comps);
+  for (const c of comps.components) files[`src/components/${c.name}.jsx`] = reactComponent(c, o);
+  for (const p of pages) files[`src/pages/${p.component}.jsx`] = reactPage(p, comps, o);
+  if (o.icons.size) files['src/icons.js'] = o.icons.module();
+  files['AGENTS.md'] = agentsMd('react', { pages, comps, resp, routesList, css: o.css, icons: o.icons.size, meta });
   writeFiles(root, files);
   if (fs.existsSync(path.join(siteDir, 'assets'))) fs.cpSync(path.join(siteDir, 'assets'), path.join(root, 'public/assets'), { recursive: true });
-  return root;
+  return { dir: root, keep: o.keep };
 }
 
-export function exportVue(siteDir, pages, comps, groups = []) {
+export function exportVue(siteDir, pages, comps, groups = [], meta = {}) {
   const root = path.join(siteDir, 'vue');
   fs.rmSync(root, { recursive: true, force: true });
   const resp = respInfo(groups);
   const routesList = [...resp, ...pages];
+  const o = shipOptions(siteDir, pages, comps, root, resp);
   const files = {
     'package.json': JSON.stringify({ name: 'figma-ds-site-vue', private: true, type: 'module',
       scripts: { dev: 'vite', build: 'vite build', preview: 'vite preview' },
@@ -375,7 +475,7 @@ export function exportVue(siteDir, pages, comps, groups = []) {
     'vite.config.js': "import { defineConfig } from 'vite';\nimport vue from '@vitejs/plugin-vue';\n\nexport default defineConfig({ plugins: [vue()] });\n",
     'index.html': `<!DOCTYPE html>\n<html lang="ru">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1">\n<title>${pages[0]?.title || 'Сайт'}</title>\n</head>\n<body>\n<div id="app"></div>\n<script type="module" src="/src/main.js"></script>\n</body>\n</html>\n`,
     'src/assets.js': "export const asset = (p) => import.meta.env.BASE_URL + 'assets/' + p;\n",
-    'src/main.js': "import { createApp } from 'vue';\nimport App from './App.vue';\nimport './styles/site.css';\n\ncreateApp(App).mount('#app');\n",
+    'src/main.js': "import { createApp } from 'vue';\nimport App from './App.vue';\nimport './styles/fonts.css';\nimport './styles/site.css';\n\ncreateApp(App).mount('#app');\n",
     'src/App.vue': `<script setup>
 import { ref, onMounted, onUnmounted, computed } from 'vue';
 ${routesList.map((p) => `import ${p.component} from './pages/${p.component}.vue';`).join('\n')}
@@ -394,15 +494,18 @@ const Page = computed(() => routes[route.value] || routes[first]);
   <component :is="Page" />
 </template>
 `,
-    'src/styles/site.css': siteCss(siteDir, pages, path.join(root, 'public/fonts')) + resp.map((r) => r.css).join('\n') + '\n',
-    'README.md': `# Вёрстка из Figma — Vue\n\nСгенерировано figma-ds-builder. Компонентов: ${comps.components.length}, страниц: ${pages.length}.\n\n\`\`\`bash\nnpm install\nnpm run dev\n\`\`\`\n\nСтраницы: ${routesList.map((p) => `#${p.route}`).join(', ')}.\nПроп \`ids\` у компонентов связывает элементы со слоями Figma (нужен для сверки), его можно удалить.\n`,
+    'src/styles/site.css': o.css,
+    'src/styles/fonts.css': o.fonts,
+    'README.md': `# Вёрстка из Figma — Vue\n\nСгенерировано DS Builder. Компонентов: ${comps.components.length}, страниц: ${pages.length}.\n\n\`\`\`bash\nnpm install\nnpm run dev\n\`\`\`\n\nСтраницы: ${routesList.map((p) => `#${p.route}`).join(', ')}.\nКарта проекта для ИИ-агента — AGENTS.md.\n`,
   };
   for (const r of resp) files[`src/pages/${r.component}.vue`] = vueResponsive(r);
-  for (const c of comps.components) files[`src/components/${c.name}.vue`] = vueComponent(c);
-  for (const p of pages) files[`src/pages/${p.component}.vue`] = vuePage(p, comps);
+  for (const c of comps.components) files[`src/components/${c.name}.vue`] = vueComponent(c, o);
+  for (const p of pages) files[`src/pages/${p.component}.vue`] = vuePage(p, comps, o);
+  if (o.icons.size) files['src/icons.js'] = o.icons.module();
+  files['AGENTS.md'] = agentsMd('vue', { pages, comps, resp, routesList, css: o.css, icons: o.icons.size, meta });
   writeFiles(root, files);
   if (fs.existsSync(path.join(siteDir, 'assets'))) fs.cpSync(path.join(siteDir, 'assets'), path.join(root, 'public/assets'), { recursive: true });
-  return root;
+  return { dir: root, keep: o.keep };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -410,12 +513,15 @@ const Page = computed(() => routes[route.value] || routes[first]);
 // ---------------------------------------------------------------------------------------------
 
 /** React: те же .jsx-файлы, asset → ../assets/, бандл esbuild, renderToStaticMarkup. */
-export async function renderReact(pages, comps) {
+export async function renderReact(pages, comps, opt = {}) {
   const esbuild = require('esbuild');
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ds-react-'));
-  const files = { 'assets.js': `export const asset = (p) => ${jsStr(ASSET_PREFIX)} + p;\n` };
-  for (const c of comps.components) files[`components/${c.name}.jsx`] = reactComponent(c);
-  for (const p of pages) files[`pages/${p.component}.jsx`] = reactPage(p, comps);
+  const files = { 'assets.js': `export const asset = (p) => ${jsStr(opt.assetPrefix || ASSET_PREFIX)} + p;\n` };
+  // keep: null — с метками всех слоёв (проверка геометрии); Set — ровно как в отдаваемом проекте
+  const o = { keep: opt.keep || null, icons: iconRegistry(), instanceOf: comps.instanceOf };
+  for (const c of comps.components) files[`components/${c.name}.jsx`] = reactComponent(c, o);
+  for (const p of pages) files[`pages/${p.component}.jsx`] = reactPage(p, comps, o);
+  files['icons.js'] = o.icons.module();
   files['entry.jsx'] = `import { renderToStaticMarkup } from 'react-dom/server';
 ${pages.map((p) => `import ${p.component} from './pages/${p.component}.jsx';`).join('\n')}
 export const out = { ${pages.map((p) => `${jsStr(p.component)}: renderToStaticMarkup(<${p.component} />)`).join(', ')} };
@@ -433,20 +539,19 @@ export const out = { ${pages.map((p) => `${jsStr(p.component)}: renderToStaticMa
 }
 
 /** Vue: те же шаблоны, компиляция в рантайме, renderToString. */
-export async function renderVue(pages, comps) {
+export async function renderVue(pages, comps, opt = {}) {
   const vue = require('vue');
   const { renderToString } = require('@vue/server-renderer');
   const out = {};
+  const o = { keep: opt.keep || null, icons: iconRegistry(), instanceOf: comps.instanceOf };
   for (const p of pages) {
-    const { template, used } = vuePageParts(p, comps);
+    const { template, used } = vuePageParts(p, comps, o);
     const app = vue.createSSRApp({ template });
-    app.config.globalProperties.asset = (x) => ASSET_PREFIX + x;
+    app.config.globalProperties.asset = (x) => (opt.assetPrefix || ASSET_PREFIX) + x;
     app.config.compilerOptions.whitespace = 'condense';
-    for (const c of comps.components) {
-      if (!used.includes(c.name)) continue;
-      const parts = vueComponentParts(c);
-      app.component(c.name, { props: parts.props, template: parts.template });
-    }
+    const parts = comps.components.filter((c) => used.includes(c.name)).map((c) => [c.name, vueComponentParts(c, o)]);
+    app.config.globalProperties.icons = o.icons.object();
+    for (const [name, pt] of parts) app.component(name, { props: pt.props, template: pt.template });
     out[p.component] = await renderToString(app);
   }
   return out;
@@ -459,4 +564,103 @@ export function checkPageHtml(htmlPage, markup, frameDir) {
     .replace('href="styles.css"', `href="../${frameDir}/styles.css"`);
 }
 
+/**
+ * Проверка отдаваемого проекта: его разметка (без служебных меток) с его же CSS (fonts.css + site.css).
+ * Пути /fonts/ и /assets/ (корень сайта в Vite) → файлы public/ проекта.
+ */
+export function shippedCheckPage(htmlPage, markup, projectRoot, chkDir) {
+  const pub = pathToFileURL(path.join(projectRoot, 'public')).href;
+  const css = ['fonts.css', 'site.css'].map((f) => fs.readFileSync(path.join(projectRoot, 'src/styles', f), 'utf8')).join('\n')
+    .replace(/url\((["']?)\/(fonts|assets)\//g, (m, q, d) => `url(${q}${pub}/${d}/`);
+  fs.writeFileSync(path.join(chkDir, 'ship.css'), css);
+  return htmlPage
+    .replace(/<link rel="stylesheet"[^>]*>\n?/g, '')
+    .replace('</head>', '<link rel="stylesheet" href="ship.css">\n</head>')
+    .replace(/<body>[\s\S]*<\/body>/, () => `<body>\n${markup}\n</body>`);
+}
+export const projectAssetPrefix = (projectRoot) => pathToFileURL(path.join(projectRoot, 'public/assets')).href + '/';
+
 export { pathToFileURL };
+
+// ---------------------------------------------------------------------------------------------
+// AGENTS.md — карта проекта для ИИ-агента: прочитать один файл вместо всего проекта
+// ---------------------------------------------------------------------------------------------
+
+/** Переменные :root из CSS: имя → значение. */
+function cssVars(css) {
+  const out = [];
+  for (const m of css.matchAll(/:root\s*\{([^}]*)\}/g)) {
+    for (const d of m[1].matchAll(/(--[\w-]+)\s*:\s*([^;]+);/g)) out.push([d[1], d[2].trim()]);
+  }
+  return out;
+}
+
+export function agentsMd(kind, { pages, comps, resp = [], routesList, css, icons = 0, meta = {} }) {
+  const ext = kind === 'react' ? 'jsx' : kind === 'vue' ? 'vue' : 'html';
+  const L = [];
+  L.push(`# ${meta.file || 'Сайт'} — вёрстка из Figma`);
+  L.push('');
+  const ck = meta.check;
+  const verdict = !ck || !ck.total ? 'Сгенерировано DS Builder из макетов Figma.'
+    : ck.passed === ck.total ? `Сгенерировано DS Builder из макетов Figma и сверено с макетами: совпадают все (${ck.total}).`
+    : `Сгенерировано DS Builder из макетов Figma и сверено с макетами: совпадают ${ck.passed} из ${ck.total} макетов${ck.failed?.length ? ` (расходятся: ${ck.failed.slice(0, 8).join(', ')}${ck.failed.length > 8 ? '…' : ''})` : ''}; подробности — report.html в папке сборки.`;
+  L.push(`${verdict} ` +
+    `${kind === 'html' ? 'Обычные HTML и CSS.' : `${kind === 'react' ? 'React' : 'Vue'} + Vite: \`npm install && npm run dev\`.`}`);
+  L.push('');
+  L.push('## Страницы');
+  L.push('');
+  L.push(`| ${kind === 'html' ? 'файл' : 'маршрут'} | ${kind === 'html' ? 'стили' : 'файл'} | макет Figma | ширина |`);
+  L.push('|---|---|---|---|');
+  for (const r of resp) {
+    L.push(kind === 'html'
+      ? `| ${r.file || r.component} | — | ${r.name} (адаптивная) | ${r.widths.join(' / ')} |`
+      : `| #${r.route} | src/pages/${r.component}.${ext} | ${r.name} (адаптивная: ${r.members.map((m) => m.component).join(', ')}) | ${r.widths.join(' / ')} |`);
+  }
+  for (const p of pages) {
+    const src = p.page && !String(p.title).startsWith(p.page) ? `${p.page} / ${p.title}` : p.title;
+    L.push(kind === 'html'
+      ? `| ${p.file} | css/${p.css || ''} | ${src} | ${Math.round(p.width)} |`
+      : `| #${p.route} | src/pages/${p.component}.${ext} | ${src} | ${Math.round(p.width)} |`);
+  }
+  if (comps?.components?.length && kind !== 'html') {
+    L.push('');
+    L.push('## Компоненты');
+    L.push('');
+    L.push('Повторяющиеся блоки макета. Параметры: text — текст, src — картинка, html — иконка из icons.js, cls — вариант оформления, style — положение.');
+    L.push('');
+    L.push('| компонент | параметры | использований |');
+    L.push('|---|---|---|');
+    for (const c of comps.components) {
+      const props = c.props.map((p) => `${p.name}:${p.kind}`).join(', ') || '—';
+      L.push(`| src/components/${c.name}.${ext} | ${props} | ${c.instances.length} |`);
+    }
+  }
+  const vars = cssVars(css || '');
+  if (vars.length) {
+    L.push('');
+    L.push(`## Дизайн-токены (${kind === 'html' ? 'css/tokens.css' : 'начало src/styles/site.css'})`);
+    L.push('');
+    const groups = new Map();
+    for (const [k, v] of vars) {
+      const g = k.replace(/^--/, '').split('-')[0];
+      if (!groups.has(g)) groups.set(g, []);
+      groups.get(g).push(`${k}: ${v}`);
+    }
+    for (const [g, list] of groups) {
+      const shown = list.slice(0, 40);
+      L.push(`- ${g}: ${shown.map((x) => `\`${x}\``).join(', ')}${list.length > shown.length ? ` … ещё ${list.length - shown.length}` : ''}`);
+    }
+  }
+  L.push('');
+  L.push('## Как работать с проектом');
+  L.push('');
+  L.push('- Цвета, шрифты, тени — только через токены `var(--…)`, новые значения не вписывать.');
+  L.push('- Размеры и отступы блоков взяты из макета и проверены. Не меняй их, если задача не об этом.');
+  L.push(`- Классы с суффиксом (\`card-1x2y3\`) — стили конкретного блока ${kind === 'html' ? 'в css/<страница>.css' : 'в src/styles/site.css'}; найти стиль — поиском по имени класса.`);
+  if (kind === 'html') L.push('- Иконки вставлены в страницы как <svg>: правь их там же или вынеси в файлы, если нужно.');
+  if (icons) L.push(`- Иконки (${icons}) — в \`src/icons.js\`, в коде — \`icons.имя\`. Файл большой (SVG), читать его целиком не нужно.`);
+  L.push(`- Не нужно читать: ${kind === 'html' ? '`css/fonts.css`' : '`src/styles/fonts.css`'} (шрифты)${icons ? ', `src/icons.js` (векторы)' : ''}, ${kind === 'html' ? '`assets/`' : '`public/`'} (файлы картинок и шрифтов).`);
+  if (kind !== 'html') L.push('- Атрибуты `data-figma-id` и проп `ids` остаются только там, где к слою привязана поправка в CSS (`[data-figma-id="…"]`). Удалишь — поправка перестанет действовать.');
+  L.push('');
+  return L.join('\n');
+}

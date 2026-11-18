@@ -12,6 +12,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { agentsMd } from './frameworks.js';
 import { className } from './semantic.js';
 
 const strip = (html) => html.replace(/ data-figma-id="[^"]*"/g, '').replace(/ data-name="[^"]*"/g, '');
@@ -48,7 +49,7 @@ function copyDir(from, to) {
  * @param groups   [{ name, dir, widths }] — адаптивные страницы (dir — папка <имя>.responsive)
  * @returns {{ root: string, pages: { file: string, title: string, from: string, width?: number, height?: number, widths?: number[] }[] }}
  */
-export function exportHtml(siteDir, pages, groups = []) {
+export function exportHtml(siteDir, pages, groups = [], meta = {}) {
   const root = path.join(siteDir, 'html');
   fs.rmSync(root, { recursive: true, force: true });
   fs.mkdirSync(path.join(root, 'css'), { recursive: true });
@@ -105,7 +106,7 @@ ${cssFiles.map((c) => `<link rel="stylesheet" href="css/${c}">`).join('\n')}
     const body = src.slice(src.indexOf('<body>'));
     const { name, html } = pageCss(p.dir, 'styles.css', slug, body);
     fs.writeFileSync(path.join(root, `${slug}.html`), head(p.title, [name]) + '</head>\n' + strip(html).replace(/"\.\.\/assets\//g, '"assets/'));
-    out.push({ file: `${slug}.html`, title: p.title, from: p.dir, width: p.width, height: p.height });
+    out.push({ file: `${slug}.html`, css: name, title: p.title, page: p.page, from: p.dir, width: p.width, height: p.height });
   }
 
   // адаптивные страницы: варианты (фиксированные или «резиновые») — каждый со своими стилями
@@ -124,7 +125,7 @@ ${cssFiles.map((c) => `<link rel="stylesheet" href="css/${c}">`).join('\n')}
     const style = (src.match(/<style>[\s\S]*?<\/style>/) || [''])[0];
     const title = (src.match(/<title>([^<]*)<\/title>/) || [, g.name])[1];
     fs.writeFileSync(path.join(root, `${slug}.html`), head(title, files) + style + '\n</head>\n' + strip(body).replace(/"\.\.\/assets\//g, '"assets/'));
-    out.push({ file: `${slug}.html`, title: `${g.name} (адаптивная)`, from: g.dir, widths: g.widths });
+    out.push({ file: `${slug}.html`, title: `${g.name} (адаптивная)`, name: g.name, from: g.dir, widths: g.widths, responsive: true });
   }
 
   fs.writeFileSync(path.join(root, 'index.html'), `<!DOCTYPE html>
@@ -143,5 +144,9 @@ ${out.map((p) => `<li><a href="${p.file}">${p.title.replace(/[<&]/g, '')}</a></l
 </body>
 </html>
 `);
+  fs.writeFileSync(path.join(root, 'AGENTS.md'), agentsMd('html', {
+    pages: out.filter((p) => !p.responsive), resp: out.filter((p) => p.responsive),
+    css: fs.readFileSync(path.join(siteDir, 'tokens.css'), 'utf8'), meta,
+  }));
   return { root, pages: out };
 }

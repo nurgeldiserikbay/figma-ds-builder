@@ -21,7 +21,7 @@ import { analyzeDesignSystem } from './ds/analyze.js';
 import { exportFiles, toTokens } from './ds/export.js';
 import { familiesOf, ensureFonts, buildFontsCss, defaultCacheDir } from './fonts.js';
 import { findComponents } from './components.js';
-import { preparePages, exportReact, exportVue, renderReact, renderVue, checkPageHtml } from './frameworks.js';
+import { preparePages, exportReact, exportVue, renderReact, renderVue, checkPageHtml, shippedCheckPage, projectAssetPrefix } from './frameworks.js';
 import { groupFrames, writeResponsive, textsOf } from './responsive.js';
 import { exportHtml } from './export-html.js';
 import { unzipFile } from './unzip.js';
@@ -559,7 +559,7 @@ async function build(args) {
 
     // чистый HTML/CSS: самостоятельная папка html/, проверка — тот же рендер, что у рабочей вёрстки
     if (args.frameworks.includes('html') && fwPages.length) {
-      const ex = exportHtml(out, fwPages, responsive.map((r) => ({ name: r.name, dir: r.dir, widths: r.widths })));
+      const ex = exportHtml(out, fwPages, responsive.map((r) => ({ name: r.name, dir: r.dir, widths: r.widths })), { file: pkg.manifest.file, check: checkSummary(results) });
       console.log(`HTML/CSS: ${path.relative(process.cwd(), ex.root) || ex.root}`);
       if (browser) {
         // параллельно, как и фреймы
@@ -596,10 +596,15 @@ async function build(args) {
       console.log(`Компоненты: ${comps.components.length}${comps.components.length ? ' — ' + comps.components.slice(0, 8).map((c) => `${c.name}×${c.instances.length}${c.props.length ? ` (${c.props.map((p) => p.name).join(', ')})` : ''}`).join(', ') : ''}`);
       for (const fw of args.frameworks.filter((f) => f !== 'html')) {
         if (!['react', 'vue'].includes(fw)) { console.log(`  неизвестный фреймворк: ${fw}`); continue; }
-        const dir = fw === 'react' ? exportReact(out, pages, comps, groupsFw) : exportVue(out, pages, comps, groupsFw);
+        const meta = { file: pkg.manifest.file, check: checkSummary(results) };
+        const exp = fw === 'react' ? exportReact(out, pages, comps, groupsFw, meta) : exportVue(out, pages, comps, groupsFw, meta);
+        const dir = exp.dir;
         console.log(`${fw === 'react' ? 'React' : 'Vue'}: ${path.relative(process.cwd(), dir) || dir}`);
         if (!browser) continue;
         const markup = fw === 'react' ? await renderReact(pages, comps) : await renderVue(pages, comps);
+        // и сам отдаваемый проект: без служебных меток, иконки из icons.js, его fonts.css + site.css
+        const shipOpt = { keep: exp.keep, assetPrefix: projectAssetPrefix(dir) };
+        const shipped = fw === 'react' ? await renderReact(pages, comps, shipOpt) : await renderVue(pages, comps, shipOpt);
         for (const p of pages) {
           const html = fs.readFileSync(path.join(out, p.dir, 'index.html'), 'utf8');
           const chk = path.join(out, `${p.dir}.${fw}-check`);
@@ -608,9 +613,12 @@ async function build(args) {
           const r = await renderPage(browser, path.join(chk, 'index.html'), { width: p.width, height: p.height, scale: pkg.scale, out: path.join(chk, 'render.png') });
           const d = comparePng(path.join(out, p.dir, 'render.png'), path.join(chk, 'render.png'), path.join(chk, 'diff.png'));
           const g = checkGeometry(p.tree, r.boxes);
-          const same = d.mismatched === 0 && g.failed === 0;
-          results[p.result].frameworks = { ...(results[p.result].frameworks || {}), [fw]: { percent: d.percent, geometry: `${g.checked - g.failed}/${g.checked}`, same } };
-          console.log(`  ${p.title}: ${fw} ${same ? 'совпадает с HTML' : `ОТЛИЧАЕТСЯ: pixel ${d.percent.toFixed(3)}%, геометрия ${g.checked - g.failed}/${g.checked}`}`);
+          fs.writeFileSync(path.join(chk, 'shipped.html'), shippedCheckPage(html, shipped[p.component], dir, chk));
+          await renderPage(browser, path.join(chk, 'shipped.html'), { width: p.width, height: p.height, scale: pkg.scale, out: path.join(chk, 'shipped.png') });
+          const ds = comparePng(path.join(out, p.dir, 'render.png'), path.join(chk, 'shipped.png'), path.join(chk, 'shipped-diff.png'));
+          const same = d.mismatched === 0 && g.failed === 0 && ds.mismatched === 0;
+          results[p.result].frameworks = { ...(results[p.result].frameworks || {}), [fw]: { percent: Math.max(d.percent, ds.percent), geometry: `${g.checked - g.failed}/${g.checked}`, same } };
+          console.log(`  ${p.title}: ${fw} ${same ? 'совпадает с HTML' : `ОТЛИЧАЕТСЯ: pixel ${d.percent.toFixed(3)}%, проект ${ds.percent.toFixed(3)}%, геометрия ${g.checked - g.failed}/${g.checked}`}`);
           if (same) fs.rmSync(chk, { recursive: true, force: true });
           else process.exitCode = 2;
         }
@@ -631,6 +639,12 @@ async function build(args) {
   if (args.open) openFile(path.join(out, 'report.html'));
   const failed = results.filter((r) => r.pass === false).length;
   if (failed) process.exitCode = 2;
+}
+
+/** Итог сверки для AGENTS.md: только фреймы с эталоном. */
+function checkSummary(results) {
+  const withRef = results.filter((r) => r.pass === true || r.pass === false);
+  return { total: withRef.length, passed: withRef.filter((r) => r.pass).length, failed: withRef.filter((r) => r.pass === false).map((r) => r.frame || r.name || r.title).filter(Boolean) };
 }
 
 const args = parseArgs(process.argv.slice(2));
