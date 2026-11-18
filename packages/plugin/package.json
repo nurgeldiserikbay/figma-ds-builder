@@ -1,12 +1,12 @@
 {
   "name": "@figma-ds-builder/plugin",
-  "version": "0.1.0",
+  "version": "0.3.1",
   "private": true,
   "type": "module",
   "description": "Плагин Figma: PNG макетов и пакет для вёрстки (дерево, шрифты, переменные, стили)",
   "scripts": {
     "build": "node build.js",
-    "test": "node build.js && node test/mock-run.js && node test/split.js && node test/mock-import.js"
+    "test": "node build.js && node test/mock-run.js && node test/split.js && node test/stop-resume.js && node test/mock-import.js"
   },
   "license": "MIT"
 }

@@ -215,10 +215,12 @@ async function buildLayoutPackage(frames, opts) {
   var fonts = {};
   var warnings = [];
   var progress = opts.onProgress || function () {};
+  var shouldStop = opts.shouldStop || function () { return false; };
 
   for (var i = 0; i < frames.length; i++) {
+    if (shouldStop()) return { stopped: true, files: [], warnings: warnings };
     var f = frames[i];
-    progress('Фрейм ' + (i + 1) + ' из ' + frames.length + ': ' + f.name);
+    progress('Фрейм ' + (i + 1) + ' из ' + frames.length + ': ' + f.name, i);
     var t = f.absoluteTransform;
     var ctx = { images: images, vectors: [], instances: [], count: 0, fonts: fonts };
     var tree = serialize(f, t[0][2], t[1][2], ctx);
@@ -252,7 +254,7 @@ async function buildLayoutPackage(frames, opts) {
 
   var hashes = Object.keys(images);
   for (var h = 0; h < hashes.length; h++) {
-    progress('Картинки: ' + (h + 1) + ' из ' + hashes.length);
+    progress('Картинки: ' + (h + 1) + ' из ' + hashes.length, frames.length);
     var img = figma.getImageByHash(hashes[h]);
     if (!img) continue;
     try {
