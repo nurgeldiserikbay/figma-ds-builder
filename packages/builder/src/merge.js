@@ -49,8 +49,9 @@ export function mergePackages(dirs, outDir) {
     const p = path.join(first.d, rel);
     if (fs.existsSync(p)) fs.copyFileSync(p, path.join(outDir, path.basename(rel)));
   }
-  fs.writeFileSync(path.join(outDir, 'fonts.json'), JSON.stringify([...fonts.values()].sort((a, b) => b.uses - a.uses), null, 2));
-  const manifest = { ...first.m, frames, part: undefined, fonts: 'fonts.json',
+  // список шрифтов — только если он был хотя бы в одной части (иначе программа берёт шрифты из дерева слоёв)
+  if (fonts.size) fs.writeFileSync(path.join(outDir, 'fonts.json'), JSON.stringify([...fonts.values()].sort((a, b) => b.uses - a.uses), null, 2));
+  const manifest = { ...first.m, frames, part: undefined, fonts: fonts.size ? 'fonts.json' : undefined,
     warnings: order.flatMap(({ m }) => m.warnings || []), parts: order.length };
   if (!manifest.warnings.length) delete manifest.warnings;
   fs.writeFileSync(path.join(outDir, 'manifest.json'), JSON.stringify(manifest, null, 2));
