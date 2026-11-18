@@ -1,0 +1,20 @@
+# Добавляет к готовому выпуску копии файлов без номера версии, чтобы прямые ссылки
+# …/releases/latest/download/DS-Builder-Setup.exe работали всегда. Новые выпуски получают их сразу (desktop.yml).
+name: Постоянные ссылки на файлы
+on:
+  workflow_dispatch:
+    inputs:
+      tag: { description: 'Выпуск, например v0.3.1', required: true }
+permissions: { contents: write }
+jobs:
+  copy:
+    runs-on: ubuntu-latest
+    steps:
+      - env: { GH_TOKEN: '${{ github.token }}', GH_REPO: '${{ github.repository }}' }
+        run: |
+          v="${{ inputs.tag }}"; v="${v#v}"
+          mkdir dist && cd dist
+          gh release download "${{ inputs.tag }}" --pattern 'DS-Builder-*'
+          for f in *; do n=$(echo "$f" | sed -E "s/-$v//"); [ "$n" != "$f" ] && mv "$f" "$n"; done
+          ls -la
+          gh release upload "${{ inputs.tag }}" * --clobber

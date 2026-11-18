@@ -81,6 +81,12 @@ cd packages/plugin && npm run build
 
 ## Установка программы (без терминала)
 
+Скачать последнюю версию сразу:
+[Windows](https://github.com/nurgeldiserikbay/figma-ds-builder/releases/latest/download/DS-Builder-Setup.exe) ·
+[macOS (Apple Silicon)](https://github.com/nurgeldiserikbay/figma-ds-builder/releases/latest/download/DS-Builder-mac-arm64.dmg) ·
+[Linux](https://github.com/nurgeldiserikbay/figma-ds-builder/releases/latest/download/DS-Builder-linux-x86_64.AppImage) ·
+[плагин отдельно](https://github.com/nurgeldiserikbay/figma-ds-builder/releases/latest/download/DS-Builder-Figma-plugin.zip).
+
 Готовые установщики собирает GitHub Actions (workflow «Программа с окном»): Windows `.exe`, macOS `.dmg`
 (Apple Silicon), Linux `.AppImage`. После выпуска версии они лежат на странице **Releases**; до этого — в
 артефактах последнего запуска workflow. Плагин для Figma входит в программу (кнопка «открыть папку с плагином»).

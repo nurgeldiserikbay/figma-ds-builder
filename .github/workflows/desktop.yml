@@ -106,6 +106,10 @@ jobs:
         run: |
           node packages/plugin/build.js
           (cd packages/plugin/dist && zip -qr "$GITHUB_WORKSPACE/dist/DS-Builder-Figma-plugin-${{ inputs.version }}.zip" .)
+      - name: Постоянные имена (ссылка …/releases/latest/download/DS-Builder-Setup.exe не меняется от версии)
+        run: |
+          cd dist
+          for f in *; do n=$(echo "$f" | sed -E 's/-${{ inputs.version }}//'); [ "$n" != "$f" ] && cp "$f" "$n"; done
       - name: Выпуск
         env: { GH_TOKEN: '${{ github.token }}' }
         run: |
