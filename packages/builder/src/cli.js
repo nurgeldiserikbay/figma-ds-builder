@@ -3,6 +3,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import crypto from 'node:crypto';
+import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { loadPackage, copyAssets } from './package.js';
 import { loadTokens } from './tokens.js';
@@ -23,6 +25,7 @@ import { preparePages, exportReact, exportVue, renderReact, renderVue, checkPage
 import { groupFrames, writeResponsive, textsOf } from './responsive.js';
 import { exportHtml } from './export-html.js';
 import { unzipFile } from './unzip.js';
+import { mergePackages } from './merge.js';
 
 const HELP = `
 ds-build ui [--port 0] [--home папка] [--no-open]
@@ -33,7 +36,8 @@ ds-build analyze <пакет | пакет.zip> [--out папка] [--delta-e 3] 
   Дизайн-система по всем фреймам пакета: tokens.json (W3C), variables.css, _tokens.scss,
   tailwind.config.js, design-system.md (с аудитом), analysis.json. По умолчанию — в ./out/design-system.
 
-ds-build build <пакет | пакет.zip> [опции]
+ds-build build <пакет.zip> [ещё части.zip …] [опции]
+  Большой файл плагин выгружает частями («… (часть 2 из 8).zip») — передайте все части сразу.
   Вёрстка всех фреймов + проверка с эталонами. Если в пакете нет tokens.json, дизайн-система
   строится автоматически (как analyze) и цвета в вёрстке подставляются как var(--color-…).
 
@@ -61,6 +65,9 @@ ds-build build <пакет | пакет.zip> [опции]
                        каждая страница проверяется — рендер должен совпасть с рабочей вёрсткой пиксель в пиксель
   --no-refine          не подбирать поправки после сверки с эталоном
   --no-semantic        без семантических тегов (только div)
+  --jobs <N>           сколько фреймов проверять одновременно (по умолчанию — ядер процессора, не больше 4)
+  --no-cache           пересобрать все фреймы; по умолчанию фреймы без изменений берутся из кэша
+                       (~/.cache/ds-build/frames; кэш сбрасывается при обновлении программы)
   --svg-files          векторы — файлами <img src="….svg">; по умолчанию небольшие SVG вставляются в страницу
                        (правятся в коде, цвета — из токенов var(--color-…))
   --ai                 понятные имена классов от ИИ для слоёв с безликими именами (Frame 237…).
@@ -74,7 +81,7 @@ ds-build build <пакет | пакет.zip> [опции]
 `;
 
 function parseArgs(argv) {
-  const a = { _: [], frames: [], css: [], frameworks: [], groups: {}, responsive: true, inlineSvg: true, layout: 'auto', threshold: 0.1, textThreshold: 0.5, out: 'out', verify: true, refine: true, analyze: true, fonts: 'auto', semantic: true, ai: false };
+  const a = { _: [], frames: [], css: [], frameworks: [], groups: {}, responsive: true, inlineSvg: true, cache: true, jobs: Math.max(1, Math.min(4, os.availableParallelism ? os.availableParallelism() : os.cpus().length)), layout: 'auto', threshold: 0.1, textThreshold: 0.5, out: 'out', verify: true, refine: true, analyze: true, fonts: 'auto', semantic: true, ai: false };
   for (let i = 0; i < argv.length; i++) {
     const k = argv[i];
     if (k === '--out') a.out = argv[++i];
@@ -92,6 +99,8 @@ function parseArgs(argv) {
     else if (k === '--fonts') a.fonts = argv[++i];
     else if (k === '--open') a.open = true;
     else if (k === '--no-responsive') a.responsive = false;
+    else if (k === '--jobs') a.jobs = Math.max(1, parseInt(argv[++i], 10) || 1);
+    else if (k === '--no-cache') a.cache = false;
     else if (k === '--svg-files') a.inlineSvg = false;
     else if (k === '--port') a.port = Number(argv[++i]);
     else if (k === '--home') a.home = path.resolve(argv[++i]);
@@ -104,6 +113,30 @@ function parseArgs(argv) {
     else a._.push(k);
   }
   return a;
+}
+
+/** Версия программы для кэша: хэш исходников (любая правка генератора или проверки сбрасывает кэш). */
+let progHash = null;
+function programHash() {
+  if (progHash) return progHash;
+  const dir = path.dirname(fileURLToPath(import.meta.url));
+  const h = crypto.createHash('sha256');
+  for (const f of fs.readdirSync(dir).filter((n) => n.endsWith('.js')).sort()) h.update(f).update(fs.readFileSync(path.join(dir, f)));
+  return (progHash = h.digest('hex'));
+}
+
+/** Один или несколько пакетов (части выгрузки) → папка одного пакета. */
+function resolvePackages(inputs) {
+  const dirs = inputs.map(resolvePackageDir);
+  if (dirs.length === 1) {
+    const m = JSON.parse(fs.readFileSync(path.join(dirs[0], 'manifest.json'), 'utf8'));
+    if (m.part?.total > 1) console.log(`  ⚠ Это часть ${m.part.index} из ${m.part.total} выгрузки — передайте все части сразу, иначе свёрстана будет только эта`);
+    return dirs[0];
+  }
+  const { dir, notes } = mergePackages(dirs, fs.mkdtempSync(path.join(os.tmpdir(), 'ds-merged-')));
+  console.log(`Частей пакета: ${dirs.length} — собраны в один`);
+  for (const n of notes) console.log(`  ⚠ ${n}`);
+  return dir;
 }
 
 function resolvePackageDir(input) {
@@ -146,7 +179,7 @@ function runAnalysis(pkg, args, outDir) {
 }
 
 async function analyze(args) {
-  const pkg = loadPackage(resolvePackageDir(args._[1]));
+  const pkg = loadPackage(resolvePackages(args._.slice(1)));
   const outDir = path.resolve(args.out === 'out' ? 'out/design-system' : args.out);
   const ds = runAnalysis(pkg, args, outDir);
   console.log(`Дизайн-система: ${pkg.manifest.file}`);
@@ -158,7 +191,7 @@ async function analyze(args) {
 }
 
 async function build(args) {
-  const pkgDir = resolvePackageDir(args._[1]);
+  const pkgDir = resolvePackages(args._.slice(1));
   const pkg = loadPackage(pkgDir);
   const out = path.resolve(args.out);
   fs.mkdirSync(out, { recursive: true });
@@ -201,14 +234,42 @@ async function build(args) {
   // текст SVG из пакета: небольшие векторы вставляются прямо в страницу
   const svgText = (rel) => { try { return fs.readFileSync(path.join(pkg.dir, rel), 'utf8'); } catch { return null; } };
 
+  // Кэш фреймов: тот же фрейм (дерево + эталон) с теми же настройками и той же версией программы
+  // не пересобирается — берётся готовый результат. Ключ учитывает всё, что влияет на вёрстку и проверку.
+  const cacheRoot = path.join(defaultCacheDir(), 'frames');
+  const optKey = crypto.createHash('sha256').update(JSON.stringify([
+    programHash(), args.layout, args.threshold, args.textThreshold, args.refine, args.semantic, args.inlineSvg, args.ai, args.verify,
+    tokens.css(), extraCss, fs.existsSync(path.join(out, 'fonts.css')) ? fs.readFileSync(path.join(out, 'fonts.css'), 'utf8').replace(/url\([^)]*\)/g, '') : '', pkg.scale,
+  ])).digest('hex');
+  const slots = [];
+  let cached = 0, doneCount = 0;
+
   try {
-    for (const f of frames) {
+    const buildFrame = async (f, idx) => {
       const tree = f.tree();
       const dirName = safe(`${f.name}-${f.id}`);
       const fdir = path.join(out, dirName);
       fs.mkdirSync(fdir, { recursive: true });
       const hasRef = args.verify && f.pngPath && fs.existsSync(f.pngPath);
       if (hasRef) fs.copyFileSync(f.pngPath, path.join(fdir, 'reference.png'));
+      const key = args.cache ? crypto.createHash('sha256').update(optKey).update(JSON.stringify(tree))
+        .update(hasRef ? fs.readFileSync(f.pngPath) : '').digest('hex').slice(0, 40) : null;
+      const hit = key && path.join(cacheRoot, key);
+      if (hit && fs.existsSync(path.join(hit, 'meta.json'))) {
+        const meta = JSON.parse(fs.readFileSync(path.join(hit, 'meta.json'), 'utf8'));
+        for (const name of fs.readdirSync(hit)) if (name !== 'meta.json') fs.copyFileSync(path.join(hit, name), path.join(fdir, name));
+        // дерево элементов для React/Vue и адаптивности — тем же генератором (миллисекунды)
+        const absIds = meta.pinned.length ? new Set(meta.pinned) : null;
+        const gen = generateFrame(tree, { mode: meta.genMode, absIds, svgText, inlineSvg: args.inlineSvg, tokens, assetUrl: (rel) => `../assets/${rel}`, title: f.name, extraCss, semantic: args.semantic, names: meta.names ? new Map(meta.names) : null });
+        slots[idx] = {
+          fw: { title: f.name, page: f.page, dir: dirName, root: gen.root, tree, width: f.width, height: f.height,
+            gen: { mode: meta.genMode, absIds, title: f.name, names: meta.names ? new Map(meta.names) : null } },
+          result: { ...meta.result, dir: dirName, cached: true },
+        };
+        cached++;
+        console.log(`  ${f.name}: без изменений — из кэша · ${meta.status}`);
+        return;
+      }
 
       // ИИ-имена (по флагу): только для безликих слоёв; ошибки сервера не ломают сборку
       let names = null;
@@ -348,9 +409,10 @@ async function build(args) {
       for (const a of attempts) if (a.dir !== fdir) fs.rmSync(a.dir, { recursive: true, force: true });
 
       const pass = browser ? !!chosen.ok : null;
-      fwPages.push({ title: f.name, page: f.page, dir: dirName, root: chosen.gen.root, tree, width: f.width, height: f.height, result: results.length,
-        gen: { mode: chosen.mode === 'absolute' ? 'absolute' : 'flow', absIds: chosen.pinned.length ? new Set(chosen.pinned) : null, title: f.name, names } });
-      results.push({
+      slots[idx] = {};
+      slots[idx].fw = { title: f.name, page: f.page, dir: dirName, root: chosen.gen.root, tree, width: f.width, height: f.height,
+        gen: { mode: chosen.mode === 'absolute' ? 'absolute' : 'flow', absIds: chosen.pinned.length ? new Set(chosen.pinned) : null, title: f.name, names } };
+      slots[idx].result = ({
         name: f.name, id: f.id, width: f.width, height: f.height, dir: dirName,
         mode: chosen.mode, stats: chosen.gen.stats, fonts: chosen.fonts, diff: chosen.diff, geometry: chosen.geometry, refine: chosen.refine, pixels: pixelSplit(chosen.diff), pass,
         pinned: chosen.pinned,
@@ -363,7 +425,31 @@ async function build(args) {
       const status = `${pix}${ref} · ${geo} · ${pass === null ? '' : pass ? 'OK' : 'FAIL'}`;
       const modeLabel = chosen.mode === 'hybrid' ? `flow, координаты закреплены у блоков: ${chosen.pinned.length}` : chosen.mode;
       console.log(`  ${f.name}: ${modeLabel} · ${status}`);
+      // в кэш — только проверенный результат (без браузера проверять нечего)
+      if (hit && browser) {
+        fs.mkdirSync(hit, { recursive: true });
+        for (const name of ['index.html', 'styles.css', 'render.png', 'diff.png']) if (fs.existsSync(path.join(fdir, name))) fs.copyFileSync(path.join(fdir, name), path.join(hit, name));
+        const fwg = slots[idx].fw.gen;
+        fs.writeFileSync(path.join(hit, 'meta.json'), JSON.stringify({ result: slots[idx].result, genMode: fwg.mode, pinned: chosen.pinned, names: names ? [...names] : null, status: `${modeLabel} · ${status}` }));
+      }
+    };
+
+    // фреймы — параллельно, по args.jobs вкладок одного браузера
+    const queue = frames.map((f, i) => [f, i]);
+    const worker = async () => {
+      for (let item = queue.shift(); item; item = queue.shift()) {
+        await buildFrame(item[0], item[1]);
+        doneCount++;
+      }
+    };
+    await Promise.all(Array.from({ length: Math.max(1, Math.min(args.jobs, frames.length)) }, worker));
+    for (const sl of slots) {
+      if (!sl) continue;
+      sl.fw.result = results.length;
+      fwPages.push(sl.fw);
+      results.push(sl.result);
     }
+    if (cached) console.log(`Без изменений (из кэша): ${cached} из ${frames.length}`);
     // адаптивные страницы: фреймы одной страницы под разные ширины
     if (args.responsive) {
       const groups = groupFrames(fwPages.map((p) => ({ name: p.title, page: p.page, width: p.width, texts: textsOf(p.tree) })), args.groups);
@@ -469,23 +555,29 @@ async function build(args) {
       const ex = exportHtml(out, fwPages, responsive.map((r) => ({ name: r.name, dir: r.dir, widths: r.widths })));
       console.log(`HTML/CSS: ${path.relative(process.cwd(), ex.root) || ex.root}`);
       if (browser) {
-        for (const p of ex.pages) {
+        // параллельно, как и фреймы
+        const checkOne = async (p, k) => {
+          // страница фрейма из кэша уже сверялась с этой же версией программы
+          const fromCache = !p.widths && results.find((r) => r.dir === p.from)?.cached;
+          if (fromCache) return;
           const checks = p.widths
             ? p.widths.map((w) => ({ w, h: fwPages.find((f) => Math.round(f.width) === w && responsive.find((r) => r.dir === p.from)?.components.includes(f))?.height, ref: path.join(out, p.from, `render-${w}.png`) }))
             : [{ w: p.width, h: p.height, ref: path.join(out, p.from, 'render.png') }];
           const bad = [];
           for (const c of checks) {
             if (!c.h || !fs.existsSync(c.ref)) continue;
-            const png = path.join(out, '.html-check.png');
+            const png = path.join(out, `.html-check-${k}.png`);
             await renderPage(browser, path.join(ex.root, p.file), { width: c.w, height: c.h, scale: pkg.scale, out: png });
-            const d = comparePng(c.ref, png, path.join(out, '.html-check-diff.png'));
+            const d = comparePng(c.ref, png, path.join(out, `.html-check-diff-${k}.png`));
             if (d.mismatched) bad.push(`${c.w}px: ${d.mismatched} px`);
           }
-          fs.rmSync(path.join(out, '.html-check.png'), { force: true });
-          fs.rmSync(path.join(out, '.html-check-diff.png'), { force: true });
+          fs.rmSync(path.join(out, `.html-check-${k}.png`), { force: true });
+          fs.rmSync(path.join(out, `.html-check-diff-${k}.png`), { force: true });
           console.log(`  ${p.title}: ${bad.length ? `ОТЛИЧАЕТСЯ от рабочей вёрстки (${bad.join(', ')})` : 'совпадает с рабочей вёрсткой'}`);
           if (bad.length) process.exitCode = 2;
-        }
+        };
+        const q = ex.pages.map((p, k) => [p, k]);
+        await Promise.all(Array.from({ length: Math.max(1, Math.min(args.jobs, q.length)) }, async () => { for (let it = q.shift(); it; it = q.shift()) await checkOne(...it); }));
       }
     }
 

@@ -157,11 +157,11 @@
             Это нужно сделать один раз.</p></details>
         </li>
         <li id="s2">
-          <h2>Добавьте этот файл сюда</h2>
+          <h2>Добавьте архив сюда</h2>
           <div class="drop" id="drop">
             <i class="h tl"></i><i class="h tr"></i><i class="h bl"></i><i class="h br"></i>
-            <input type="file" id="file" accept=".zip,application/zip" aria-label="Архив из плагина: … — ds-package.zip">
-            <div id="dropText"><b>Перетащите архив сюда</b><span>или нажмите, чтобы выбрать его в папке «Загрузки»</span></div>
+            <input type="file" id="file" multiple accept=".zip,application/zip" aria-label="Архивы из плагина: … — ds-package.zip">
+            <div id="dropText"><b>Перетащите архив сюда</b><span>или нажмите, чтобы выбрать его в папке «Загрузки». Большой файл плагин выгружает частями — добавьте все части сразу</span></div>
             <div class="size" id="size"></div>
           </div>
         </li>
@@ -215,18 +215,30 @@ const form = $('form'), fileInput = $('file'), drop = $('drop');
 let file = null, running = false;
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
-function pickFile(f) {
-  if (!f) return;
-  const ok = /\.zip$/i.test(f.name);
-  $('err').textContent = ok ? '' : 'Это не тот файл: нужен архив «… — ds-package.zip», который скачивает плагин.';
-  if (!ok) return;
-  file = f;
+let files = [];
+const PART = /\(часть (\d+) из (\d+)\)/i;
+function pickFile(list) {
+  const all = [...(list || [])];
+  if (!all.length) return;
+  const zips = all.filter((f) => /\.zip$/i.test(f.name));
+  const bad = all.filter((f) => !/\.zip$/i.test(f.name));
+  $('err').textContent = bad.length ? `Не тот файл: ${bad.map((f) => f.name).join(', ')}. Нужны архивы «… — ds-package.zip» из плагина.` : '';
+  if (!zips.length) return;
+  // части одной выгрузки: «… (часть 3 из 12).zip» — проверяем, все ли на месте
+  files = zips.sort((a, b) => (+(PART.exec(a.name)?.[1] || 0)) - (+(PART.exec(b.name)?.[1] || 0)));
+  file = files[0];
+  const total = +(PART.exec(file.name)?.[2] || 0);
+  const have = new Set(files.map((f) => +(PART.exec(f.name)?.[1] || 0)));
+  const miss = total ? Array.from({ length: total }, (_, i) => i + 1).filter((i) => !have.has(i)) : [];
+  if (miss.length) $('err').textContent = `Не хватает частей: ${miss.join(', ')} из ${total}. Без них эти страницы не будут свёрстаны — добавьте все части вместе.`;
   drop.classList.add('has');
   $('s1').classList.add('done');
   $('s2').classList.add('done');
-  $('dropText').innerHTML = '<b></b><span>Готово. Нажмите, чтобы выбрать другой файл</span>';
-  $('dropText').querySelector('b').textContent = file.name;
-  $('size').textContent = `${(file.size / 1048576).toFixed(1)} МБ`;
+  const size = files.reduce((n, f) => n + f.size, 0);
+  $('dropText').innerHTML = '<b></b><span>Готово. Нажмите, чтобы выбрать другие файлы</span>';
+  $('dropText').querySelector('b').textContent = files.length === 1 ? file.name
+    : `${file.name.replace(PART, '').replace(/\s+\./, '.').trim()} — частей: ${files.length}${total ? ` из ${total}` : ''}`;
+  $('size').textContent = `${(size / 1048576).toFixed(1)} МБ`;
   updateRun();
 }
 function updateRun() {
@@ -234,14 +246,14 @@ function updateRun() {
   $('run').disabled = !file || running;
   $('hint').textContent = running ? '' : !file ? 'Сначала добавьте архив из плагина' : !any ? 'Будут только дизайн-система и отчёт' : '';
 }
-fileInput.addEventListener('change', () => pickFile(fileInput.files[0]));
+fileInput.addEventListener('change', () => pickFile(fileInput.files));
 form.addEventListener('change', (ev) => { if (ev.target !== fileInput) updateRun(); });
 ['dragenter', 'dragover'].forEach((e) => drop.addEventListener(e, (ev) => { ev.preventDefault(); drop.classList.add('over'); }));
 ['dragleave', 'drop'].forEach((e) => drop.addEventListener(e, () => drop.classList.remove('over')));
-drop.addEventListener('drop', (ev) => { ev.preventDefault(); ev.stopPropagation(); pickFile(ev.dataTransfer.files[0]); });
+drop.addEventListener('drop', (ev) => { ev.preventDefault(); ev.stopPropagation(); pickFile(ev.dataTransfer.files); });
 // архив, брошенный мимо рамки: иначе браузер открыл бы его вместо окна программы
 window.addEventListener('dragover', (ev) => ev.preventDefault());
-window.addEventListener('drop', (ev) => { ev.preventDefault(); if (!running && ev.dataTransfer.files[0]) pickFile(ev.dataTransfer.files[0]); });
+window.addEventListener('drop', (ev) => { ev.preventDefault(); if (!running && ev.dataTransfer.files.length) pickFile(ev.dataTransfer.files); });
 
 function options() {
   const o = {};
@@ -286,14 +298,21 @@ form.addEventListener('submit', async (ev) => {
   stages = stagesFor(o).map((s) => ({ ...s, state: 'wait' }));
   $('start').hidden = true;
   const job = $('job'); job.hidden = false; job.classList.remove('done');
-  $('jobTitle').textContent = file.name.replace(/\.zip$/i, '');
+  $('jobTitle').textContent = file.name.replace(PART, '').replace(/\.zip$/i, '').trim();
   $('jobSub').textContent = 'Обычно это занимает от 30 секунд до нескольких минут.';
   $('result').innerHTML = ''; $('log').textContent = '';
   document.querySelector('details.log').open = false;
   reach('upload');
   let res;
   try {
-    res = await fetch(`/api/build?file=${encodeURIComponent(file.name)}&opts=${encodeURIComponent(JSON.stringify(o))}`, { method: 'POST', body: file });
+    // части — по одной (каждая может весить сотни мегабайт), затем одна сборка
+    const session = Math.random().toString(36).slice(2) + Date.now().toString(36);
+    for (const [i, f] of files.entries()) {
+      reach('upload', files.length > 1 ? `${i + 1} из ${files.length}` : undefined);
+      const up = await fetch(`/api/upload?session=${session}&file=${encodeURIComponent(f.name)}`, { method: 'POST', body: f });
+      if (!up.ok) { res = up; break; }
+    }
+    if (!res) res = await fetch(`/api/build?session=${session}&opts=${encodeURIComponent(JSON.stringify(o))}`, { method: 'POST' });
   } catch (e) { res = { ok: false, json: async () => ({ error: 'Программа не отвечает. Перезапустите её.' }) }; }
   const data = await res.json();
   if (!res.ok) { running = false; job.hidden = true; $('start').hidden = false; $('err').textContent = data.error; updateRun(); return; }
@@ -301,14 +320,14 @@ form.addEventListener('submit', async (ev) => {
 });
 
 function follow(id) {
-  let total = 0, frames = 0, fails = 0;
+  let total = 0, frames = 0, fails = 0, cached = 0;
   reach('ds');
   const es = new EventSource(`/api/jobs/${id}/events`);
   es.onmessage = (m) => {
     const line = JSON.parse(m.data);
     for (const s of stages) if (s.re && s.re.test(line)) reach(s.id);
     const t = /фреймов: (\d+)/.exec(line); if (t) { total = +t[1]; reach('frames', `0 из ${total}`); }
-    if (/^ {2}\S.*· (OK|FAIL)$/.test(line)) { frames++; if (/FAIL$/.test(line)) fails++; reach('frames', `${frames} из ${total}${fails ? `, не сошлось: ${fails}` : ''}`); }
+    if (/^ {2}\S.*· (OK|FAIL)$/.test(line)) { frames++; if (/FAIL$/.test(line)) fails++; if (/из кэша/.test(line)) cached++; reach('frames', `${frames} из ${total}${cached ? `, без изменений: ${cached}` : ''}${fails ? `, не сошлось: ${fails}` : ''}`); }
     const span = document.createElement('span');
     if (/FAIL|Ошибка|✗|ОТЛИЧ|РАСХОЖДЕН/.test(line)) span.className = 'bad';
     else if (/ OK$|совпадает/.test(line)) span.className = 'good';

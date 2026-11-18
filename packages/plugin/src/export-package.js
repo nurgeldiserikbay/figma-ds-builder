@@ -281,6 +281,7 @@ async function buildLayoutPackage(frames, opts) {
     tokens: opts.tokens ? 'tokens.json' : undefined,
     fonts: 'fonts.json', variables: 'variables.json', styles: 'styles.json',
     frames: manifestFrames,
+    part: opts.part, // { id, index, total } — выгрузка частями: программа собирает части в один пакет
     warnings: warnings.length ? warnings : undefined,
   };
   files.unshift({ path: 'manifest.json', data: JSON.stringify(manifest, null, 2) });

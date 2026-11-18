@@ -104,6 +104,8 @@ cd packages/builder
 npm install
 npm test                 # тестовый макет → out/sample/report.html
 npx ds-build build путь/к/пакету.zip --out out/my-site
+# большой файл плагин выгружает частями — передайте все части сразу
+npx ds-build build "Файл — ds-package (часть 1 из 12).zip" "… (часть 2 из 12).zip" … --out out/my-site
 # свои шрифты (@font-face), если они не установлены в системе:
 npx ds-build build пакет.zip --css fonts.css
 ```
@@ -131,6 +133,8 @@ npx ds-build analyze пакет.zip --out out/design-system
 | `--no-semantic` | только `div`/`span`, без `header`, `nav`, `button`, `h1`… |
 | `--ai` | имена классов от ИИ: Ollama (локально) → Groq → Gemini → OpenRouter (бесплатные планы, если заданы `GROQ_API_KEY`, `GEMINI_API_KEY`, `OPENROUTER_API_KEY`); кончился лимит — следующий; свой сервер — `DS_AI_URL`, `DS_AI_MODEL`, `DS_AI_KEY` |
 | `--ai-paid` | разрешить платный провайдер в конце цепочки (`DS_AI_PAID_URL`, `DS_AI_PAID_KEY`, `DS_AI_PAID_MODEL`) |
+| `--jobs N` | сколько фреймов проверять одновременно (по умолчанию — по числу ядер, не больше 4) |
+| `--no-cache` | пересобрать всё; по умолчанию неизменённые фреймы берутся из кэша (сбрасывается при обновлении программы) |
 | `--svg-files` | векторы файлами `<img>`; по умолчанию небольшие SVG вставляются в страницу с цветами из токенов |
 | `--layout auto\|flow\|absolute` | режим раскладки; `auto` — flex, а где не сошлось — координаты только у этих блоков |
 | `--threshold 0.1`, `--text-threshold 0.5` | допуски pixel diff в % для фигур и текста |

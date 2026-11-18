@@ -48,6 +48,23 @@ function safeName(s) {
   return String(s).replace(/[\\/:*?"<>|]+/g, '_').replace(/\s+/g, ' ').trim() || 'frame';
 }
 
+// Большой файл (сотни фреймов) — частями: весь архив в памяти Figma не помещается.
+// Часть — до PART_FRAMES фреймов; страница Figma не разрывается, если сама не больше части.
+var PART_FRAMES = 25;
+function pageOf(n) { var p = n.parent; while (p && p.type !== 'PAGE') p = p.parent; return p; }
+function splitParts(frames) {
+  var parts = [], cur = [], curPage = null;
+  frames.forEach(function (f) {
+    var pg = pageOf(f);
+    var pageSize = frames.filter(function (x) { return pageOf(x) === pg; }).length;
+    var newPage = pg !== curPage;
+    if (cur.length && (cur.length >= PART_FRAMES || (newPage && cur.length + pageSize > PART_FRAMES))) { parts.push(cur); cur = []; }
+    cur.push(f); curPage = pg;
+  });
+  if (cur.length) parts.push(cur);
+  return parts;
+}
+
 function send(files, zipName) {
   // по одному файлу: крупные PNG не упираются в лимиты postMessage
   figma.ui.postMessage({ type: 'begin', count: files.length });
@@ -112,9 +129,21 @@ figma.ui.onmessage = async function (msg) {
     if (msg.what === 'png') {
       send(await exportPngs(frames, scale), fileBase + ' — PNG.zip');
     } else {
-      var pkg = await buildLayoutPackage(frames, { scale: scale, onProgress: progress });
-      send(pkg.files, fileBase + ' — ds-package.zip');
-      if (pkg.warnings.length) figma.ui.postMessage({ type: 'warning', text: pkg.warnings.join('\n') });
+      var parts = splitParts(frames);
+      var exportId = Date.now().toString(36);
+      var warnings = [];
+      for (var pi = 0; pi < parts.length; pi++) {
+        var label = parts.length > 1 ? ' (часть ' + (pi + 1) + ' из ' + parts.length + ')' : '';
+        var pkg = await buildLayoutPackage(parts[pi], {
+          scale: scale,
+          part: parts.length > 1 ? { id: exportId, index: pi + 1, total: parts.length } : undefined,
+          onProgress: function (t) { progress((parts.length > 1 ? 'Часть ' + (pi + 1) + ' из ' + parts.length + ' · ' : '') + t); },
+        });
+        send(pkg.files, fileBase + ' — ds-package' + label + '.zip');
+        warnings = warnings.concat(pkg.warnings);
+        pkg = null; // память Figma — под следующую часть
+      }
+      if (warnings.length) figma.ui.postMessage({ type: 'warning', text: warnings.join('\n') });
     }
     figma.notify('Готово: фреймов ' + frames.length);
   } catch (e) {

@@ -48,6 +48,7 @@
 </div>
 <div class="row" style="margin-top:8px"><button id="importBtn" disabled>Создать переменные и стили</button></div>
 <div id="status"></div>
+<div id="downloads" style="margin-top:6px;font-size:12px;line-height:1.6"></div>
 
 <script>
 // ---------- zip (без сжатия: PNG уже сжаты) ----------
@@ -88,7 +89,7 @@ document.getElementById('importBtn').onclick = function () {
   busy(true); status.textContent = 'Импортирую…';
   parent.postMessage({ pluginMessage: { type: 'import-tokens', text: tokensText, paintStyles: document.getElementById('paintStyles').checked } }, '*');
 };
-function run(what) { busy(true); status.textContent = 'Готовлю…'; parent.postMessage({ pluginMessage: { type: 'export', what: what, scope: val('scope'), scale: Number(val('scale')) } }, '*'); }
+function run(what) { busy(true); status.textContent = 'Готовлю…'; document.getElementById('downloads').textContent = ''; parent.postMessage({ pluginMessage: { type: 'export', what: what, scope: val('scope'), scale: Number(val('scale')) } }, '*'); }
 document.getElementById('png').onclick = function () { run('png'); };
 document.getElementById('pkg').onclick = function () { run('pkg'); };
 document.querySelectorAll('input[name="scope"]').forEach(function (r) { r.onchange = count; });
@@ -111,11 +112,18 @@ onmessage = function (e) {
   else if (m.type === 'begin') files = [];
   else if (m.type === 'file') files.push({ path: m.path, data: typeof m.data === 'string' ? new TextEncoder().encode(m.data) : m.data });
   else if (m.type === 'done') {
+    var url = URL.createObjectURL(zip(files));
+    files = [];
     var a = document.createElement('a');
-    a.href = URL.createObjectURL(zip(files));
-    a.download = m.zipName;
+    a.href = url; a.download = m.zipName;
     document.body.appendChild(a); a.click(); a.remove();
-    status.textContent = 'Скачан ' + m.zipName + ' (файлов: ' + files.length + ')';
+    // ссылка остаётся: если браузер не дал скачать несколько файлов подряд, часть можно скачать вручную
+    var list = document.getElementById('downloads');
+    var li = document.createElement('div');
+    var link = document.createElement('a'); link.href = url; link.download = m.zipName; link.textContent = m.zipName;
+    li.appendChild(document.createTextNode('✓ ')); li.appendChild(link); list.appendChild(li);
+    status.textContent = /часть/.test(m.zipName) ? 'Скачано: ' + m.zipName + '. Перетащите в DS Builder все части сразу.' : 'Скачан ' + m.zipName;
+    if (!/часть (\d+) из \1\)/.test(m.zipName) && /часть/.test(m.zipName)) return; // ждём остальные части
     busy(false);
   } else if (m.type === 'error') { status.innerHTML = '<span class="err"></span>'; status.firstChild.textContent = m.text; busy(false); }
 };

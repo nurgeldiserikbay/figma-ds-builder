@@ -12,11 +12,11 @@ export function buildReport({ file, threshold, textThreshold, results, responsiv
         (r.diff ? ` · pixel diff: ${r.diff.percent.toFixed(3)}%` + (r.pixels ? ` (текст ${r.pixels.textPct.toFixed(3)}%, остальное ${r.pixels.otherPct.toFixed(3)}%)` : '') : '') + '</p>' +
         (g.issues.length ? '<ul class="warn">' + g.issues.slice(0, 10).map((i) => `<li>${esc(i.name)} (${esc(i.id)}): Δ ${i.delta}px — Figma ${i.figma.x},${i.figma.y} ${i.figma.w}×${i.figma.h}, вёрстка ${i.html.x},${i.html.y} ${i.html.w}×${i.html.h}</li>`).join('') + '</ul>' : '') : '';
       const tries = (r.attempts || [])
-        .map((a) => `<li>${esc(a.mode === 'hybrid' ? `flow с закреплёнными блоками (${a.pinned})` : a.mode)}: pixel diff ${Number.isNaN(a.percent) ? '—' : a.percent.toFixed(3) + '%'}, ошибок геометрии ${a.geometryFailed ?? '—'}${a.chosen ? ' — <b>выбран</b>' : ''}</li>`)
+        .map((a) => `<li>${esc(a.mode === 'hybrid' ? `flow с закреплёнными блоками (${a.pinned})` : a.mode)}: pixel diff ${!Number.isFinite(a.percent) ? '—' : a.percent.toFixed(3) + '%'}, ошибок геометрии ${a.geometryFailed ?? '—'}${a.chosen ? ' — <b>выбран</b>' : ''}</li>`)
         .join('');
       const fonts = (r.fonts || []).filter((f) => !f.available).map((f) => esc(f.family));
       return `
-<section class="card">
+<section class="card frame${r.pass === false ? ' failed' : ''}" id="f-${esc(r.dir)}">
   <header><h2>${esc(r.name)}</h2>${badge}</header>
   <p class="meta">${r.width}×${r.height} · раскладка: <b>${esc(r.mode === 'hybrid' ? `flow, координаты закреплены у блоков: ${r.pinned.length}` : r.mode)}</b> ·
     блоков: ${r.stats.nodes} · flex Auto Layout: ${r.stats.figma || 0} · колонок/строк по геометрии: ${(r.stats.col || 0) + (r.stats.row || 0)} ·
@@ -33,15 +33,15 @@ export function buildReport({ file, threshold, textThreshold, results, responsiv
   ${r.diff?.bbox ? `<p class="meta">Область расхождений: x ${r.diff.bbox.x}, y ${r.diff.bbox.y}, ${r.diff.bbox.w}×${r.diff.bbox.h}</p>` : ''}
   ${r.diff ? `
   <div class="overlay" style="aspect-ratio:${r.width}/${r.height}">
-    <img src="${esc(r.dir)}/reference.png" alt="эталон">
-    <img src="${esc(r.dir)}/render.png" alt="вёрстка" class="top">
+    <img loading="lazy" decoding="async" src="${esc(r.dir)}/reference.png" alt="эталон">
+    <img loading="lazy" decoding="async" src="${esc(r.dir)}/render.png" alt="вёрстка" class="top">
   </div>
   <label class="meta">Эталон ← <input type="range" min="0" max="100" value="50" class="mix"> → вёрстка</label>
   <div class="grid">
-    <figure><img src="${esc(r.dir)}/reference.png"><figcaption>Эталон (Figma)</figcaption></figure>
-    <figure><img src="${esc(r.dir)}/render.png"><figcaption>Вёрстка</figcaption></figure>
-    <figure><img src="${esc(r.dir)}/diff.png"><figcaption>Разница (красное)</figcaption></figure>
-  </div>` : `<figure><img src="${esc(r.dir)}/render.png"><figcaption>Вёрстка</figcaption></figure>`}
+    <figure><img loading="lazy" decoding="async" src="${esc(r.dir)}/reference.png"><figcaption>Эталон (Figma)</figcaption></figure>
+    <figure><img loading="lazy" decoding="async" src="${esc(r.dir)}/render.png"><figcaption>Вёрстка</figcaption></figure>
+    <figure><img loading="lazy" decoding="async" src="${esc(r.dir)}/diff.png"><figcaption>Разница (красное)</figcaption></figure>
+  </div>` : `<figure><img loading="lazy" decoding="async" src="${esc(r.dir)}/render.png"><figcaption>Вёрстка</figcaption></figure>`}
 </section>`;
     })
     .join('\n');
@@ -65,11 +65,19 @@ export function buildReport({ file, threshold, textThreshold, results, responsiv
   .overlay { position: relative; max-width: 100%; border: 1px solid #e4e4e7; margin-top: 12px; }
   .overlay img { position: absolute; inset: 0; width: 100%; height: 100%; }
   .overlay img.top { opacity: .5; }
+  .toc a { white-space: nowrap; } .only { font-size: 14px; display: flex; gap: 8px; align-items: center; }
+  body.only-failed .frame:not(.failed) { display: none; }
 </style></head>
 <body><main>
 <h1>Pixel diff: ${esc(file)}</h1>
 <p class="summary"><a href="design-system/design-system.md">Дизайн-система</a> · <a href="design-system/tokens.json">tokens.json</a> (импорт в Figma — кнопкой в плагине)</p>
 <p class="summary">Критерий: геометрия каждого элемента ±0.5px; несовпадающих пикселей вне текста не больше ${threshold}%, в тексте — не больше ${textThreshold}% · прошли ${passed} из ${results.length} фреймов</p>
+${results.length > 6 ? `<nav class="card toc">
+  <label class="only"><input type="checkbox" id="onlyFailed"${results.some((r) => r.pass === false) ? '' : ' disabled'}> показывать только фреймы с расхождениями</label>
+  ${results.some((r) => r.pass === false) ? `<p class="meta"><b>Не прошли (${results.filter((r) => r.pass === false).length}):</b> ${results.filter((r) => r.pass === false).map((r) => `<a href="#f-${esc(r.dir)}">${esc(r.name)}</a>`).join(' · ')}</p>` : '<p class="meta">Все фреймы прошли проверку.</p>'}
+  <details><summary class="meta">Все фреймы (${results.length})</summary><p class="meta">${results.map((r) => `<a href="#f-${esc(r.dir)}">${esc(r.name)}</a>${r.pass === false ? ' ✗' : ''}`).join(' · ')}</p></details>
+</nav>
+<script>document.getElementById('onlyFailed')?.addEventListener('change', (e) => document.body.classList.toggle('only-failed', e.target.checked));</script>` : ''}
 ${responsive.length ? `<section class="card"><header><h2>Адаптивные страницы</h2></header>
 ${responsive.map((r) => `<p class="meta"><b>${esc(r.name)}</b> — макеты ${r.widths.join(' / ')} px · <a href="${esc(r.dir)}/index.html">открыть</a><br>
 На ширине макета: ${r.exact.map((e) => `${e.width}px ${e.same ? '✓' : '✗ ' + e.percent.toFixed(3) + '%'}`).join(' · ') || '—'}<br>

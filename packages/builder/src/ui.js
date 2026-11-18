@@ -56,8 +56,8 @@ function openPath(p) {
 }
 
 /** Аргументы ds-build build из настроек окна (только известные ключи). */
-export function buildArgs(zip, out, o = {}) {
-  const a = ['build', zip, '--out', out];
+export function buildArgs(zips, out, o = {}) {
+  const a = ['build', ...[].concat(zips), '--out', out];
   const fw = ['html', 'react', 'vue'].filter((f) => o[f]);
   if (fw.length) a.push('--framework', fw.join(','));
   if (o.ai) a.push('--ai');
@@ -73,6 +73,7 @@ export async function startUi({ port = 0, open = true, home = defaultHome(), log
   fs.mkdirSync(path.join(home, '.uploads'), { recursive: true });
   const token = crypto.randomBytes(18).toString('base64url');
   const jobs = new Map();
+  const uploads = new Map(); // session → [{ zip, file }]
   const page = fs.readFileSync(path.join(here, 'ui.html'), 'utf8');
 
   const server = http.createServer(async (req, res) => {
@@ -109,27 +110,51 @@ export async function startUi({ port = 0, open = true, home = defaultHome(), log
           .sort((a, b) => b.when.localeCompare(a.when));
         return send(200, { home, builds: list, running: [...jobs.values()].filter((j) => !j.done).map((j) => ({ id: j.id, name: j.name })) });
       }
-      if (req.method === 'POST' && u.pathname === '/api/build') {
+      // большой файл плагин выгружает частями: части загружаются по одной (upload), затем — одна сборка
+      if (req.method === 'POST' && u.pathname === '/api/upload') {
+        const session = (u.searchParams.get('session') || '').replace(/[^a-z0-9]/gi, '').slice(0, 32);
         const file = u.searchParams.get('file') || 'package.zip';
-        const opts = JSON.parse(u.searchParams.get('opts') || '{}');
-        if (!/\.zip$/i.test(file)) return send(400, { error: 'Нужен zip-архив, который выгружает плагин' });
-        const name = `${slug(file)}-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')}`;
-        const zip = path.join(home, '.uploads', `${name}.zip`);
+        if (!session) return send(400, { error: 'нет session' });
+        if (!/\.zip$/i.test(file)) return send(400, { error: `«${file}» — не zip-архив. Нужны архивы «… — ds-package.zip» из плагина` });
+        const list = uploads.get(session) || [];
+        const zip = path.join(home, '.uploads', `${session}-${list.length}.zip`);
         await new Promise((ok, fail) => { const w = fs.createWriteStream(zip); req.pipe(w); w.on('finish', ok); w.on('error', fail); req.on('error', fail); });
+        list.push({ zip, file });
+        uploads.set(session, list);
+        return send(200, { ok: true, count: list.length });
+      }
+      if (req.method === 'POST' && u.pathname === '/api/build') {
+        const opts = JSON.parse(u.searchParams.get('opts') || '{}');
+        let parts;
+        const session = (u.searchParams.get('session') || '').replace(/[^a-z0-9]/gi, '');
+        if (session) {
+          parts = uploads.get(session) || [];
+          uploads.delete(session);
+          if (!parts.length) return send(400, { error: 'Архивы не загрузились — добавьте их ещё раз' });
+        } else {
+          // один архив прямо в теле запроса
+          const file = u.searchParams.get('file') || 'package.zip';
+          if (!/\.zip$/i.test(file)) return send(400, { error: 'Нужен zip-архив, который выгружает плагин' });
+          const zip = path.join(home, '.uploads', `${crypto.randomBytes(6).toString('hex')}.zip`);
+          await new Promise((ok, fail) => { const w = fs.createWriteStream(zip); req.pipe(w); w.on('finish', ok); w.on('error', fail); req.on('error', fail); });
+          parts = [{ zip, file }];
+        }
+        const base = parts[0].file.replace(/\s*\(часть \d+ из \d+\)/i, '');
+        const name = `${slug(base)}-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')}`;
         const out = path.join(home, name);
         const id = crypto.randomBytes(6).toString('hex');
         const job = { id, name, lines: [], listeners: new Set(), done: false, code: null };
         const push = (line) => { job.lines.push(line); for (const l of job.listeners) l(line); };
         // в установленной программе (Electron) тот же исполняемый файл работает как Node
-        const child = spawn(process.execPath, [CLI, ...buildArgs(zip, out, opts)], { env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' }, windowsHide: true });
+        const child = spawn(process.execPath, [CLI, ...buildArgs(parts.map((p) => p.zip), out, opts)], { env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' }, windowsHide: true });
         let buf = '';
-        const onData = (d) => { buf += d; const parts = buf.split(/\r?\n/); buf = parts.pop(); parts.forEach(push); };
+        const onData = (d) => { buf += d; const lines = buf.split(/\r?\n/); buf = lines.pop(); lines.forEach(push); };
         child.stdout.setEncoding('utf8').on('data', onData);
         child.stderr.setEncoding('utf8').on('data', onData);
         child.on('close', (code) => {
           if (buf) push(buf);
           job.done = true; job.code = code;
-          fs.rm(zip, { force: true }, () => {});
+          for (const p of parts) fs.rm(p.zip, { force: true }, () => {});
           for (const l of job.listeners) l(null);
         });
         jobs.set(id, job);
