@@ -64,6 +64,8 @@ ds-build build <пакет.zip> [ещё части.zip …] [опции]
                        react, vue — проект на Vite с компонентами (повторяющиеся блоки → компоненты с параметрами);
                        каждая страница проверяется — рендер должен совпасть с рабочей вёрсткой пиксель в пиксель
   --no-refine          не подбирать поправки после сверки с эталоном
+  --allow-absolute     разрешить вёрстку целиком на координатах, если она точнее по пикселям
+                       (по умолчанию — только когда без неё слои не на своих местах)
   --no-semantic        без семантических тегов (только div)
   --jobs <N>           сколько фреймов проверять одновременно (по умолчанию — ядер процессора, не больше 4)
   --no-cache           пересобрать все фреймы; по умолчанию фреймы без изменений берутся из кэша
@@ -92,6 +94,7 @@ function parseArgs(argv) {
     else if (k === '--css') a.css.push(argv[++i]);
     else if (k === '--no-verify') a.verify = false;
     else if (k === '--no-refine') a.refine = false;
+    else if (k === '--allow-absolute') a.allowAbsolute = true;
     else if (k === '--no-analyze') a.analyze = false;
     else if (k === '--no-semantic') a.semantic = false;
     else if (k === '--ai') a.ai = true;
@@ -231,6 +234,7 @@ async function build(args) {
   const results = [];
   const fwPages = [];
   const responsive = [];
+  const codeOf = new Map(); // папка фрейма → файлы кода (для AGENTS.md в корне)
   // текст SVG из пакета: небольшие векторы вставляются прямо в страницу
   const svgText = (rel) => { try { return fs.readFileSync(path.join(pkg.dir, rel), 'utf8'); } catch { return null; } };
 
@@ -238,7 +242,7 @@ async function build(args) {
   // не пересобирается — берётся готовый результат. Ключ учитывает всё, что влияет на вёрстку и проверку.
   const cacheRoot = path.join(defaultCacheDir(), 'frames');
   const optKey = crypto.createHash('sha256').update(JSON.stringify([
-    programHash(), args.layout, args.threshold, args.textThreshold, args.refine, args.semantic, args.inlineSvg, args.ai, args.verify,
+    programHash(), args.layout, args.threshold, args.textThreshold, args.refine, args.semantic, args.inlineSvg, args.ai, args.verify, !!args.allowAbsolute,
     tokens.css(), extraCss, fs.existsSync(path.join(out, 'fonts.css')) ? fs.readFileSync(path.join(out, 'fonts.css'), 'utf8').replace(/url\([^)]*\)/g, '') : '', pkg.scale,
   ])).digest('hex');
   const slots = [];
@@ -394,13 +398,25 @@ async function build(args) {
           if (att.ok) chosen = att;
           else if (score(att) >= score(attempts[0])) break; // не помогает — дальше полный запасной режим
         }
-        if (!chosen) {
+        // вёрстка целиком на координатах как код не годится (с ней не поработать ни человеку, ни ИИ-агенту).
+        // Она нужна, только если без неё слои стоят не на своих местах (геометрия ±0.5px). Если положение верное,
+        // а расходятся пиксели (шрифт, сглаживание, эффекты) — координаты этого не исправят. --allow-absolute — как раньше.
+        const geomFailed = (a) => a.geometry?.failed || 0;
+        const bestStructured = attempts.reduce((a, b) => (score(b) < score(a) ? b : a));
+        if (!chosen && (args.allowAbsolute || geomFailed(bestStructured) > 0)) {
           att = await runAttempt('absolute', null, false);
-          if (att.ok) chosen = att;
+          if (att.ok && (args.allowAbsolute || geomFailed(att) < geomFailed(bestStructured))) chosen = att;
         }
       }
-      // чистая раскладка (первая попытка) остаётся, если запасные не лучше заметно (на 20%)
-      if (!chosen) chosen = attempts.reduce((a, b) => (score(b) < score(a) * 0.8 ? b : a));
+      // чистая раскладка (первая попытка) остаётся, если запасные не лучше заметно (на 20%);
+      // координаты — только если с ними меньше слоёв не на месте
+      if (!chosen) {
+        const geomFailed = (a) => a.geometry?.failed || 0;
+        const structured = attempts.filter((a) => a.mode !== 'absolute');
+        chosen = structured.reduce((a, b) => (score(b) < score(a) * 0.8 ? b : a));
+        const abs = attempts.find((a) => a.mode === 'absolute');
+        if (abs && (args.allowAbsolute ? score(abs) < score(chosen) * 0.8 : geomFailed(abs) < geomFailed(chosen) && score(abs) < score(chosen) * 0.8)) chosen = abs;
+      }
       // запасной вариант дорабатываем один раз — уже выбранный
       if (browser && hasRef && !chosen.refined) { await refineAttempt(chosen); chosen.ok = okOf(chosen); }
       chosen.chosen = true;
@@ -561,6 +577,7 @@ async function build(args) {
     if (args.frameworks.includes('html') && fwPages.length) {
       const ex = exportHtml(out, fwPages, responsive.map((r) => ({ name: r.name, dir: r.dir, widths: r.widths })), { file: pkg.manifest.file, check: checkSummary(results) });
       console.log(`HTML/CSS: ${path.relative(process.cwd(), ex.root) || ex.root}`);
+      for (const p of ex.pages) if (!p.responsive) codeOf.set(p.from, [...(codeOf.get(p.from) || []), `html/${p.file}`]);
       if (browser) {
         // параллельно, как и фреймы
         const checkOne = async (p, k) => {
@@ -591,6 +608,7 @@ async function build(args) {
     // компоненты и фреймворки: из того же дерева элементов; проверка — совпадение с HTML-версией
     if (args.frameworks.some((f) => f !== 'html') && fwPages.length) {
       const pages = preparePages(fwPages);
+      for (const p of pages) for (const fw of args.frameworks.filter((f) => f !== 'html')) codeOf.set(p.dir, [...(codeOf.get(p.dir) || []), `${fw}/src/pages/${p.component}.${fw === 'react' ? 'jsx' : 'vue'}`]);
       const groupsFw = responsive.map((r) => ({ name: r.name, members: r.components.map((c) => pages[fwPages.indexOf(c)]), widths: r.widths }));
       const comps = findComponents(pages);
       console.log(`Компоненты: ${comps.components.length}${comps.components.length ? ' — ' + comps.components.slice(0, 8).map((c) => `${c.name}×${c.instances.length}${c.props.length ? ` (${c.props.map((p) => p.name).join(', ')})` : ''}`).join(', ') : ''}`);
@@ -635,10 +653,67 @@ async function build(args) {
   fs.writeFileSync(path.join(out, 'report.html'), buildReport({ file: pkg.manifest.file, threshold: args.threshold, textThreshold: args.textThreshold, results, responsive: responsive.map(({ components, ...r }) => r) }));
   fs.writeFileSync(path.join(out, 'report.json'), JSON.stringify({ file: pkg.manifest.file, threshold: args.threshold,
     results: results.map(({ stats, ...r }) => ({ ...r, stats })) }, null, 2));
+  writeRootAgents(out, { file: pkg.manifest.file, results, codeOf, responsive, frames: pkg.frames, frameworks: args.frameworks, threshold: args.threshold });
   console.log(`Отчёт: ${path.join(out, 'report.html')}`);
   if (args.open) openFile(path.join(out, 'report.html'));
   const failed = results.filter((r) => r.pass === false).length;
   if (failed) process.exitCode = 2;
+}
+
+/**
+ * Корень папки сборки: AGENTS.md (что здесь код, что эталон, что служебное) и screens/ — PNG макетов
+ * с понятными именами: по ним агент видит все экраны и состояния, не открывая папки проверки.
+ */
+function writeRootAgents(out, { file, results, codeOf, responsive, frames, frameworks, threshold }) {
+  const scr = path.join(out, 'screens');
+  fs.rmSync(scr, { recursive: true, force: true });
+  const rows = [];
+  const pageOf = new Map(frames.map((f) => [f.name + '|' + f.id, f.page]));
+  results.forEach((r, i) => {
+    const ref = path.join(out, r.dir, 'reference.png');
+    let shot = '';
+    if (fs.existsSync(ref)) {
+      fs.mkdirSync(scr, { recursive: true });
+      shot = `screens/${String(i + 1).padStart(2, '0')}-${r.dir.replace(/-\d+_\d+$/, '')}.png`;
+      fs.copyFileSync(ref, path.join(out, shot));
+    }
+    const layout = r.mode === 'absolute' ? '**координаты** — как код не годится, только размеры'
+      : r.mode === 'hybrid' ? `flex; по координатам блоков: ${r.pinned?.length || 0}` : 'flex';
+    const check = r.pass === true ? 'совпадает'
+      : r.pass === false ? `расходится${Number.isFinite(r.diff?.percent) ? ` (${r.diff.percent.toFixed(2)}% пикселей)` : ''}${(r.geometry?.failed || 0) ? `, не на месте слоёв: ${r.geometry.failed}` : ''}`
+      : 'не сверялся';
+    const page = pageOf.get(r.name + '|' + r.id);
+    const where = page && !String(r.name).startsWith(page) ? `${page} / ${r.name}` : r.name;
+    rows.push(`| ${shot ? `[${path.basename(shot)}](${shot})` : '—'} | ${where} | ${Math.round(r.width)}×${Math.round(r.height)} | ${(codeOf.get(r.dir) || []).join(', ') || '—'} | ${layout} | ${check} |`);
+  });
+  const passed = results.filter((r) => r.pass === true).length;
+  const withRef = results.filter((r) => r.pass !== null && r.pass !== undefined).length;
+  const abs = results.filter((r) => r.mode === 'absolute').length;
+  const code = ['html', 'react', 'vue'].filter((f) => frameworks.includes(f) && fs.existsSync(path.join(out, f)));
+  const L = [
+    `# ${file || 'Макеты'} — результат DS Builder`,
+    '',
+    '## Что здесь',
+    '',
+    ...code.map((f) => `- \`${f}/\` — код (${f === 'html' ? 'HTML и CSS' : f === 'react' ? 'React + Vite' : 'Vue + Vite'}). Внутри — свой AGENTS.md: страницы, компоненты, токены, правила.`),
+    `- \`screens/\` — макеты из Figma (PNG, как в Figma): эталон всех экранов и состояний. Список — ниже.`,
+    '- `design-system/` — токены: `tokens.json`, `variables.css` и описание дизайн-системы.',
+    '- `report.html` — итог сверки с макетами по каждому экрану.',
+    '- **Не нужно читать:** папки экранов вида `Имя-12_34/` (`render.png`, `diff.png`, `reference.png`, `index.html` — служебные файлы проверки), `fonts.css`, `tokens.css`, `report.json`, `assets/`.',
+    '',
+    `## Экраны (сверено: совпадают ${passed} из ${withRef}${abs ? `; на координатах: ${abs}` : ''})`,
+    '',
+    '| макет | страница Figma / фрейм | размер | код | раскладка | сверка с макетом |',
+    '|---|---|---|---|---|---|',
+    ...rows,
+  ];
+  if (responsive.length) {
+    L.push('', '## Адаптивные страницы', '');
+    for (const r of responsive) L.push(`- ${r.name}: ${r.widths.join(' / ')}px — одна страница, перестраивается между этими ширинами`);
+  }
+  L.push('', '«Расходится» — вёрстка отличается от макета больше допуска; где именно — в report.html. ' +
+    'При расхождении прав макет из screens/: правь код под него, а не наоборот.', '');
+  fs.writeFileSync(path.join(out, 'AGENTS.md'), L.join('\n'));
 }
 
 /** Итог сверки для AGENTS.md: только фреймы с эталоном. */

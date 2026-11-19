@@ -180,7 +180,12 @@ function textEl(node, ctx) {
   const chars = t.characters || '';
   // пустой текст: у Figma нет сегментов — берём шрифт самого слоя (иначе font-family "undefined")
   const segs = t.segments?.length ? t.segments : [{ start: 0, end: chars.length, ...(t.style || {}) }];
-  const spans = segs.map((s) => ({ tag: 'span', cls: ctx.styles.classFor('t', declarations(segmentCss(s, ctx))), text: chars.slice(s.start, s.end), attrs: [], inline: true }));
+  // имя класса текста — размер и насыщенность шрифта (t-14-500-…): читается без открытия CSS
+  const tName = (s) => {
+    const size = Math.round(Number(s.fontSize)), w = Number(s.fontWeight);
+    return Number.isFinite(size) && size > 0 ? `t-${size}${Number.isFinite(w) && w ? `-${w}` : ''}` : 't';
+  };
+  const spans = segs.map((s) => ({ tag: 'span', cls: ctx.styles.classFor(tName(s), declarations(segmentCss(s, ctx))), text: chars.slice(s.start, s.end), attrs: [], inline: true }));
   // «стойка» строки — шрифт и интерлиньяж первого сегмента: иначе блок берёт их от body (16px, normal),
   // и строка с интерлиньяжем меньше ~18px становится выше, а текст сдвигается вниз на 2–3px
   const first = segmentCss(segs[0], ctx);
