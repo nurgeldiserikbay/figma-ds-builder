@@ -53,6 +53,22 @@ function isButtonLike(n) {
  * @param {object} tree — дерево фрейма
  * @returns {Map<string, {tag:string, name:string, attrs?:object}>}
  */
+const LANDMARKS = [
+  [/^(header|шапка|хедер)$/, 'header'], [/^(footer|подвал|футер)$/, 'footer'],
+  [/^(nav|navigation|navbar|menu|навигация|меню)$/, 'nav'], [/^(main|основное|контент)$/, 'main'],
+  [/^(section|секция|раздел|блок)$/, 'section'], [/^(aside|sidebar|сайдбар|боковая)$/, 'aside'], [/^(form|форма)$/, 'form'],
+];
+/** Первое слово имени слоя («section / Тарифы», «Header», «nav-main») → тег, если это смысловой блок. */
+export function landmarkByName(name) {
+  // слова — через пробел и «/»; «form-control», «navbar-brand» — это имена классов, а не смысловые блоки
+  const words = String(name || '').trim().toLowerCase().split(/[\s/]+/).filter(Boolean);
+  if (words.slice(1).some((x) => /^(row|cell|col|column|строка|ячейка|колонка|item|title|text|icon)$/.test(x))) return null; // «header row» — строка таблицы
+  const w = (words[0] || '').replace(/[-_]?\d+$/, ''); // «Header-5», «Footer 1»
+  for (const [re, tag] of LANDMARKS) if (re.test(w)) return tag;
+  return null;
+}
+const findNode = (n, id) => (n.id === id ? n : (n.children || []).reduce((f, c) => f || findNode(c, id), null));
+
 export function analyzeSemantics(tree) {
   const out = new Map();
   const set = (n, tag, name, attrs) => out.set(n.id, { tag, name: name || className(n.name), attrs });
@@ -71,9 +87,25 @@ export function analyzeSemantics(tree) {
     else if (c.h >= 160) set(c, 'section', isGenericName(c.name) ? 'section' : null);
   }
 
+  // дизайнер назвал блок по смыслу (header, nav, section / Тарифы…) — берём его слово, а не угадываем.
+  // Только блочные теги без своего оформления в браузере: вид не меняется, меняется смысл.
+  // одинаковые смысловые блоки не вкладываются (вложенную <form> браузер выбрасывает), <main> — один
+  let mainUsed = false;
+  (function byName(n, inside) {
+    for (const c of (n.children || []).filter(visible)) {
+      let tag = c.type !== 'TEXT' && c.children?.length ? landmarkByName(c.name) : null;
+      if (tag && (inside.has(tag) || (tag === 'main' && mainUsed) || (tag === 'form' && inside.has('form')))) tag = null;
+      if (tag) {
+        if (tag === 'main') mainUsed = true;
+        set(c, tag, null);
+      }
+      byName(c, tag ? new Set([...inside, tag]) : inside);
+    }
+  })(tree, new Set());
+
   for (const [id, e] of out) {
     if (e.tag !== 'header' && e.tag !== 'footer') continue;
-    const node = (tree.children || []).find((c) => c.id === id);
+    const node = findNode(tree, id);
     texts(node).forEach((t) => within.set(t.id, e.tag));
   }
   // текст в маленьком контейнере (бейдж, тег, счётчик) — не заголовок
