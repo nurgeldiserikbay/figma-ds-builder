@@ -90,8 +90,30 @@ assert.equal(done.summary.passed, 2);
   assert.equal(d2.summary.passed, 2);
 }
 
+// «Только проверить макет»: анализ для дизайнера, без вёрстки
+{
+  const a = await req(`/api/build?file=${encodeURIComponent('Sample — ds-package.zip')}&opts=${encodeURIComponent(JSON.stringify({ mode: 'audit' }))}`,
+    { method: 'POST', headers: { ...H, 'content-type': 'application/zip' }, body: zip });
+  assert.equal(a.status, 200, a.text);
+  const ev3 = await new Promise((ok, fail) => {
+    http.get(`${base}/api/jobs/${JSON.parse(a.text).id}/events`, { headers: H }, (res) => { let t = ''; res.setEncoding('utf8'); res.on('data', (d) => (t += d)); res.on('end', () => ok(t)); }).on('error', fail);
+  });
+  assert.match(ev3, /Анализ макета: \d+\/100/);
+  const d3 = JSON.parse(/event: done\ndata: (.*)/.exec(ev3)[1]);
+  assert.equal(d3.summary.kind, 'audit');
+  assert.ok(Number.isFinite(d3.summary.audit), 'оценка анализа');
+  assert.ok(!fs.existsSync(path.join(home, d3.name, 'html')), 'без вёрстки');
+  const page = await req(`/out/${encodeURIComponent(d3.name)}/design-audit.html`, { headers: H });
+  assert.equal(page.status, 200);
+  assert.match(page.text, /href="designer-guide\.html#1-auto-layout/);
+}
+const guide = await req('/guide', { headers: H });
+assert.equal(guide.status, 200);
+assert.match(guide.text, /id="5-состояния--вариантами-компонента"/, 'памятка в окне программы');
+
 const builds = JSON.parse((await req('/api/builds', { headers: H })).text);
 assert.ok(builds.builds.some((b) => b.name === name));
+assert.ok(Number.isFinite(builds.builds.find((b) => b.name === name).audit), 'у сборки есть анализ макета');
 const report = await req(`/out/${encodeURIComponent(name)}/report.html`, { headers: H });
 assert.equal(report.status, 200);
 assert.match(report.headers['content-type'], /text\/html/);
@@ -114,4 +136,4 @@ assert.ok(!JSON.parse((await req('/api/builds', { headers: H })).text).builds.so
 
 server.close();
 fs.rmSync(home, { recursive: true, force: true });
-console.log('Окно ds-build: ключ, загрузка, ход сборки, отчёт, удаление, защита путей — OK');
+console.log('Окно ds-build: ключ, загрузка, ход сборки, отчёт, анализ макета, памятка, удаление, защита путей — OK');

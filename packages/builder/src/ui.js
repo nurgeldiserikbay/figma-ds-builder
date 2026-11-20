@@ -10,6 +10,7 @@ import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { spawn, execFile } from 'node:child_process';
+import { guidePage } from './design-audit.js';
 import { fileURLToPath } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -28,11 +29,23 @@ const TYPES = {
   '.svg': 'image/svg+xml', '.woff2': 'font/woff2', '.woff': 'font/woff', '.ttf': 'font/ttf', '.md': 'text/markdown; charset=utf-8',
 };
 
-/** Сводка по готовой сборке — из report.json. */
+/** Оценка анализа макета (design-audit.json), если он есть. */
+function auditScore(dir) {
+  try { return JSON.parse(fs.readFileSync(path.join(dir, 'design-audit.json'), 'utf8')).score; } catch { return null; }
+}
+
+/** Сводка по готовой сборке — из report.json; только анализ макета — из design-audit.json. */
 function summary(home, name) {
   const dir = path.join(home, name);
   const file = path.join(dir, 'report.json');
-  if (!fs.existsSync(file)) return null;
+  if (!fs.existsSync(file)) {
+    const af = path.join(dir, 'design-audit.json');
+    if (!fs.existsSync(af)) return null;
+    try {
+      const a = JSON.parse(fs.readFileSync(af, 'utf8'));
+      return { name, file: a.file || name, when: fs.statSync(af).mtime.toISOString(), kind: 'audit', frames: a.frames, audit: a.score, passed: 0, failed: 0 };
+    } catch { return null; }
+  }
   try {
     const r = JSON.parse(fs.readFileSync(file, 'utf8'));
     const results = r.results || r;
@@ -46,6 +59,7 @@ function summary(home, name) {
       react: fs.existsSync(path.join(dir, 'react', 'package.json')),
       vue: fs.existsSync(path.join(dir, 'vue', 'package.json')),
       ds: fs.existsSync(path.join(dir, 'design-system', 'design-system.md')),
+      audit: auditScore(dir),
     };
   } catch { return null; }
 }
@@ -101,6 +115,8 @@ export async function startUi({ port = 0, open = true, home = defaultHome(), log
         return send(200, page.replace('__HOME__', () => htmlText(home))
           .replace('__PLUGIN__', pluginDir ? '1' : ''), 'text/html; charset=utf-8');
       }
+      // памятка дизайнеру — страницей в окне программы
+      if (req.method === 'GET' && u.pathname === '/guide') return send(200, guidePage(), 'text/html; charset=utf-8');
       if (req.method === 'POST' && u.pathname === '/api/plugin') {
         if (!pluginDir) return send(404, { error: 'плагин не входит в эту установку' });
         openPath(pluginDir);
@@ -118,7 +134,7 @@ export async function startUi({ port = 0, open = true, home = defaultHome(), log
         const name = u.searchParams.get('name') || '';
         const dir = path.resolve(home, name);
         if (!name || /[\\/]/.test(name) || name.startsWith('.') || path.dirname(dir) !== home) return send(400, { error: 'неверное имя сборки' });
-        if (!fs.existsSync(path.join(dir, 'report.json'))) return send(404, { error: 'нет такой сборки' });
+        if (!fs.existsSync(path.join(dir, 'report.json')) && !fs.existsSync(path.join(dir, 'design-audit.json'))) return send(404, { error: 'нет такой сборки' });
         if ([...jobs.values()].some((j) => !j.done && j.name === name)) return send(409, { error: 'сборка ещё идёт' });
         try { fs.rmSync(dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 200 }); } catch (e) {
           return send(500, { error: 'Не удалось удалить: какой-то файл открыт в другой программе. Закройте его и попробуйте снова.' });
@@ -155,13 +171,15 @@ export async function startUi({ port = 0, open = true, home = defaultHome(), log
           parts = [{ zip, file }];
         }
         const base = parts[0].file.replace(/\s*\(часть \d+ из \d+\)/i, '');
-        const name = `${slug(base)}-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')}`;
+        const auditOnly = opts.mode === 'audit'; // «Только проверить макет»: анализ для дизайнера, без вёрстки
+        const name = `${slug(base)}${auditOnly ? '-analiz' : ''}-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')}`;
         const out = path.join(home, name);
         const id = crypto.randomBytes(6).toString('hex');
         const job = { id, name, lines: [], listeners: new Set(), done: false, code: null };
         const push = (line) => { job.lines.push(line); for (const l of job.listeners) l(line); };
         // в установленной программе (Electron) тот же исполняемый файл работает как Node
-        const child = spawn(process.execPath, [CLI, ...buildArgs(parts.map((p) => p.zip), out, opts)], { env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' }, windowsHide: true });
+        const cliArgs = auditOnly ? ['audit', ...parts.map((p) => p.zip), '--out', out] : buildArgs(parts.map((p) => p.zip), out, opts);
+        const child = spawn(process.execPath, [CLI, ...cliArgs], { env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' }, windowsHide: true });
         let buf = '';
         const onData = (d) => { buf += d; const lines = buf.split(/\r?\n/); buf = lines.pop(); lines.forEach(push); };
         child.stdout.setEncoding('utf8').on('data', onData);

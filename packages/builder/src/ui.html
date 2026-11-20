@@ -87,6 +87,10 @@
 
   .run { display: block; width: 100%; margin-top: 28px; padding: 13px 16px; border: 0; border-radius: 8px; background: var(--ink); color: #fff; font-weight: 600; font-size: 16px; cursor: pointer; }
   .run:disabled { background: #C9CDD6; cursor: not-allowed; }
+  .run2 { display: block; width: 100%; margin-top: 10px; padding: 11px 16px; border: 1px solid var(--line, #d9dde4); border-radius: 8px; background: #fff; color: var(--ink); font-weight: 600; font-size: 15px; cursor: pointer; }
+  .run2:disabled { color: #9aa1ad; cursor: not-allowed; }
+  .run2 small { display: block; font-weight: 400; font-size: 13px; color: var(--muted); }
+  .guide { margin-top: 8px; }
   .hint { text-align: center; color: var(--muted); font-size: 13px; margin-top: 8px; min-height: 1.5em; }
   .err { color: var(--redline); font-size: 14px; margin-top: 10px; }
   .err:empty { display: none; }
@@ -151,6 +155,7 @@
         <li id="s1">
           <h2>Выгрузите макет из Figma</h2>
           <p>В Figma откройте плагин <b>DS Builder</b>, выделите нужные фреймы и нажмите <b>«Пакет для вёрстки»</b>. Скачается файл <b>«… — ds-package.zip»</b>. Распаковывать его не нужно.</p>
+          <p class="guide">Чем аккуратнее устроен файл, тем лучше вёрстка: <a href="/guide" target="_blank" rel="noopener">памятка для дизайнера</a> — Auto Layout, компоненты, состояния, переменные.</p>
           <details class="howto" id="howto"><summary>Плагина ещё нет в Figma?</summary>
             <p data-mode="repo">Откройте Figma Desktop, затем <b>Plugins → Development → Import plugin from manifest…</b> и выберите файл
             <code>packages/plugin/dist/manifest.json</code> в папке проекта. Если файла нет, выполните <code>npm run setup</code>.</p>
@@ -192,6 +197,7 @@
         </li>
       </ol>
       <button class="run" id="run" type="submit" disabled>Сверстать и проверить</button>
+      <button class="run2" id="auditBtn" type="button" disabled>Только проверить макет<small>отчёт для дизайнера: что в файле мешает вёрстке — за несколько секунд, без вёрстки</small></button>
       <div class="hint" id="hint"></div>
       <div class="err" id="err" role="alert"></div>
     </form>
@@ -208,7 +214,7 @@
   <h2 class="list" id="listTitle" hidden>Прошлые сборки</h2>
   <ul class="builds" id="builds" hidden></ul>
 
-  <p class="foot">Файлы сборок сохраняются в <span id="home">__HOME__</span> · <button type="button" data-open=".">открыть папку</button><br>
+  <p class="foot">Файлы сборок сохраняются в <span id="home">__HOME__</span> · <button type="button" data-open=".">открыть папку</button> · <a href="/guide" target="_blank" rel="noopener">памятка для дизайнера</a><br>
   Программа работает только на этом компьютере, макеты никуда не отправляются.</p>
 </main>
 
@@ -247,6 +253,7 @@ function pickFile(list) {
 function updateRun() {
   const any = ['html', 'react', 'vue'].some((n) => form.elements[n].checked);
   $('run').disabled = !file || running;
+  $('auditBtn').disabled = !file || running;
   $('hint').textContent = running ? '' : !file ? 'Сначала добавьте архив из плагина' : !any ? 'Будут только дизайн-система и отчёт' : '';
 }
 fileInput.addEventListener('change', () => pickFile(fileInput.files));
@@ -266,6 +273,7 @@ function options() {
 
 // этапы — по строкам журнала программы
 function stagesFor(o) {
+  if (o.mode === 'audit') return [{ id: 'upload', text: 'Загрузка архива' }, { id: 'ds', text: 'Дизайн-система', re: /^Дизайн-система|^Пакет:/ }, { id: 'audit', text: 'Анализ макета', re: /^Анализ макета/ }];
   const s = [
     { id: 'upload', text: 'Загрузка архива' },
     { id: 'ds', text: 'Дизайн-система', re: /^Дизайн-система:/ },
@@ -293,16 +301,16 @@ function reach(id, note) {
   drawStages();
 }
 
-form.addEventListener('submit', async (ev) => {
-  ev.preventDefault();
+form.addEventListener('submit', (ev) => { ev.preventDefault(); start(options()); });
+$('auditBtn').addEventListener('click', () => start({ mode: 'audit' }));
+async function start(o) {
   if (!file || running) return;
   running = true; updateRun(); $('err').textContent = '';
-  const o = options();
   stages = stagesFor(o).map((s) => ({ ...s, state: 'wait' }));
   $('start').hidden = true;
   const job = $('job'); job.hidden = false; job.classList.remove('done');
   $('jobTitle').textContent = file.name.replace(PART, '').replace(/\.zip$/i, '').trim();
-  $('jobSub').textContent = 'Обычно это занимает от 30 секунд до нескольких минут.';
+  $('jobSub').textContent = o.mode === 'audit' ? 'Обычно несколько секунд.' : 'Обычно это занимает от 30 секунд до нескольких минут.';
   $('result').innerHTML = ''; $('log').textContent = '';
   document.querySelector('details.log').open = false;
   reach('upload');
@@ -320,7 +328,7 @@ form.addEventListener('submit', async (ev) => {
   const data = await res.json();
   if (!res.ok) { running = false; job.hidden = true; $('start').hidden = false; $('err').textContent = data.error; updateRun(); return; }
   follow(data.id);
-});
+}
 
 function follow(id) {
   let total = 0, frames = 0, fails = 0, cached = 0;
@@ -349,6 +357,17 @@ function follow(id) {
       $('result').innerHTML = `<div class="verdict bad"><b>Не получилось собрать</b><p>Причина — в подробном журнале ниже. Если непонятно, что делать, пришлите его.</p></div>
         <div class="actions"><button class="btn primary" type="button" id="again">Попробовать снова</button></div>`;
       document.querySelector('details.log').open = true;
+    } else if (s.kind === 'audit') {
+      stages.forEach((x) => { x.state = 'ok'; });
+      drawStages();
+      $('jobSub').textContent = 'Готово.';
+      $('result').innerHTML = `<div class="verdict${s.audit < 50 ? ' bad' : ''}"><b>Подготовка макета к вёрстке: ${s.audit} из 100</b>
+          <p>${s.audit >= 80 ? 'Файл хорошо подготовлен.' : 'В отчёте — что исправить в Figma, с примерами слоёв и ссылками на памятку.'} Экранов: ${s.frames}.</p></div>
+        <div class="actions">
+          <a class="btn primary" href="${base}/design-audit.html" target="_blank" rel="noopener">Открыть анализ</a>
+          <a class="btn" href="/guide" target="_blank" rel="noopener">Памятка для дизайнера</a>
+          <button class="btn" type="button" id="again">Назад</button>
+        </div>`;
     } else {
       stages.forEach((x) => { if (x.state !== 'bad') x.state = 'ok'; });
       if (s.failed) { const f = stages.find((x) => x.id === 'frames'); if (f) f.state = 'bad'; }
@@ -361,6 +380,7 @@ function follow(id) {
         <div class="actions">
           ${s.html ? `<a class="btn primary" href="${base}/html/index.html" target="_blank" rel="noopener">Открыть вёрстку</a>` : ''}
           <a class="btn${s.html ? '' : ' primary'}" href="${base}/report.html" target="_blank" rel="noopener">Открыть отчёт</a>
+          ${s.audit != null ? `<a class="btn" href="${base}/design-audit.html" target="_blank" rel="noopener">Анализ макета: ${s.audit}/100</a>` : ''}
           <button class="btn" type="button" data-open="${esc(d.name)}${s.html ? '/html' : ''}">Папка с файлами</button>
           <button class="btn" type="button" id="again">Новая сборка</button>
         </div>`;
@@ -379,11 +399,13 @@ async function loadBuilds() {
   ul.innerHTML = r.builds.map((b) => {
     const base = `/out/${encodeURIComponent(b.name)}`;
     const when = new Date(b.when).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
-    const v = b.failed ? `<span class="v bad">не совпало: ${b.failed} из ${b.frames}</span>` : b.passed ? '<span class="v ok">совпадает ✓</span>' : '';
+    const v = b.kind === 'audit' ? `<span class="v${b.audit < 50 ? ' bad' : ' ok'}">анализ макета: ${b.audit}/100</span>`
+      : b.failed ? `<span class="v bad">не совпало: ${b.failed} из ${b.frames}</span>` : b.passed ? '<span class="v ok">совпадает ✓</span>' : '';
     return `<li><div class="t">${esc(b.file)}</div>${v}
       <div><div class="m">${esc(when)} · фреймов: ${b.frames}</div><div class="links">
         ${b.html ? `<a href="${base}/html/index.html" target="_blank" rel="noopener">вёрстка</a>` : ''}
-        <a href="${base}/report.html" target="_blank" rel="noopener">отчёт</a>
+        ${b.kind === 'audit' ? '' : `<a href="${base}/report.html" target="_blank" rel="noopener">отчёт</a>`}
+        ${b.audit != null ? `<a href="${base}/design-audit.html" target="_blank" rel="noopener">анализ макета</a>` : ''}
         ${b.ds ? `<a href="${base}/design-system/design-system.md" target="_blank" rel="noopener">дизайн-система</a>` : ''}
         <button type="button" data-open="${esc(b.name)}">папка</button>
         ${b.react ? `<button type="button" data-open="${esc(b.name)}/react">React</button>` : ''}

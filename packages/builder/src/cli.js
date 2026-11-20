@@ -26,6 +26,7 @@ import { groupFrames, writeResponsive, textsOf } from './responsive.js';
 import { exportHtml } from './export-html.js';
 import { unzipFile } from './unzip.js';
 import { mergePackages } from './merge.js';
+import { auditDesign, auditHtml, auditText, guidePage } from './design-audit.js';
 
 const HELP = `
 ds-build ui [--port 0] [--home папка] [--no-open]
@@ -35,6 +36,11 @@ ds-build ui [--port 0] [--home папка] [--no-open]
 ds-build analyze <пакет | пакет.zip> [--out папка] [--delta-e 3] [--min-uses 2]
   Дизайн-система по всем фреймам пакета: tokens.json (W3C), variables.css, _tokens.scss,
   tailwind.config.js, design-system.md (с аудитом), analysis.json. По умолчанию — в ./out/design-system.
+
+ds-build audit <пакет.zip> [ещё части.zip …] [--out папка] [--open]
+  Анализ макета для дизайнера: что в файле Figma мешает хорошей вёрстке (Auto Layout, имена, компоненты,
+  состояния, переменные, адаптивность, эффекты) — design-audit.html со ссылками на памятку. Без браузера, за секунды.
+  При build этот анализ делается тоже.
 
 ds-build build <пакет.zip> [ещё части.zip …] [опции]
   Большой файл плагин выгружает частями («… (часть 2 из 8).zip») — передайте все части сразу.
@@ -193,6 +199,28 @@ async function analyze(args) {
   console.log(`Файлы: ${outDir}`);
 }
 
+/** Анализ макета для дизайнера: design-audit.html (+ памятка рядом), design-audit.json. */
+function writeDesignAudit(pkg, ds, outDir, extra = {}) {
+  const a = auditDesign(pkg, ds, extra);
+  fs.mkdirSync(outDir, { recursive: true });
+  fs.writeFileSync(path.join(outDir, 'design-audit.html'), auditHtml(a, { guideHref: (id) => `designer-guide.html#${id}` }));
+  fs.writeFileSync(path.join(outDir, 'designer-guide.html'), guidePage());
+  fs.writeFileSync(path.join(outDir, 'design-audit.json'), JSON.stringify(a, null, 2));
+  return a;
+}
+
+/** ds-build audit — только проверить макет: без вёрстки и браузера, за секунды. */
+async function audit(args) {
+  const pkg = loadPackage(resolvePackages(args._.slice(1)));
+  const out = path.resolve(args.out);
+  const ds = runAnalysis(pkg, args, path.join(out, 'design-system'));
+  const a = writeDesignAudit(pkg, ds, out);
+  console.log(`Пакет: ${pkg.manifest.file} · фреймов: ${a.frames}`);
+  console.log(auditText(a));
+  console.log(`Отчёт для дизайнера: ${path.join(out, 'design-audit.html')}`);
+  if (args.open) openFile(path.join(out, 'design-audit.html'));
+}
+
 async function build(args) {
   const pkgDir = resolvePackages(args._.slice(1));
   const pkg = loadPackage(pkgDir);
@@ -201,8 +229,9 @@ async function build(args) {
   // токены: из плагина, иначе — собственный анализ дизайн-системы
   // дизайн-система строится всегда; готовые токены из пакета (если есть) — приоритетнее для переменных в CSS
   let tokenJson = pkg.tokens;
+  let ds = null;
   if (args.analyze) {
-    const ds = runAnalysis(pkg, args, path.join(out, 'design-system'));
+    ds = runAnalysis(pkg, args, path.join(out, 'design-system'));
     if (!tokenJson) tokenJson = toTokens(ds);
     console.log(`Дизайн-система: ${ds.colors.tokens.length} цветов, ${ds.typography.styles.length} стилей текста, аудит ${ds.audit.score}/100 → design-system/`);
   }
@@ -211,6 +240,7 @@ async function build(args) {
   fs.writeFileSync(path.join(out, 'tokens.css'), tokens.css() || '/* токенов нет */\n');
   // шрифты макета: бесплатные — из npm, остальные должны быть установлены в системе
   const fontFiles = [];
+  let missingFonts = [];
   if (args.fonts !== 'none') {
     const fams = familiesOf(pkg);
     const res = ensureFonts(fams, defaultCacheDir(), { log: (m) => console.log(m) });
@@ -218,6 +248,12 @@ async function build(args) {
     if (css) { fs.writeFileSync(path.join(out, 'fonts.css'), css); fontFiles.push('fonts.css'); }
     console.log(`Шрифты: ${res.found.length ? res.found.join(', ') + ' — подключены' : 'из npm не нужны'}` +
       (res.missing.length ? `; не найдены в npm (установите в систему): ${res.missing.join(', ')}` : ''));
+    missingFonts = res.missing;
+  }
+  // анализ макета для дизайнера — быстрый, по дереву слоёв
+  {
+    const a = writeDesignAudit(pkg, ds || analyzeDesignSystem(pkg.frames.map((f) => ({ name: f.name, tree: f.tree() }))), out, { missingFonts });
+    console.log(`Анализ макета: ${a.score}/100 → design-audit.html`);
   }
   const extraCss = [...fontFiles, ...args.css.map((f, i) => {
     const name = `extra-${i + 1}.css`;
@@ -726,11 +762,11 @@ const args = parseArgs(process.argv.slice(2));
 if (args._[0] === 'ui') {
   const { startUi } = await import('./ui.js');
   await startUi({ port: args.port || 0, open: args.noOpen !== true, home: args.home || undefined });
-} else if (args.help || !['build', 'analyze'].includes(args._[0]) || !args._[1]) {
+} else if (args.help || !['build', 'analyze', 'audit'].includes(args._[0]) || !args._[1]) {
   console.log(HELP);
   process.exit(args.help ? 0 : 1);
 } else {
-  (args._[0] === 'analyze' ? analyze(args) : build(args)).catch((e) => {
+  ({ analyze, audit, build })[args._[0]](args).catch((e) => {
     console.error('Ошибка:', e.message);
     process.exit(1);
   });
