@@ -14,7 +14,7 @@ let failed = false;
 for (const [name, cmd, keys, out] of sets) {
   const fresh = run(cmd);
   if (check) {
-    if (fresh !== fs.readFileSync(keys, 'utf8')) {
+    if (JSON.stringify(JSON.parse(fresh)) !== JSON.stringify(JSON.parse(fs.readFileSync(keys, 'utf8')))) {
       const was = new Set(JSON.parse(fs.readFileSync(keys, 'utf8')));
       const added = JSON.parse(fresh).filter((k) => !was.has(k));
       console.error(`${name}: тексты на странице изменились${added.length ? `, новые: ${added.slice(0, 5).join(' | ')}` : ''} — запустите npm run i18n`);
@@ -24,7 +24,8 @@ for (const [name, cmd, keys, out] of sets) {
   try { execFileSync(process.execPath, ['tools/i18n-build.mjs', name, keys, out, ...(check ? ['--check'] : [])], { stdio: 'inherit' }); } catch { failed = true; }
 }
 // движок переводов один: сайт, программа, плагин (плагин берёт его из docs при сборке)
-if (fs.readFileSync('docs/i18n.js', 'utf8') !== fs.readFileSync('packages/builder/src/i18n.js', 'utf8')) {
+const lf = (f) => fs.readFileSync(f, 'utf8').replace(/\r\n/g, '\n');
+if (lf('docs/i18n.js') !== lf('packages/builder/src/i18n.js')) {
   if (check) { console.error('packages/builder/src/i18n.js отличается от docs/i18n.js'); failed = true; } else fs.copyFileSync('docs/i18n.js', 'packages/builder/src/i18n.js');
 }
 if (!check) execFileSync(process.execPath, ['packages/plugin/build.js'], { stdio: 'ignore' });

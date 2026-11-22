@@ -1,13 +1,14 @@
 // Тексты окна программы для перевода: разметка (тем же I18N.collect, что переводит) + t('…'), tf('…'),
 // названия этапов из ui.html и ошибки сервера из ui.js. node tools/app-i18n-keys.mjs > tools/app-keys.json
 import fs from 'node:fs';
+import { pathToFileURL } from 'node:url';
 import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 const src = path.resolve('packages/builder/src');
 const require = createRequire(path.join(src, '..', 'package.json'));
 const { chromium } = require('playwright-core');
-const { startUi } = await import(path.join(src, 'ui.js'));
+const { startUi } = await import(pathToFileURL(path.join(src, 'ui.js')).href);
 const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ds-keys-'));
 const { server, url } = await startUi({ open: false, home, log: () => {}, pluginDir: home });
 const b = await chromium.launch((process.env.CHROME || process.env.CHROME_PATH) ? { executablePath: process.env.CHROME || process.env.CHROME_PATH } : { channel: 'chrome' });

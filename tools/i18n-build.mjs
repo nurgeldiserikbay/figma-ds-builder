@@ -25,7 +25,7 @@ for (const l of LANGS) {
 if (problems.length) { console.error(`${name}: ${problems.length} проблем\n` + problems.slice(0, 30).join('\n')); process.exit(1); }
 const js = `/* создано tools/i18n-build.mjs из tools/i18n/${name}.*.json — правьте их, а не этот файл */\nwindow.I18N_DATA = ${JSON.stringify(data)};\n`;
 if (check) {
-  if (fs.readFileSync(out, 'utf8') !== js) { console.error(`${out} устарел: запустите npm run i18n`); process.exit(1); }
+  if (fs.readFileSync(out, 'utf8').replace(/\r\n/g, '\n') !== js) { console.error(`${out} устарел: запустите npm run i18n`); process.exit(1); }
   console.log(`${name}: ${keys.length} текстов, переводы на ${LANGS.length} языков — OK`);
 } else {
   fs.writeFileSync(out, js);
