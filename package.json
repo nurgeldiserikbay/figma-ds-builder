@@ -6,9 +6,10 @@
   "scripts": {
     "setup": "npm --prefix packages/builder install && npm --prefix packages/plugin run build",
     "ds": "node packages/builder/src/cli.js",
-    "test": "npm --prefix packages/builder test && npm --prefix packages/plugin test",
+    "test": "npm --prefix packages/builder test && npm --prefix packages/plugin test && node tools/i18n.mjs --check",
     "bench": "npm --prefix packages/bench install && npm --prefix packages/bench run bench",
-    "ui": "npm --prefix packages/builder run ui"
+    "ui": "npm --prefix packages/builder run ui",
+    "i18n": "node tools/i18n.mjs"
   },
   "engines": {
     "node": ">=20"

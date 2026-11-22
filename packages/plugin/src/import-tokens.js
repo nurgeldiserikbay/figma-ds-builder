@@ -63,7 +63,7 @@ async function importTokens(json, opts) {
   var cache = {};
   existing.forEach(function (v) { cache[v.variableCollectionId + '|' + v.name] = v; });
 
-  progress('Переменные: примитивы…');
+  progress(L('Переменные: примитивы…'));
   var prim = await getCollection('DS · Primitives');
   var byPath = {};
   for (var i = 0; i < leaves.length; i++) {
@@ -78,7 +78,7 @@ async function importTokens(json, opts) {
     }
   }
 
-  progress('Переменные: семантика…');
+  progress(L('Переменные: семантика…'));
   var sem = await getCollection('DS · Semantic');
   for (var j = 0; j < leaves.length; j++) {
     var s = leaves[j];
@@ -90,7 +90,7 @@ async function importTokens(json, opts) {
     res.variables++;
   }
 
-  progress('Текстовые стили…');
+  progress(L('Текстовые стили…'));
   var typo = await getCollection('DS · Typography');
   var available = await figma.listAvailableFontsAsync();
   var textStyles = await figma.getLocalTextStylesAsync();
@@ -116,7 +116,7 @@ async function importTokens(json, opts) {
     res.textStyles++;
   }
 
-  progress('Стили теней…');
+  progress(L('Стили теней…'));
   var effectStyles = await figma.getLocalEffectStylesAsync();
   for (var e = 0; e < leaves.length; e++) {
     var sh = leaves[e];
@@ -133,7 +133,7 @@ async function importTokens(json, opts) {
   }
 
   if (opts.paintStyles) {
-    progress('Цветовые стили…');
+    progress(L('Цветовые стили…'));
     var paintStyles = await figma.getLocalPaintStylesAsync();
     var keys = Object.keys(byPath).filter(function (p) { return p.indexOf('color.') === 0; });
     for (var q = 0; q < keys.length; q++) {

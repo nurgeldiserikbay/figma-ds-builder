@@ -90,7 +90,7 @@ function send(files, zipName) {
 }
 
 // done/total — сколько фреймов готово из всех: интерфейс рисует полосу и оставшееся время
-function progress(text, done, total) { figma.ui.postMessage({ type: 'progress', text: text, done: done, total: total }); }
+function progress(m, done, total) { figma.ui.postMessage({ type: 'progress', msg: typeof m === 'string' ? L(m) : m, done: done, total: total }); }
 
 async function exportPngs(frames, scale) {
   var files = [];
@@ -98,7 +98,7 @@ async function exportPngs(frames, scale) {
   for (var i = 0; i < frames.length; i++) {
     var f = frames[i];
     if (stopRequested) break;
-    progress('PNG ' + (i + 1) + ' из ' + frames.length + ': ' + f.name, i, frames.length);
+    progress(L('PNG {i} из {n}: {name}', { i: i + 1, n: frames.length, name: f.name }), i, frames.length);
     var page = f;
     while (page && page.type !== 'PAGE') page = page.parent;
     var base = safeName(page ? page.name : 'page') + '/' + safeName(f.name);
@@ -110,7 +110,7 @@ async function exportPngs(frames, scale) {
       var png = await f.exportAsync({ format: 'PNG', constraint: { type: 'SCALE', value: scale }, useAbsoluteBounds: true });
       files.push({ path: name + (scale !== 1 ? '@' + scale + 'x' : '') + '.png', data: png });
     } catch (e) {
-      figma.ui.postMessage({ type: 'warning', text: 'Не удалось выгрузить «' + f.name + '»: ' + (e && e.message ? e.message : e) });
+      figma.ui.postMessage({ type: 'warning', items: [L('Не удалось выгрузить «{name}»: {err}', { name: f.name, err: e && e.message ? e.message : String(e) })] });
     }
   }
   return files;
@@ -130,29 +130,30 @@ figma.ui.onmessage = async function (msg) {
       var json;
       try { json = JSON.parse(msg.text); } catch (e) { throw new Error('Это не JSON: выберите tokens.json из папки design-system'); }
       var r = await importTokens(json, { paintStyles: !!msg.paintStyles, onProgress: progress });
-      var text = 'Создано/обновлено: переменных ' + r.variables + ', текстовых стилей ' + r.textStyles + ', стилей теней ' + r.effectStyles +
-        (r.paintStyles ? ', цветовых стилей ' + r.paintStyles : '') +
-        (r.skippedFonts.length ? '. Нет шрифтов в Figma: ' + r.skippedFonts.join(', ') + ' — текстовые стили для них не созданы' : '');
-      figma.ui.postMessage({ type: 'imported', text: text });
-      figma.notify(text.split('.')[0]);
+      var done = L('Создано/обновлено: переменных {v}, текстовых стилей {t}, стилей теней {e}', { v: r.variables, t: r.textStyles, e: r.effectStyles });
+      var items = [done];
+      if (r.paintStyles) items.push(L('Цветовых стилей: {n}', { n: r.paintStyles }));
+      if (r.skippedFonts.length) items.push(L('Нет шрифтов в Figma: {fonts} — текстовые стили для них не созданы', { fonts: r.skippedFonts.join(', ') }));
+      figma.ui.postMessage({ type: 'imported', items: items });
+      figma.notify(done.text);
       return;
     }
     if (msg.type !== 'export') return;
     stopRequested = false;
     try { await figma.clientStorage.setAsync('scope', msg.scope); } catch (e) { /* не критично */ }
-    if (msg.scope === 'all') progress('Загружаю страницы файла — на большом файле до минуты…');
+    if (msg.scope === 'all') progress(L('Загружаю страницы файла — на большом файле до минуты…'));
     var frames = await collectFrames(msg.scope);
     if (!frames.length) {
-      figma.ui.postMessage({ type: 'error', text: msg.scope === 'selection' ? 'Выделите фреймы или секцию' : 'На странице нет фреймов' });
+      figma.ui.postMessage({ type: 'error', msg: L(msg.scope === 'selection' ? 'Выделите фреймы или секцию' : 'На странице нет фреймов') });
       return;
     }
     var scale = msg.scale || 1;
     var fileBase = safeName(figma.root.name);
     if (msg.what === 'png') {
       var pngs = await exportPngs(frames, scale);
-      if (stopRequested) { figma.ui.postMessage({ type: 'stopped', text: 'Остановлено. PNG не сохранены.' }); return; }
+      if (stopRequested) { figma.ui.postMessage({ type: 'stopped', msg: L('PNG не сохранены.') }); return; }
       send(pngs, fileBase + ' — PNG.zip');
-      figma.ui.postMessage({ type: 'finished', text: 'Готово: фреймов ' + frames.length });
+      figma.ui.postMessage({ type: 'finished', msg: L('Готово: фреймов {n}', { n: frames.length }) });
       return;
     }
     var parts = splitParts(frames);
@@ -174,11 +175,11 @@ figma.ui.onmessage = async function (msg) {
         scale: scale,
         part: parts.length > 1 ? { id: exportId, index: pi + 1, total: parts.length } : undefined,
         shouldStop: function () { return stopRequested; },
-        onProgress: function (t, i) { progress((parts.length > 1 ? 'Часть ' + (pi + 1) + ' из ' + parts.length + ' · ' : '') + t, doneBefore + (i || 0), frames.length); },
+        onProgress: function (m, i) { progress(parts.length > 1 ? L('Часть {p} из {total} · {inner}', { p: pi + 1, total: parts.length, inner: typeof m === 'string' ? L(m) : m }) : m, doneBefore + (i || 0), frames.length); },
       });
       if (pkg.stopped) {
         figma.ui.postMessage({ type: 'stopped', resume: parts.length > 1 ? resumeState : null,
-          text: parts.length > 1 ? 'Остановлено. Скачано частей: ' + pi + ' из ' + parts.length + '. Можно продолжить с части ' + (pi + 1) + '.' : 'Остановлено.' });
+          msg: parts.length > 1 ? L('Скачано частей: {done} из {total}. Можно продолжить с части {next}.', { done: pi, total: parts.length, next: pi + 1 }) : null });
         return;
       }
       send(pkg.files, fileBase + ' — ds-package' + label + '.zip');
@@ -187,13 +188,13 @@ figma.ui.onmessage = async function (msg) {
       pkg = null; // память Figma — под следующую часть
     }
     await saveResume(null);
-    if (warnings.length) figma.ui.postMessage({ type: 'warning', text: warnings.join('\n') });
+    if (warnings.length) figma.ui.postMessage({ type: 'warning', items: warnings });
     figma.ui.postMessage({ type: 'finished', parts: parts.length,
-      text: parts.length > 1 ? 'Готово: ' + frames.length + ' фреймов в ' + parts.length + ' частях. Перетащите все части в DS Builder сразу.' : 'Готово: фреймов ' + frames.length });
-    figma.notify('Готово: фреймов ' + frames.length);
+      msg: parts.length > 1 ? L('Готово: фреймов {n}, частей {parts}. Перетащите все части в DS Builder сразу.', { n: frames.length, parts: parts.length }) : L('Готово: фреймов {n}', { n: frames.length }) });
+    figma.notify(L('Готово: фреймов {n}', { n: frames.length }).text);
   } catch (e) {
     // на ошибке в середине большой выгрузки можно продолжить с той же части
     var rs = msg.type === 'export' && msg.what !== 'png' ? await loadResume() : null;
-    figma.ui.postMessage({ type: 'error', text: String(e && e.message ? e.message : e), resume: rs });
+    figma.ui.postMessage({ type: 'error', msg: L(String(e && e.message ? e.message : e)), resume: rs });
   }
 };

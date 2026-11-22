@@ -61,7 +61,9 @@ async function run() {
   await figma.ui.onmessage({ type: 'import-tokens', text: tokensText, paintStyles: true });
   const err = posted.find((m) => m.type === 'error');
   if (err) throw new Error(err.text);
-  return posted.find((m) => m.type === 'imported').text;
+  const m = posted.find((x) => x.type === 'imported');
+  if (!m || !m.items || !m.items.every((i) => i.tpl && i.text)) throw new Error('импорт: сообщение без шаблона');
+  return m.items.map((i) => i.text).join('. ');
 }
 
 const first = await run();

@@ -237,7 +237,7 @@ export function auditDesign(pkg, ds, extra = {}) {
 
 const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const LABEL = { ok: 'хорошо', warn: 'можно лучше', bad: 'мешает вёрстке', info: 'к сведению' };
-export const GUIDE_URL = 'https://github.com/nurgeldiserikbay/figma-ds-builder/blob/main/docs/designer-guide.md';
+export const GUIDE_URL = 'designer-guide.html';
 
 /** Отчёт для дизайнера (самостоятельная страница). guideHref(anchor) — ссылка на раздел памятки. */
 export function auditHtml(a, { guideHref = (id) => `${GUIDE_URL}#${id}` } = {}) {

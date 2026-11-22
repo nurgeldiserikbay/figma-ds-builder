@@ -42,5 +42,7 @@ assert.equal(tree.children[0].component.variant, undefined, 'экземпляр 
 assert.equal(tree.children[1].error, 'node is broken', 'нечитаемый слой — рамка и причина');
 assert.equal(tree.children[1].x, 200);
 assert.equal(tree.children[2].name, 'Нормальный');
-assert.ok(pkg.warnings.some((w) => /не прочитаны слои \(1\)/.test(w)), 'предупреждение о сломанном слое');
+assert.ok(pkg.warnings.some((w) => /не прочитаны слои \(1\)/.test(w.text)), 'предупреждение о сломанном слое');
+assert.ok(pkg.warnings.every((w) => w.tpl && w.vars), 'предупреждение — шаблон для перевода в окне плагина');
+assert.ok(pkg.manifest.warnings.every((w) => typeof w === 'string'), 'в архив — текстом для программы');
 console.log('сломанные слои: набор вариантов с ошибкой и нечитаемый слой не останавливают выгрузку — OK');

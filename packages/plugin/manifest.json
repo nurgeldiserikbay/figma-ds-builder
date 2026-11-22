@@ -1,5 +1,5 @@
 {
-  "name": "DS Builder — экспорт для вёрстки",
+  "name": "DS Builder",
   "id": "figma-ds-builder-export",
   "api": "1.0.0",
   "main": "code.js",

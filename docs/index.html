@@ -4,6 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>figma-ds-builder — вёрстка из Figma, проверенная по эталону</title>
+<script src="i18n-data.js"></script>
+<script src="i18n.js"></script>
 <link rel="icon" href="favicon.ico" sizes="any">
 <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png">
 <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
@@ -56,6 +58,16 @@
   .nav-links { display: flex; gap: 24px; flex-wrap: wrap; margin-left: auto; }
   .nav-links a { color: var(--ink); text-decoration: none; font-size: 16px; }
   .nav-links a:hover { color: var(--link); }
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .lang select { min-height: 40px; padding: 0 10px; border: 1.5px solid var(--rule); border-radius: 8px; background: var(--canvas); color: var(--ink); font: 500 15px/1 Geologica, system-ui, sans-serif; cursor: pointer; }
+  .lang select:focus-visible { outline: 2px solid var(--select); outline-offset: 2px; }
+  .donate { display: grid; grid-template-columns: 1fr minmax(280px, 420px); gap: 40px; align-items: center; }
+  .donate .intro { margin-bottom: 0; }
+  .card-box { display: grid; gap: 12px; padding: 28px; border: 1.5px solid var(--ink); border-radius: 12px; }
+  .card-label { font-size: 15px; color: var(--muted); }
+  .card-num { font: 600 28px/1.2 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: 0.04em; color: var(--ink); user-select: all; }
+  .card-note { font-size: 15px; color: var(--muted); }
+  @media (max-width: 760px) { .donate { grid-template-columns: 1fr; } .card-num { font-size: 22px; } }
 
   .btn { display: inline-flex; align-items: center; justify-content: center; min-height: 50px; padding: 0 24px; border-radius: 8px; font: 500 17px/1 Geologica, sans-serif; text-decoration: none; border: 1.5px solid var(--ink); color: var(--ink); background: transparent; cursor: pointer; }
   .btn:hover { background: var(--panel); color: var(--ink); }
@@ -218,8 +230,14 @@
       <a href="#usage">Работа</a>
       <a href="#results">Результаты</a>
       <a href="#faq">Вопросы</a>
+      <a href="#donate">Поддержать</a>
     </nav>
-    <a class="btn small" href="https://github.com/nurgeldiserikbay/figma-ds-builder">GitHub</a>
+    <label class="lang" data-i18n-skip>
+      <select id="lang" aria-label="Язык / Language">
+        <option value="ru">Русский</option><option value="en">English</option><option value="zh">中文</option>
+        <option value="es">Español</option><option value="pt">Português</option><option value="de">Deutsch</option>
+        <option value="fr">Français</option><option value="kk">Қазақша</option>
+      </select></label>
   </div>
 </header>
 
@@ -288,8 +306,8 @@
       </div>
       <div class="flow-step">
         <p class="n">Шаг 2, на компьютере</p>
-        <h3>Запустите ds-build</h3>
-        <p>Одна команда:</p>
+        <h3>Откройте архив в DS Builder</h3>
+        <p>Программа сама:</p>
         <ul>
           <li>строит дизайн-систему: цвета, текст, отступы, аудит</li>
           <li>верстает каждый макет на её токенах</li>
@@ -366,11 +384,19 @@
       </div>
       <div class="feature">
         <h3>Семантика без ИИ</h3>
-        <p>Шапка, подвал, меню, кнопки, ссылки и заголовки получают свои теги по правилам. Повороты и маски переносятся точно. Имена классов можно доверить ИИ флагом <code>--ai</code>: сначала локальная модель, затем бесплатные API.</p>
+        <p>Шапка, подвал, меню, кнопки, ссылки и заголовки получают свои теги по правилам. Повороты и маски переносятся точно. Блоки, которые дизайнер назвал header, nav, section, form, получают эти теги. Имена классов можно доверить ИИ: сначала локальная модель, затем бесплатные API.</p>
       </div>
       <div class="feature">
         <h3>Отчёт</h3>
         <p>По каждой странице: прошла ли проверку, наложение со шторкой, карта различий, проблемы контраста текста по WCAG.</p>
+      </div>
+      <div class="feature">
+        <h3>Анализ макета для дизайнера</h3>
+        <p>Кнопка «Только проверить макет» за несколько секунд показывает, что в файле мешает вёрстке: блоки без Auto Layout, безликие имена, копии вместо компонентов, нет состояний, переменных или стилей. С примерами слоёв и памяткой, как исправить.</p>
+      </div>
+      <div class="feature">
+        <h3>Основа для ИИ-агента</h3>
+        <p>В каждой сборке есть AGENTS.md — карта проекта: страницы и макеты, компоненты, токены, итог сверки и правила. PNG всех экранов лежат в screens/, служебные метки убраны из кода. Агент тратит токены на работу, а не на разбор шума.</p>
       </div>
       <div class="feature">
         <h3>Обратно в Figma</h3>
@@ -389,13 +415,13 @@
       <a class="dl" role="listitem" data-os="mac" href="https://github.com/nurgeldiserikbay/figma-ds-builder/releases/latest/download/DS-Builder-mac-arm64.dmg"><b>macOS</b><span>.dmg · Mac на Apple Silicon (M1 и новее)</span></a>
       <a class="dl" role="listitem" data-os="linux" href="https://github.com/nurgeldiserikbay/figma-ds-builder/releases/latest/download/DS-Builder-linux-x86_64.AppImage"><b>Linux</b><span>.AppImage · x64</span></a>
     </div>
-    <p class="intro" style="margin-top:-24px">Кнопки сразу скачивают последнюю версию. <a href="https://github.com/nurgeldiserikbay/figma-ds-builder/releases">Все версии и отдельный архив плагина</a>.</p>
+    <p class="intro" style="margin-top:-24px">Кнопки сразу скачивают последнюю версию. Плагин для Figma входит в программу.</p>
     <div>
       <div class="step">
         <div class="n">1</div>
         <div>
           <h3>Скачайте и установите</h3>
-          <p>Откройте страницу выпуска и скачайте файл для своей системы. Установщики пока без цифровой подписи, поэтому система спросит подтверждение один раз.</p>
+          <p>Нажмите кнопку для своей системы и запустите скачанный файл. Установщики пока без цифровой подписи, поэтому система спросит подтверждение один раз.</p>
           <p><b>Windows:</b> «Windows защитил ваш компьютер» → «Подробнее» → «Выполнить в любом случае».<br>
           <b>macOS:</b> если «не удаётся проверить разработчика» — Системные настройки → Конфиденциальность и безопасность → «Всё равно открыть».</p>
         </div>
@@ -404,19 +430,11 @@
         <div class="n">2</div>
         <div>
           <h3>Подключите плагин в Figma</h3>
-          <p>В окне DS Builder нажмите «Плагина ещё нет в Figma?» → «открыть папку с плагином». Затем в Figma Desktop выберите Plugins → Development → Import plugin from manifest и укажите <code>manifest.json</code> из этой папки. Плагин появится под названием «DS Builder — экспорт для вёрстки».</p>
+          <p>В окне DS Builder нажмите «Плагина ещё нет в Figma?» → «открыть папку с плагином». Затем в Figma Desktop выберите Plugins → Development → Import plugin from manifest и укажите <code>manifest.json</code> из этой папки. Плагин появится под названием «DS Builder».</p>
           <p>Локальные плагины работают только в приложении Figma для компьютера.</p>
         </div>
       </div>
     </div>
-    <details class="dev">
-      <summary>Для разработчиков: из исходников</summary>
-      <p>Нужен Node.js 20 или новее. Команды установят зависимости и соберут плагин в <code>packages/plugin/dist</code>; окно программы запускается командой <code>npm run ui</code>.</p>
-      <div class="code"><pre><code>git clone https://github.com/nurgeldiserikbay/figma-ds-builder
-cd figma-ds-builder
-npm run setup
-npm run ui</code></pre><button class="copy" type="button">Копировать</button></div>
-    </details>
   </div>
 </section>
 
@@ -460,19 +478,13 @@ npm run ui</code></pre><button class="copy" type="button">Копировать</
         <figcaption>Окно DS Builder после сборки тестового макета</figcaption>
       </figure>
     </div>
-    <details class="dev">
-      <summary>Командная строка</summary>
-      <div class="code"><pre><code>npm run ds -- build "&lt;файл&gt; — ds-package.zip" --out out/my-site --framework html,react,vue --open
-<span class="c"># только дизайн-система, без вёрстки</span>
-npm run ds -- analyze "&lt;файл&gt; — ds-package.zip" --out out/ds</code></pre><button class="copy" type="button">Копировать</button></div>
-    </details>
   </div>
 </section>
 
 <section id="results" class="block" aria-labelledby="res-title">
   <div class="wrap">
     <h2 id="res-title">Результаты на открытых макетах</h2>
-    <p class="intro">5 файлов Figma с GitHub, 14 фреймов, около 1 300 слоёв. Для двух фреймов авторы выложили PNG-экспорт из Figma, это настоящие эталоны.</p>
+    <p class="intro">5 открытых файлов Figma, 14 фреймов, около 1 300 слоёв. Для двух фреймов авторы выложили PNG-экспорт из Figma, это настоящие эталоны.</p>
     <div class="table-box">
       <table>
         <thead>
@@ -488,7 +500,7 @@ npm run ds -- analyze "&lt;файл&gt; — ds-package.zip" --out out/ds</code><
         </tbody>
       </table>
     </div>
-    <p class="result-note">Дизайн-система Physionic, построенная по макету, совпала с SCSS-переменными автора шаблона в 14 проверках из 14: фон, поверхность, оба цвета текста, акцент, палитра и шаг отступов. Подробности в <a href="https://github.com/nurgeldiserikbay/figma-ds-builder/blob/main/docs/benchmark.md">отчёте о проверке</a>, повторить прогон можно командой <code>npm run bench</code>.</p>
+    <p class="result-note">Дизайн-система Physionic, построенная по макету, совпала с SCSS-переменными автора шаблона в 14 проверках из 14: фон, поверхность, оба цвета текста, акцент, палитра и шаг отступов.</p>
   </div>
 </section>
 
@@ -514,17 +526,18 @@ npm run ds -- analyze "&lt;файл&gt; — ds-package.zip" --out out/ds</code><
         <h3>Пока не умеет</h3>
         <ul>
           <li>В React и Vue адаптивная страница только переключается по брейкпоинтам, без растяжения между ними.</li>
-          <li>Растяжение между макетами угадывается по геометрии, если в файле не заданы constraints.</li>
+          <li>Состояния компонентов (наведение, нажатие, неактивно) из вариантов Figma пока не переносятся в CSS.</li>
+          <li>Переменные из подключённых командных библиотек Figma плагин пока не видит.</li>
           <li>Платные шрифты нужно установить в систему самостоятельно.</li>
-          <li>Плагин проверен на имитации Figma API, первый запуск в настоящей Figma впереди.</li>
         </ul>
       </div>
       <div>
         <h3>Дальше по плану</h3>
         <ul>
-          <li>Прогон на рабочих макетах и уточнение порогов.</li>
-          <li>Первый выпуск: пакет в npm и плагин в Figma Community.</li>
-          <li>Растяжение между макетами в React и Vue.</li>
+          <li>Состояния из вариантов компонентов: :hover, :active, :focus-visible, :disabled.</li>
+          <li>Свойства компонентов Figma как props, имена текстовых стилей и привязка переменных.</li>
+          <li>ИИ для спорной семантики и описаний картинок — с той же проверкой и откатом.</li>
+          <li>Плагин в Figma Community.</li>
         </ul>
       </div>
     </div>
@@ -540,7 +553,7 @@ npm run ds -- analyze "&lt;файл&gt; — ds-package.zip" --out out/ds</code><
     </details>
     <details>
       <summary>Нужен ли ИИ или платные сервисы?</summary>
-      <p>Нет. Анализ, вёрстка, семантика, компоненты, сверка и доработка работают без ИИ. ИИ подключается флагом <code>--ai</code> и только предлагает имена классов: по умолчанию это локальная модель через Ollama, подойдёт и любой OpenAI-совместимый сервер. Результат всё равно проходит проверку.</p>
+      <p>Нет. Анализ, вёрстка, семантика, компоненты, сверка и доработка работают без ИИ. ИИ включается галочкой «Имена классов от ИИ» в дополнительных настройках и только предлагает имена классов: сначала локальная модель через Ollama, затем бесплатные API. Результат всё равно проходит проверку.</p>
     </details>
     <details>
       <summary>Что если в макете нет стилей и Auto Layout?</summary>
@@ -548,7 +561,7 @@ npm run ds -- analyze "&lt;файл&gt; — ds-package.zip" --out out/ds</code><
     </details>
     <details>
       <summary>Как подготовить макет, чтобы вёрстка была лучше?</summary>
-      <p>Всё, что дизайнер указал явно — Auto Layout, компоненты, переменные, варианты состояний, имена блоков, — программа переносит в код точно, без догадок. <a href="https://github.com/nurgeldiserikbay/figma-ds-builder/blob/main/docs/designer-guide.md">Памятка для дизайнера</a> — что и как сделать в Figma, с чек-листом перед выгрузкой.</p>
+      <p>Всё, что дизайнер указал явно — Auto Layout, компоненты, переменные, варианты состояний, имена блоков, — программа переносит в код точно, без догадок. <a href="designer-guide.html">Памятка для дизайнера</a> — что и как сделать в Figma, с чек-листом перед выгрузкой.</p>
     </details>
     <details>
       <summary>Зачем нужен Chrome или Edge?</summary>
@@ -559,13 +572,24 @@ npm run ds -- analyze "&lt;файл&gt; — ds-package.zip" --out out/ds</code><
       <p>У установщиков пока нет цифровой подписи: сертификаты платные. Каждая сборка программы перед выкладкой проверяется на тестовом макете на всех трёх системах. Подтвердить запуск нужно один раз, как описано в разделе «Установка».</p>
     </details>
     <details>
-      <summary>Можно ли без Figma?</summary>
-      <p>Для проверки алгоритмов да: <code>packages/bench</code> собирает пакет прямо из файла .fig. Но эталоны PNG и полные данные даёт только плагин.</p>
-    </details>
-    <details>
       <summary>Что прислать, если что-то не сработало?</summary>
       <p>Подробный журнал из окна программы (раскрывается под этапами сборки), консоль плагина (Plugins, Development, Show/Hide console), файл <code>report.json</code> из папки сборки и, если можно, сам пакет или один проблемный фрейм.</p>
     </details>
+  </div>
+</section>
+
+<section id="donate" class="block" aria-labelledby="donate-title">
+  <div class="wrap donate">
+    <div>
+      <h2 id="donate-title">Поддержать проект</h2>
+      <p class="intro">DS Builder бесплатный и с открытым кодом. Если программа экономит вам время, можно поддержать разработку переводом на карту.</p>
+    </div>
+    <div class="card-box">
+      <span class="card-label">Номер карты</span>
+      <span class="card-num" id="cardNum">5269 8800 8898 3051</span>
+      <button class="btn solid" type="button" id="copyCard">Скопировать номер</button>
+      <span class="card-note">Перевод по номеру карты из приложения вашего банка. Спасибо!</span>
+    </div>
   </div>
 </section>
 
@@ -577,8 +601,6 @@ npm run ds -- analyze "&lt;файл&gt; — ds-package.zip" --out out/ds</code><
     </div>
     <div style="display:flex;gap:12px;flex-wrap:wrap">
       <a class="btn solid" href="#install">Скачать DS Builder</a>
-      <a class="btn" href="https://github.com/nurgeldiserikbay/figma-ds-builder/blob/main/docs/how-to-test.md">Подробная инструкция</a>
-      <a class="btn" href="https://github.com/nurgeldiserikbay/figma-ds-builder">Репозиторий</a>
     </div>
   </div>
 </section>
@@ -588,12 +610,7 @@ npm run ds -- analyze "&lt;файл&gt; — ds-package.zip" --out out/ds</code><
 <footer class="site-footer">
   <div class="wrap">
     <span>figma-ds-builder, лицензия MIT</span>
-    <span class="links">
-      <a href="https://github.com/nurgeldiserikbay/figma-ds-builder/blob/main/docs/how-to-test.md">Как проверить</a>
-      <a href="https://github.com/nurgeldiserikbay/figma-ds-builder/blob/main/docs/package-format.md">Формат пакета</a>
-      <a href="https://github.com/nurgeldiserikbay/figma-ds-builder/blob/main/docs/benchmark.md">Отчёт о проверке</a>
-      <a href="https://github.com/nurgeldiserikbay/figma-ds-builder">GitHub</a>
-    </span>
+    <span class="links"><a href="designer-guide.html">Памятка для дизайнера</a><a href="#donate">Поддержать проект</a></span>
   </div>
 </footer>
 
@@ -609,7 +626,7 @@ npm run ds -- analyze "&lt;файл&gt; — ds-package.zip" --out out/ds</code><
   (function () {
     var h1 = document.getElementById('hero-title'), tag = document.getElementById('h1size');
     function upd() { var r = h1.parentElement.getBoundingClientRect(); tag.textContent = Math.round(r.width) + ' × ' + Math.round(r.height); }
-    upd(); addEventListener('resize', upd);
+    upd(); addEventListener('resize', upd); document.addEventListener('langchange', upd);
     if (document.fonts) document.fonts.ready.then(upd);
   })();
 
@@ -626,15 +643,15 @@ npm run ds -- analyze "&lt;файл&gt; — ds-package.zip" --out out/ds</code><
       press('bOverlay', !state.diff); press('bDiff', state.diff);
       rPix.textContent = state.after ? '0.000%' : '0.157%';
       rPix.className = state.after ? 'good' : 'bad';
-      rFix.innerHTML = 'Поправок: <b>' + (state.after ? '1, сдвиг строки −2 px' : '0') + '</b>';
+      rFix.innerHTML = t('Поправок:') + ' <b>' + (state.after ? t('1, сдвиг строки −2 px') : '0') + '</b>';
       if (state.diff) {
         base.src = state.after ? 'assets/demo-diff-after.png' : 'assets/demo-diff-before.png';
-        base.alt = 'Карта различий: красным отмечены несовпадающие пиксели';
+        base.alt = t('Карта различий: красным отмечены несовпадающие пиксели');
         top.style.display = 'none'; handle.style.display = 'none';
-        lblL.textContent = 'Карта различий'; lblR.style.display = 'none';
+        lblL.textContent = t('Карта различий'); lblR.style.display = 'none';
         sliderWrap.style.display = 'none';
       } else {
-        base.src = 'assets/demo-figma.png'; base.alt = 'Макет в Figma';
+        base.src = 'assets/demo-figma.png'; base.alt = t('Макет в Figma');
         top.src = state.after ? 'assets/demo-after.png' : 'assets/demo-before.png';
         top.style.display = ''; handle.style.display = '';
         lblL.textContent = 'Figma'; lblR.style.display = '';
@@ -647,17 +664,29 @@ npm run ds -- analyze "&lt;файл&gt; — ds-package.zip" --out out/ds</code><
     document.getElementById('bOverlay').onclick = function () { state.diff = false; render(); };
     document.getElementById('bDiff').onclick = function () { state.diff = true; render(); };
     render();
+    document.addEventListener('langchange', render);
   })();
 
   document.querySelectorAll('.code .copy').forEach(function (btn) {
     btn.addEventListener('click', function () {
       var text = btn.parentElement.querySelector('pre').innerText;
       navigator.clipboard.writeText(text).then(function () {
-        btn.textContent = 'Скопировано';
-        setTimeout(function () { btn.textContent = 'Копировать'; }, 1600);
-      }).catch(function () { btn.textContent = 'Выделите и скопируйте'; });
+        btn.textContent = t('Скопировано');
+        setTimeout(function () { btn.textContent = t('Копировать'); }, 1600);
+      }).catch(function () { btn.textContent = t('Выделите и скопируйте'); });
     });
   });
+
+  // номер карты для поддержки: копируется без пробелов
+  (function () {
+    var btn = document.getElementById('copyCard');
+    btn.addEventListener('click', function () {
+      var num = document.getElementById('cardNum').textContent.replace(/\s+/g, '');
+      var done = function () { btn.textContent = t('Номер скопирован'); setTimeout(function () { btn.textContent = t('Скопировать номер'); }, 1800); };
+      if (navigator.clipboard) navigator.clipboard.writeText(num).then(done, function () { btn.textContent = t('Выделите и скопируйте'); });
+      else btn.textContent = t('Выделите и скопируйте');
+    });
+  })();
 </script>
 </body>
 </html>

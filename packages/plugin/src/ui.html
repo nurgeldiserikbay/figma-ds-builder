@@ -30,10 +30,22 @@
   #runBtns button { flex: 0 0 auto; padding: 6px 10px; font-weight: 500; }
   details { margin-top: 18px; border-top: 1px solid var(--figma-color-border, #e3e3e3); padding-top: 12px; }
   summary { font-weight: 600; cursor: pointer; }
+  .head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0 0 12px; }
+  .head h1 { margin: 0; }
+  .head select { font: inherit; padding: 3px 4px; border: 1px solid var(--figma-color-border, #ddd); border-radius: 6px; background: var(--figma-color-bg, #fff); color: inherit; }
+  .card { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+  .card span { flex: 1; font: 600 13px/1.2 ui-monospace, Menlo, Consolas, monospace; letter-spacing: .03em; user-select: all; }
+  .card button { flex: 0 0 auto; padding: 6px 10px; }
 </style>
+<script>/*I18N*/</script>
 </head>
 <body>
-<h1>Экспорт для вёрстки</h1>
+<div class="head"><h1>Экспорт для вёрстки</h1>
+  <select id="lang" aria-label="Язык / Language" data-i18n-skip>
+    <option value="ru">Русский</option><option value="en">English</option><option value="zh">中文</option>
+    <option value="es">Español</option><option value="pt">Português</option><option value="de">Deutsch</option>
+    <option value="fr">Français</option><option value="kk">Қазақша</option>
+  </select></div>
 
 <fieldset>
   <legend>Что выгружать</legend>
@@ -78,6 +90,12 @@
 <div id="importStatus" class="hint"></div>
 </details>
 
+<details id="donate">
+<summary>Поддержать проект</summary>
+<p class="hint">DS Builder бесплатный. Если он экономит вам время, можно поддержать разработку переводом на карту.</p>
+<div class="card"><span id="cardNum">5269 8800 8898 3051</span><button id="copyCard">Скопировать номер</button></div>
+</details>
+
 <script>
 // ---------- zip (без сжатия: PNG уже сжаты) ----------
 var CRC = (function () { var t = new Uint32Array(256); for (var n = 0; n < 256; n++) { var c = n; for (var k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
@@ -104,24 +122,28 @@ function zip(files) {
   return new Blob(parts.concat(central, [new Uint8Array(e.buffer)]), { type: 'application/zip' });
 }
 
-var files = [], status = document.getElementById('status');
+// не «status»: так называется свойство window.status, которое превращает всё в строку
+var files = [], statusEl = document.getElementById('status');
 var $ = function (id) { return document.getElementById(id); };
+// перевод с подстановкой; сообщения из основного кода плагина — шаблон + значения (L в export-package.js)
+function tf(s, v) { v = v || {}; return t(s).replace(/\{(\w+)\}/g, function (m, k) { return k in v ? say(v[k]) : m; }); }
+function say(m) { return m === null || m === undefined ? '' : typeof m !== 'object' ? String(m) : m.tpl ? tf(m.tpl, m.vars) : t(m.text || ''); }
 function val(name) { return document.querySelector('input[name="' + name + '"]:checked').value; }
-var tokensText = null, working = false, mode = '', resume = null, frameCount = 0;
+var tokensText = null, working = false, mode = '', resume = null, frameCount = 0, lastCount = null;
 function busy(b) {
   working = b;
   $('png').disabled = b; $('pkg').disabled = b; $('importBtn').disabled = b || !tokensText;
   $('stopBtn').style.display = b ? '' : 'none';
-  $('stopBtn').disabled = false; $('stopBtn').textContent = 'Остановить';
+  $('stopBtn').disabled = false; $('stopBtn').textContent = t('Остановить');
   if (b) $('resumeBtn').style.display = 'none';
 }
 $('tokensFile').onchange = function (e) {
   var f = e.target.files[0];
   if (!f) return;
-  f.text().then(function (t) { tokensText = t; $('importBtn').disabled = working; $('importStatus').textContent = 'Файл выбран: ' + f.name; });
+  f.text().then(function (x) { tokensText = x; $('importBtn').disabled = working; $('importStatus').textContent = tf('Файл выбран: {name}', { name: f.name }); });
 };
 $('importBtn').onclick = function () {
-  mode = 'import'; busy(true); $('importStatus').textContent = 'Создаю переменные и стили…';
+  mode = 'import'; busy(true); $('importStatus').textContent = t('Создаю переменные и стили…');
   parent.postMessage({ pluginMessage: { type: 'import-tokens', text: tokensText, paintStyles: $('paintStyles').checked } }, '*');
 };
 
@@ -129,16 +151,16 @@ $('importBtn').onclick = function () {
 var started = 0, lastTick = 0, firstDone = null, stallTimer = null;
 function fmt(sec) {
   sec = Math.max(0, Math.round(sec));
-  if (sec < 60) return sec + ' с';
+  if (sec < 60) return tf('{n} с', { n: sec });
   var m = Math.floor(sec / 60);
-  return m < 60 ? m + ' мин ' + (sec % 60 < 10 ? '0' : '') + (sec % 60) + ' с' : Math.floor(m / 60) + ' ч ' + (m % 60) + ' мин';
+  return m < 60 ? tf('{m} мин {s} с', { m: m, s: (sec % 60 < 10 ? '0' : '') + (sec % 60) }) : tf('{h} ч {m} мин', { h: Math.floor(m / 60), m: m % 60 });
 }
 function showRun(text) {
   $('run').className = 'on';
   $('bar').className = 'bar wait';
-  $('pct').textContent = text || 'Готовлю…';
+  $('pct').textContent = text || t('Готовлю…');
   $('eta').textContent = ''; $('now').textContent = ''; $('stall').textContent = '';
-  status.textContent = ''; $('downloads').textContent = '';
+  statusEl.textContent = ''; $('downloads').textContent = '';
 }
 function tick(m) {
   lastTick = Date.now();
@@ -149,13 +171,14 @@ function tick(m) {
     if (firstDone === null) firstDone = { n: done, t: lastTick };
     $('bar').className = 'bar';
     $('bar').firstChild.style.width = (100 * done / m.total).toFixed(1) + '%';
-    $('pct').textContent = 'Фрейм ' + Math.min(done + 1, m.total) + ' из ' + m.total;
+    $('pct').textContent = tf('Фрейм {i} из {n}', { i: Math.min(done + 1, m.total), n: m.total });
     // скорость считаем от первого сообщения этой выгрузки (при продолжении — не с нуля)
     var n = done - firstDone.n, dt = (lastTick - firstDone.t) / 1000;
-    $('eta').textContent = n >= 3 && dt > 2 ? 'осталось ≈ ' + fmt(dt / n * (m.total - done)) : 'прошло ' + fmt((lastTick - started) / 1000);
+    $('eta').textContent = n >= 3 && dt > 2 ? tf('осталось ≈ {time}', { time: fmt(dt / n * (m.total - done)) }) : tf('прошло {time}', { time: fmt((lastTick - started) / 1000) });
   }
-  $('now').textContent = m.text || '';
-  $('now').title = m.text || '';
+  var text = say(m.msg);
+  $('now').textContent = text;
+  $('now').title = text;
 }
 function watch() {
   clearInterval(stallTimer);
@@ -164,43 +187,65 @@ function watch() {
     var quiet = (Date.now() - lastTick) / 1000;
     if (quiet < 15) return;
     $('stall').textContent = (firstDone === null
-      ? 'Figma загружает страницы файла уже ' + fmt(quiet) + '. На файле с десятками страниц это бывает долго — окно не зависло.'
-      : 'Figma ' + fmt(quiet) + ' готовит один фрейм. Большие фреймы бывают долгими — это не зависание.') +
-      ' Если ничего не меняется дольше 5 минут, нажмите «Остановить» и продолжите позже.';
+      ? tf('Figma загружает страницы файла уже {time}. На файле с десятками страниц это бывает долго — окно не зависло.', { time: fmt(quiet) })
+      : tf('Figma {time} готовит один фрейм. Большие фреймы бывают долгими — это не зависание.', { time: fmt(quiet) })) +
+      ' ' + t('Если ничего не меняется дольше 5 минут, нажмите «Остановить» и продолжите позже.');
   }, 1000);
 }
 function run(what, res) {
   mode = 'export'; busy(true);
   started = lastTick = Date.now(); firstDone = null;
-  showRun(res ? 'Продолжаю с части ' + res.next + '…' : 'Готовлю…');
+  showRun(res ? tf('Продолжаю с части {n}…', { n: res.next }) : t('Готовлю…'));
   watch();
   parent.postMessage({ pluginMessage: { type: 'export', what: what, scope: res ? res.scope : val('scope'), scale: res ? res.scale : Number(val('scale')), resume: res || undefined } }, '*');
 }
 $('png').onclick = function () { run('png'); };
 $('pkg').onclick = function () { run('pkg'); };
 $('stopBtn').onclick = function () {
-  $('stopBtn').disabled = true; $('stopBtn').textContent = 'Останавливаю после текущего фрейма…';
+  $('stopBtn').disabled = true; $('stopBtn').textContent = t('Останавливаю после текущего фрейма…');
   parent.postMessage({ pluginMessage: { type: 'stop' } }, '*');
 };
 $('resumeBtn').onclick = function () { if (resume) run('pkg', resume); };
 function offerResume(r) {
   resume = r;
   if (!r) { $('resumeBtn').style.display = 'none'; return; }
-  $('resumeBtn').textContent = 'Продолжить с части ' + r.next + ' из ' + r.total;
+  $('resumeBtn').textContent = tf('Продолжить с части {next} из {total}', r);
   $('resumeBtn').style.display = '';
 }
 function finish(text, cls, detail) {
   busy(false);
   clearInterval(stallTimer);
   $('stall').textContent = '';
-  $('eta').textContent = 'заняло ' + fmt((Date.now() - started) / 1000);
+  $('eta').textContent = tf('заняло {time}', { time: fmt((Date.now() - started) / 1000) });
   $('pct').textContent = text;
   $('pct').className = cls || '';
   if (detail !== undefined) { $('now').textContent = detail; $('now').title = detail; $('now').style.whiteSpace = 'normal'; }
 }
+function showCount(m) {
+  lastCount = m;
+  frameCount = m.count || 0;
+  var parts = Math.ceil(frameCount / 25);
+  $('count').textContent = m.count
+    ? (m.pages > 1 ? tf('Будет выгружено фреймов: {n} (страниц Figma: {p})', { n: m.count, p: m.pages }) : tf('Будет выгружено фреймов: {n}', { n: m.count })) +
+      (parts > 1 ? ' ' + tf('Пакет скачается частями, примерно {n} zip-файлов: Figma может спросить разрешение скачивать несколько файлов — разрешите.', { n: parts }) : '')
+    : t(val('scope') === 'selection' ? 'Ничего не выделено — выделите фреймы на холсте' : 'Фреймов нет');
+}
 document.querySelectorAll('input[name="scope"]').forEach(function (r) { r.onchange = count; });
-function count() { $('count').textContent = 'Считаю фреймы…'; parent.postMessage({ pluginMessage: { type: 'count', scope: val('scope') } }, '*'); }
+function count() { $('count').textContent = t('Считаю фреймы…'); parent.postMessage({ pluginMessage: { type: 'count', scope: val('scope') } }, '*'); }
 busy(false);
+document.addEventListener('langchange', function () { if (lastCount) showCount(lastCount); busy(working); });
+
+// поддержать проект: номер карты копируется без пробелов
+$('copyCard').onclick = function () {
+  var ta = document.createElement('textarea');
+  ta.value = $('cardNum').textContent.replace(/\s+/g, '');
+  document.body.appendChild(ta); ta.select();
+  var ok = false;
+  try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+  ta.remove();
+  $('copyCard').textContent = ok ? t('Номер скопирован') : t('Выделите и скопируйте');
+  setTimeout(function () { $('copyCard').textContent = t('Скопировать номер'); }, 1800);
+};
 
 onmessage = function (e) {
   var m = e.data.pluginMessage;
@@ -214,22 +259,15 @@ onmessage = function (e) {
       $('run').className = 'on';
       $('bar').className = 'bar';
       $('bar').firstChild.style.width = (100 * (m.resume.next - 1) / m.resume.total).toFixed(1) + '%';
-      $('pct').textContent = 'Прошлая выгрузка не закончена';
-      $('now').textContent = 'Скачано частей: ' + (m.resume.next - 1) + ' из ' + m.resume.total + '. Скачанные части не теряются — продолжите с того же места.';
+      $('pct').textContent = t('Прошлая выгрузка не закончена');
+      $('now').textContent = tf('Скачано частей: {done} из {total}. Скачанные части не теряются — продолжите с того же места.', { done: m.resume.next - 1, total: m.resume.total });
       offerResume(m.resume);
     }
   }
-  else if (m.type === 'count') {
-    frameCount = m.count || 0;
-    var parts = Math.ceil(frameCount / 25);
-    $('count').textContent = m.count
-      ? 'Будет выгружено фреймов: ' + m.count + (m.pages > 1 ? ' (страниц Figma: ' + m.pages + ')' : '') +
-        (parts > 1 ? '. Пакет скачается частями, примерно ' + parts + ' zip-файлов: Figma может спросить разрешение скачивать несколько файлов — разрешите.' : '')
-      : (val('scope') === 'selection' ? 'Ничего не выделено — выделите фреймы на холсте' : 'Фреймов нет');
-  }
-  else if (m.type === 'progress') { if (mode === 'import') $('importStatus').textContent = m.text; else tick(m); }
-  else if (m.type === 'imported') { $('importStatus').textContent = m.text; busy(false); }
-  else if (m.type === 'warning') { var w = document.createElement('div'); w.className = 'err'; w.style.whiteSpace = 'pre-wrap'; w.textContent = m.text; status.appendChild(w); }
+  else if (m.type === 'count') showCount(m);
+  else if (m.type === 'progress') { if (mode === 'import') $('importStatus').textContent = say(m.msg); else tick(m); }
+  else if (m.type === 'imported') { $('importStatus').textContent = (m.items || []).map(say).join('. '); busy(false); }
+  else if (m.type === 'warning') { var w = document.createElement('div'); w.className = 'err'; w.style.whiteSpace = 'pre-wrap'; w.textContent = (m.items || []).map(say).join('\n'); statusEl.appendChild(w); }
   else if (m.type === 'begin') files = [];
   else if (m.type === 'file') files.push({ path: m.path, data: typeof m.data === 'string' ? new TextEncoder().encode(m.data) : m.data });
   else if (m.type === 'done') {
@@ -245,13 +283,13 @@ onmessage = function (e) {
     var list = $('downloads');
     list.insertBefore(li, list.firstChild);
   }
-  else if (m.type === 'finished') { offerResume(null); $('bar').className = 'bar'; $('bar').firstChild.style.width = '100%'; finish('Готово', '', m.text + ' Если какой-то файл не скачался, нажмите на него в списке.'); }
-  else if (m.type === 'stopped') { $('bar').className = 'bar'; finish('Остановлено', '', m.text.replace(/^Остановлено\.\s*/, '')); offerResume(m.resume); }
+  else if (m.type === 'finished') { offerResume(null); $('bar').className = 'bar'; $('bar').firstChild.style.width = '100%'; finish(t('Готово'), '', say(m.msg) + ' ' + t('Если какой-то файл не скачался, нажмите на него в списке.')); }
+  else if (m.type === 'stopped') { $('bar').className = 'bar'; finish(t('Остановлено'), '', say(m.msg)); offerResume(m.resume); }
   else if (m.type === 'error') {
-    if (mode === 'import') { $('importStatus').innerHTML = '<span class="err"></span>'; $('importStatus').firstChild.textContent = m.text; busy(false); return; }
+    if (mode === 'import') { $('importStatus').innerHTML = '<span class="err"></span>'; $('importStatus').firstChild.textContent = say(m.msg); busy(false); return; }
     $('run').className = 'on';
     $('bar').className = 'bar';
-    finish('Ошибка', 'err', m.text + (m.resume ? ' Скачанные части сохранены — можно продолжить с части ' + m.resume.next + '.' : ''));
+    finish(t('Ошибка'), 'err', say(m.msg) + (m.resume ? ' ' + tf('Скачанные части сохранены — можно продолжить с части {n}.', { n: m.resume.next }) : ''));
     if (m.resume) offerResume(m.resume);
   }
 };

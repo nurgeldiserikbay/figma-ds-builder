@@ -10,6 +10,19 @@
 
 var EXPORT_VECTOR_TYPES = { VECTOR: 1, BOOLEAN_OPERATION: 1, STAR: 1, POLYGON: 1, LINE: 1 };
 
+/**
+ * Сообщение для окна плагина: шаблон и значения — окно переводит шаблон на язык пользователя.
+ * text — то же по-русски (журнал, figma.notify). Значение может быть вложенным сообщением.
+ */
+function L(tpl, vars) {
+  vars = vars || {};
+  var text = tpl.replace(/\{(\w+)\}/g, function (m, k) {
+    var v = vars[k];
+    return v === undefined ? m : v && v.tpl ? v.text : String(v);
+  });
+  return { tpl: tpl, vars: vars, text: text };
+}
+
 function fileId(id) { return String(id).replace(/[:;]/g, '_'); }
 function num(v, d) { return typeof v === 'number' ? Math.round(v * 100) / 100 : d; }
 function isMixed(v) { return v === figma.mixed; }
@@ -234,15 +247,15 @@ async function buildLayoutPackage(frames, opts) {
   for (var i = 0; i < frames.length; i++) {
     if (shouldStop()) return { stopped: true, files: [], warnings: warnings };
     var f = frames[i];
-    progress('Фрейм ' + (i + 1) + ' из ' + frames.length + ': ' + f.name, i);
+    progress(L('Фрейм {i} из {n}: {name}', { i: i + 1, n: frames.length, name: f.name }), i);
     var t = f.absoluteTransform;
     var ctx = { images: images, vectors: [], instances: [], count: 0, fonts: fonts, errors: [] };
     var tree;
     try { tree = serialize(f, t[0][2], t[1][2], ctx); } catch (e) {
-      warnings.push('Фрейм «' + f.name + '» пропущен: ' + (e && e.message ? e.message : e));
+      warnings.push(L('Фрейм «{name}» пропущен: {err}', { name: f.name, err: e && e.message ? e.message : String(e) }));
       continue;
     }
-    if (ctx.errors.length) warnings.push('Фрейм «' + f.name + '»: не прочитаны слои (' + ctx.errors.length + '), остались только их рамки: ' + ctx.errors.slice(0, 3).join('; ') + (ctx.errors.length > 3 ? '; …' : ''));
+    if (ctx.errors.length) warnings.push(L('Фрейм «{name}»: не прочитаны слои ({n}), остались только их рамки: {list}', { name: f.name, n: ctx.errors.length, list: ctx.errors.slice(0, 3).join('; ') + (ctx.errors.length > 3 ? '; …' : '') }));
     var fid = fileId(f.id);
     files.push({ path: 'frames/' + fid + '.json', data: JSON.stringify(tree) });
 
@@ -255,7 +268,7 @@ async function buildLayoutPackage(frames, opts) {
       files.push({ path: 'frames/' + fid + '.png', data: png });
     } catch (e) {
       pngOk = false;
-      warnings.push('Нет PNG для «' + f.name + '» (' + Math.round(f.width) + '×' + Math.round(f.height) + '): ' + (e && e.message ? e.message : e));
+      warnings.push(L('Нет PNG для «{name}» ({w}×{h}): {err}', { name: f.name, w: Math.round(f.width), h: Math.round(f.height), err: e && e.message ? e.message : String(e) }));
     }
 
     for (var v = 0; v < ctx.vectors.length; v++) {
@@ -273,7 +286,7 @@ async function buildLayoutPackage(frames, opts) {
 
   var hashes = Object.keys(images);
   for (var h = 0; h < hashes.length; h++) {
-    progress('Картинки: ' + (h + 1) + ' из ' + hashes.length, frames.length);
+    progress(L('Картинки: {i} из {n}', { i: h + 1, n: hashes.length }), frames.length);
     var img = figma.getImageByHash(hashes[h]);
     if (!img) continue;
     try {
@@ -290,7 +303,7 @@ async function buildLayoutPackage(frames, opts) {
   try {
     files.push({ path: 'variables.json', data: JSON.stringify(await exportVariables(), null, 2) });
     files.push({ path: 'styles.json', data: JSON.stringify(await exportStyles(), null, 2) });
-  } catch (e) { progress('Переменные/стили не выгружены: ' + e.message); }
+  } catch (e) { progress(L('Переменные/стили не выгружены: {err}', { err: e.message })); }
   if (opts.tokens) files.push({ path: 'tokens.json', data: JSON.stringify(opts.tokens, null, 2) });
   if (opts.analysis) files.push({ path: 'analysis.json', data: JSON.stringify(opts.analysis) });
 
@@ -303,7 +316,7 @@ async function buildLayoutPackage(frames, opts) {
     fonts: 'fonts.json', variables: 'variables.json', styles: 'styles.json',
     frames: manifestFrames,
     part: opts.part, // { id, index, total } — выгрузка частями: программа собирает части в один пакет
-    warnings: warnings.length ? warnings : undefined,
+    warnings: warnings.length ? warnings.map(function (w) { return w.text; }) : undefined,
   };
   files.unshift({ path: 'manifest.json', data: JSON.stringify(manifest, null, 2) });
   return { manifest: manifest, files: files, warnings: warnings };

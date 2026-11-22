@@ -115,6 +115,11 @@ export async function startUi({ port = 0, open = true, home = defaultHome(), log
         return send(200, page.replace('__HOME__', () => htmlText(home))
           .replace('__PLUGIN__', pluginDir ? '1' : ''), 'text/html; charset=utf-8');
       }
+      // переводы окна: движок и словарь
+      if (req.method === 'GET' && (u.pathname === '/i18n.js' || u.pathname === '/i18n-data.js')) {
+        const f = u.pathname === '/i18n.js' ? 'i18n.js' : 'app-i18n-data.js';
+        return send(200, fs.readFileSync(new URL(`./${f}`, import.meta.url), 'utf8'), 'text/javascript; charset=utf-8');
+      }
       // памятка дизайнеру — страницей в окне программы
       if (req.method === 'GET' && u.pathname === '/guide') return send(200, guidePage(), 'text/html; charset=utf-8');
       if (req.method === 'POST' && u.pathname === '/api/plugin') {
