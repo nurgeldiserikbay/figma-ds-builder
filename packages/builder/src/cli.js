@@ -543,7 +543,9 @@ async function build(args) {
         const variants = g.members.map((i) => ({ ...fwPages[i], fluid: false }));
         // «резиновые» версии макетов: тот же генератор с правилами растяжения
         const writeFluid = (v) => {
-          const fg = generateFrame(v.tree, { ...v.gen, fluid: true, fluidSkip: v.skip, svgText, inlineSvg: args.inlineSvg, tokens, assetUrl: (rel) => `../assets/${rel}`, extraCss, semantic: args.semantic });
+          // следующий по ширине макет — к его значениям плавно идут кегль, отступы, сетки
+          const next = variants[variants.indexOf(v) + 1];
+          const fg = generateFrame(v.tree, { ...v.gen, fluid: true, fluidSkip: v.skip, peer: next ? next.tree : null, svgText, inlineSvg: args.inlineSvg, tokens, assetUrl: (rel) => `../assets/${rel}`, extraCss, semantic: args.semantic });
           fs.writeFileSync(path.join(out, v.dir, 'fluid.html'), fg.html);
           // поправки после сверки (межбуквенные и т. п.) — те же, что у фиксированной вёрстки этого макета
           const fixed = fs.existsSync(path.join(out, v.dir, 'styles.css')) ? fs.readFileSync(path.join(out, v.dir, 'styles.css'), 'utf8') : '';

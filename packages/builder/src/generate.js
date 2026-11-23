@@ -1,5 +1,6 @@
 // Генерация HTML/CSS из дерева блоков.
 import { buildBox, placements, isTransformed } from './layout.js';
+import { peerMaps, clampPx } from './fluid-peer.js';
 import { analyzeSemantics, className, SEMANTIC_RESET } from './semantic.js';
 import {
   px, r2, withVar, fillsToCss, strokesToCss, effectsToCss, radiusToCss, segmentCss, declarations, mergeShadows, colorValue,
@@ -55,6 +56,22 @@ function flowCss(box, ctx) {
   // к отступу прибавлена обводка (strokesApplied) — переменная уже не равна значению, оставляем число
   const dp = L.designPadding || p;
   if (p.some(Boolean)) o.padding = p.map((x, i) => (x === dp[i] ? withVar(ctx, V.padding?.[i], px(x)) : px(x))).join(' ');
+  // между макетами: отступы и расстояния плавно переходят к значениям следующего макета
+  const F = ctx.fluid && ctx.peer;
+  if (F && !ctx.fluidSkip?.has(node.id)) {
+    const fr = F.frame.get(node.id);
+    if (fr) {
+      if (fr.pad.some(([a, b]) => a !== b)) o.padding = fr.pad.map((v) => clampPx(v, F.w0, F.w1)).join(' ');
+      if (fr.gap && o.gap) o.gap = clampPx(fr.gap, F.w0, F.w1);
+    }
+    const gr = F.grid.get(node.id);
+    if (gr) {
+      // колонка одинаковых блоков → сетка: на узком — одна колонка, шире — столько, сколько помещается
+      delete o['flex-direction']; delete o['justify-content']; delete o.gap;
+      Object.assign(o, { display: 'grid', 'grid-template-columns': `repeat(auto-fill, minmax(min(100%, ${px(gr.min)}), 1fr))`,
+        'align-items': 'stretch', 'row-gap': clampPx(gr.rowGap, F.w0, F.w1), 'column-gap': clampPx(gr.colGap, F.w0, F.w1) });
+    }
+  }
   return o;
 }
 
@@ -190,10 +207,18 @@ function textEl(node, ctx) {
     const size = Math.round(Number(s.fontSize)), w = Number(s.fontWeight);
     return Number.isFinite(size) && size > 0 ? `t-${size}${Number.isFinite(w) && w ? `-${w}` : ''}` : 't';
   };
-  const spans = segs.map((s) => ({ tag: 'span', cls: ctx.styles.classFor(tName(s), declarations(segmentCss(s, ctx))), text: chars.slice(s.start, s.end), attrs: [], inline: true }));
+  // между макетами: кегль и интерлиньяж плавно переходят к следующему макету (clamp)
+  const F = ctx.fluid && ctx.peer && !ctx.fluidSkip?.has(node.id) ? ctx.peer.text.get(node.id) : null;
+  const scaled = (o) => {
+    if (!F) return o;
+    o['font-size'] = clampPx(F.fs, ctx.peer.w0, ctx.peer.w1);
+    if (F.lh && o['line-height']) o['line-height'] = clampPx(F.lh, ctx.peer.w0, ctx.peer.w1);
+    return o;
+  };
+  const spans = segs.map((s) => ({ tag: 'span', cls: ctx.styles.classFor(tName(s), declarations(scaled(segmentCss(s, ctx)))), text: chars.slice(s.start, s.end), attrs: [], inline: true }));
   // «стойка» строки — шрифт и интерлиньяж первого сегмента: иначе блок берёт их от body (16px, normal),
   // и строка с интерлиньяжем меньше ~18px становится выше, а текст сдвигается вниз на 2–3px
-  const first = segmentCss(segs[0], ctx);
+  const first = scaled(segmentCss(segs[0], ctx));
   const strut = first['font-size'] && !/NaN/.test(first['font-size'])
     ? { 'font-family': first['font-family'], 'font-size': first['font-size'], 'line-height': first['line-height'] } : {};
   const align = { LEFT: 'left', CENTER: 'center', RIGHT: 'right', JUSTIFIED: 'justify' }[t.align] || 'left';
@@ -459,7 +484,7 @@ function inlineHtml(el) {
  * Генерирует страницу для одного фрейма.
  * @returns {{ html: string, css: string, stats: object }}
  */
-export function generateFrame(tree, { mode = 'flow', absIds = null, fluid = false, fluidSkip = null, svgText = null, inlineSvg: inlineSvgOpt = true, tokens, assetUrl, title, extraCss = [], semantic = true, names = null }) {
+export function generateFrame(tree, { mode = 'flow', absIds = null, fluid = false, fluidSkip = null, peer = null, svgText = null, inlineSvg: inlineSvgOpt = true, tokens, assetUrl, title, extraCss = [], semantic = true, names = null }) {
   const styles = new StyleRegistry();
   const sem = semantic ? analyzeSemantics(tree) : null;
   // имена от ИИ (если включён) — только для безликих слоёв; теги остаются алгоритмическими
@@ -476,7 +501,7 @@ export function generateFrame(tree, { mode = 'flow', absIds = null, fluid = fals
     }
     (n.children || []).forEach((c) => walk(c, n));
   })(tree, null);
-  const ctx = { styles, tokens, assetUrl, semantic: sem, downgrade: new Set(), fluid, fluidSkip, svgText, inlineSvg: inlineSvgOpt, comps };
+  const ctx = { styles, tokens, assetUrl, semantic: sem, downgrade: new Set(), fluid, fluidSkip, svgText, inlineSvg: inlineSvgOpt, comps, peer: fluid && peer ? peerMaps(tree, peer) : null };
   const root = buildBox(tree, { mode, absIds });
   const rootEl = buildEl(root, null, ctx, false, fluid);
   // не уже макета: ниже его ширины страница уменьшается целиком (zoom), а не сжимается
