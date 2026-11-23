@@ -32,10 +32,21 @@ assert.match(css, /\.button--secondary \.button__label-text \{ color: black; \}/
 assert.match(r.pages[0].html, /class="button button--primary is-hover"/, 'показ состояния без наведения');
 assert.match(r.pages[0].html, /class="button__label"/);
 // своё у копии — класс страницы с удвоенной специфичностью (сильнее модификатора)
-const own = r.pages[1].html.match(/class="button button--primary (button-[\w]+)"/);
+const own = r.pages[1].html.match(/class="button button--primary (button--own-[\w]+)"/);
 assert.ok(own, 'у широкой копии свой класс');
 assert.match(r.pages[1].css['b.css'], new RegExp(`\\.${own[1]}\\.${own[1]} \\{ width: 300px; background: red; \\}`));
 assert.doesNotMatch(r.pages[0].css['a.css'], /\.p-def/, 'старые классы копий убраны из CSS страницы');
 assert.match(r.pages[0].css['a.css'], /\.row \{/, 'остальное на месте');
 assert.deepEqual(r.components.map((c) => c.block), ['button']);
 console.log('компоненты в CSS: варианты, состояния, своё у копий — OK');
+
+// имена классов без хеша: уникальные — как есть, повторы — с номером, имена компонентов не занимаем
+{
+  const { plainNames } = await import('../src/export-html.js');
+  const pg = { html: '<div class="hero-abc12"><p class="title-aaaaa">a</p><p class="title-bbbbb">b</p><b class="button-ccccc button"></b></div>',
+    css: { 'p.css': '.hero-abc12 { display: flex; }\n.title-aaaaa { color: red; }\n.title-bbbbb { color: blue; }\n.button-ccccc { width: 1px; }\n' } };
+  const r = plainNames(pg, '.button { display: flex; }');
+  assert.equal(r.html, '<div class="hero"><p class="title">a</p><p class="title-2">b</p><b class="button-2 button"></b></div>');
+  assert.match(r.css['p.css'], /^\.title-2 \{ color: blue; \}$/m);
+  console.log('имена классов без хеша — OK');
+}

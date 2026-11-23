@@ -62,7 +62,7 @@ function iconRegistry() {
 export function keptIds(css) {
   return new Set([...css.matchAll(/\[data-figma-id="([^"]+)"\]/g)].map((m) => m[1]));
 }
-const shipCss = (css) => css.replace(/\[data-figma-id\] > span:has\(/g, 'span:has(');
+const shipCss = (css) => css.replace(/\[data-figma-id\] > span:has\(/g, 'span:has(').replace(/\[data-figma-id\] > \./g, '.');
 
 function propMap(comp) {
   const m = new Map();
@@ -666,10 +666,12 @@ export function agentsMd(kind, { pages, comps, resp = [], routesList, css, icons
   L.push('');
   L.push('- Цвета, шрифты, тени — только через токены `var(--…)`, новые значения не вписывать.');
   L.push('- Размеры и отступы блоков взяты из макета и проверены. Не меняй их, если задача не об этом.');
-  L.push(`- Классы с суффиксом (\`card-1x2y3\`) — стили конкретного блока${kind === 'html' ? ' или своё у копии компонента (размер, переопределения)' : ''} ${kind === 'html' ? 'в css/<страница>.css' : 'в src/styles/site.css'}; найти стиль — поиском по имени класса.`);
+  L.push(kind === 'html'
+    ? '- Классы страницы (`hero`, `title-2`) — стили блоков в css/<страница>.css; `…--own` — своё у копии компонента (размер, переопределения). Найти стиль — поиском по имени класса.'
+    : '- Классы с суффиксом (`card-1x2y3`) — стили конкретного блока в src/styles/site.css; найти стиль — поиском по имени класса.');
   if (kind === 'html') L.push('- Иконки вставлены в страницы как <svg>: правь их там же или вынеси в файлы, если нужно.');
   if (icons) L.push(`- Иконки (${icons}) — в \`src/icons.js\`, в коде — \`icons.имя\`. Файл большой (SVG), читать его целиком не нужно.`);
-  L.push(`- Не нужно читать: ${kind === 'html' ? '`css/fonts.css`' : '`src/styles/fonts.css`'} (шрифты)${icons ? ', `src/icons.js` (векторы)' : ''}, ${kind === 'html' ? '`assets/`' : '`public/`'} (файлы картинок и шрифтов).`);
+  L.push(`- Не нужно читать: ${kind === 'html' ? '`css/fonts.css` (шрифты), `css/base.css` (сброс стилей браузера)' : '`src/styles/fonts.css` (шрифты)'}${icons ? ', `src/icons.js` (векторы)' : ''}, ${kind === 'html' ? '`assets/`' : '`public/`'} (файлы картинок и шрифтов).`);
   if (kind !== 'html') L.push('- Атрибуты `data-figma-id` и проп `ids` остаются только там, где к слою привязана поправка в CSS (`[data-figma-id="…"]`). Удалишь — поправка перестанет действовать.');
   L.push('');
   return L.join('\n');

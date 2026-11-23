@@ -581,17 +581,21 @@ async function build(args) {
               if (r.overflowX) why.push('горизонтальная прокрутка');
               const tb = texts.map((t) => [t, at.get(t.id)]).filter(([, b]) => b);
               const outside = tb.filter(([, b]) => b.x < -0.5 || b.x + b.w > w + 0.5);
-              if (outside.length) why.push(`текст за краем: ${outside[0][0].name}`);
+              const bad = [];
+              if (outside.length) { why.push(`текст за краем: ${outside[0][0].name}`); bad.push(outside[0][0].id); }
               let clash = null;
               for (let a = 0; !clash && a < tb.length; a++) for (let c = a + 1; c < tb.length; c++) {
-                if (overlap(tb[a][1], tb[c][1]) && !overlap(tb[a][0], tb[c][0])) { clash = [tb[a][0].name, tb[c][0].name]; break; }
+                if (overlap(tb[a][1], tb[c][1]) && !overlap(tb[a][0], tb[c][0])) { clash = [tb[a][0], tb[c][0]]; break; }
               }
-              if (clash) why.push(`текст налезает: ${clash.join(' / ')}`);
+              if (clash) { why.push(`текст налезает: ${clash.map((t) => t.name).join(' / ')}`); bad.push(...clash.map((t) => t.id)); }
+              // текст не помещается в свой блок (блок фиксированной высоты, а строк стало больше) — вылезет на соседей
+              const spill = tb.find(([t, b]) => b.ih !== undefined && b.ih > b.h + 2 && !(t.h >= b.ih - 2));
+              if (spill) { why.push(`текст не помещается в свой блок: ${spill[0].name}`); bad.push(spill[0].id); }
               // блоки на всю ширину макета (фоны секций, шапка) и на экране должны быть на всю ширину
               const bleed = (v.tree.children || []).filter((n) => n.visible !== false && n.x <= 0.5 && n.x + n.w >= v.tree.w - 0.5 && n.w > 0);
               const short = v.fluid ? bleed.filter((n) => { const b = at.get(n.id); return b && b.w < w - 1; }) : [];
               if (short.length) why.push(`не на всю ширину: ${short[0].name}`);
-              out2.push({ width: w, ok: !why.length, why });
+              out2.push({ width: w, ok: !why.length, why, bad });
             }
             return out2;
           };
@@ -619,7 +623,12 @@ async function build(args) {
               for (const [i, v] of variants.entries()) {
                 const probes = await checkRange(i);
                 entry.overflow.push(...probes);
-                if (v.fluid && probes.some((p) => !p.ok)) {
+                const badIds = [...new Set(probes.flatMap((p) => p.bad || []))];
+                if (v.fluid && probes.some((p) => !p.ok) && badIds.length && (v.rangeTries = (v.rangeTries || 0) + 1) <= 3) {
+                  // сначала точечно: эти тексты и их родители — без плавного кегля и растяжения
+                  for (const id of badIds) { v.skip.add(id); const p = v.parentOf.get(id); if (p) v.skip.add(p); }
+                  writeFluid(v); changed = true;
+                } else if (v.fluid && probes.some((p) => !p.ok)) {
                   v.fluid = false; changed = true;
                   entry.rejected = { ...entry.rejected, [Math.round(v.width)]: probes.filter((p) => !p.ok).map((p) => `${p.width}px: ${p.why.join(', ')}`).join('; ') };
                 }

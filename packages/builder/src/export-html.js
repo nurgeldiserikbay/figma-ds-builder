@@ -33,7 +33,35 @@ function rebindFixes(html, css, prefix = 'fix') {
     css = css.split(`[data-figma-id="${id}"]`).join(`.${c}`);
   }
   // общий сдвиг для стиля текста: «[data-figma-id] > span:has(…)» → «span:has(…)»
-  css = css.replace(/\[data-figma-id\] > span:has\(/g, 'span:has(');
+  css = css.replace(/\[data-figma-id\] > span:has\(/g, 'span:has(').replace(/\[data-figma-id\] > \./g, '.');
+  return { html, css };
+}
+
+/**
+ * Имена классов без хеша: «hero-cwzdf» → «hero»; одинаковые имена на странице — «title», «title-2»…
+ * Хеш нужен генератору (один набор стилей — один класс), в готовой вёрстке он только мешает читать.
+ */
+export function plainNames(pg, compCss = '') {
+  const reserved = new Set([...compCss.matchAll(/\.([\w-]+)/g)].map((m) => m[1]));
+  const all = Object.values(pg.css).join('\n');
+  const defined = new Set([...all.matchAll(/^\.([\w-]+)(?:\.[\w-]+)? \{/gm)].map((m) => m[1]));
+  const order = [];
+  for (const m of pg.html.matchAll(/ class="([^"]*)"/g)) for (const c of m[1].split(/\s+/)) if (c && !order.includes(c)) order.push(c);
+  for (const c of order) reserved.add(c);
+  const map = new Map();
+  const taken = new Set([...reserved]);
+  for (const c of order) {
+    const m = c.match(/^(.*[a-z0-9])-[0-9a-z]{5}$/);
+    if (!m || !defined.has(c)) continue;
+    let n = m[1], k = 2;
+    if (/--own$/.test(n) || taken.has(n)) { while (taken.has(`${n}-${k}`)) k++; n = taken.has(n) ? `${n}-${k}` : n; }
+    taken.add(n);
+    map.set(c, n);
+  }
+  if (!map.size) return pg;
+  const html = pg.html.replace(/ class="([^"]*)"/g, (_, v) => ` class="${v.split(/\s+/).map((c) => map.get(c) || c).join(' ')}"`);
+  const css = {};
+  for (const [f, text] of Object.entries(pg.css)) css[f] = text.replace(/\.([\w-]+)/g, (all, c) => (map.has(c) ? `.${map.get(c)}` : all));
   return { html, css };
 }
 
@@ -135,11 +163,17 @@ ${cssFiles.map((c) => `<link rel="stylesheet" href="css/${c}">`).join('\n')}
 
   // компоненты Figma: общий components.css, на страницах — классы компонентов и остатки копий
   const comp = componentize(entries.map((e) => ({ html: e.body, css: e.css })));
+  comp.pages = comp.pages.map((pg) => plainNames(pg, comp.css));
   if (comp.css) fs.writeFileSync(path.join(root, 'css', 'components.css'), comp.css);
+  // общий сброс стилей браузера (одинаковый у всех страниц) — один раз в css/base.css
+  const RESET = /^(?:\/\* Сгенерировано figma-ds-builder[^\n]*|\*, \*::before[^\n]*|html, body \{[^\n]*|h1, h2[^\n]*|ul, ol \{[^\n]*|header, footer[^\n]*|a \{ color: inherit[^\n]*|input(?:::placeholder)? \{[^\n]*|button \{ font: inherit[^\n]*)\n/gm;
+  const base = [];
+  for (const pg of comp.pages) for (const text of Object.values(pg.css)) for (const m of text.matchAll(RESET)) if (!base.includes(m[0])) base.push(m[0]);
+  if (base.length) fs.writeFileSync(path.join(root, 'css', 'base.css'), base.join(''));
   entries.forEach((e, i) => {
     const pg = comp.pages[i];
-    for (const [name, text] of Object.entries(pg.css)) fs.writeFileSync(path.join(root, 'css', name), text);
-    const files = [...(comp.css ? ['components.css'] : []), ...Object.keys(pg.css)];
+    for (const [name, text] of Object.entries(pg.css)) fs.writeFileSync(path.join(root, 'css', name), base.length ? text.replace(RESET, '') : text);
+    const files = [...(base.length ? ['base.css'] : []), ...(comp.css ? ['components.css'] : []), ...Object.keys(pg.css)];
     fs.writeFileSync(path.join(root, e.file), head(e.title, files) + e.extra + '</head>\n' + strip(pg.html).replace(/"\.\.\/assets\//g, '"assets/'));
     out.push(e.info);
   });

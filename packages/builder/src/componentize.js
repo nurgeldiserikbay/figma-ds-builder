@@ -257,7 +257,7 @@ export function componentize(pages) {
         let restCls = null;
         if (Object.keys(rest).length) {
           const decl = declStr(rest);
-          restCls = `${names[i].replace(/__/, '-')}-${hash(decl)}`;
+          restCls = `${names[i]}--own-${hash(decl)}`;
           m.pg.restRules = m.pg.restRules || new Map();
           m.pg.restRules.set(restCls, decl);
           cls.push(restCls);

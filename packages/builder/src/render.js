@@ -45,7 +45,9 @@ export async function renderPage(browser, htmlPath, { width, height, scale = 1, 
   const boxes = await page.evaluate(() =>
     [...document.querySelectorAll('[data-figma-id]')].map((el) => {
       const r = el.getBoundingClientRect();
-      return { id: el.dataset.figmaId, x: r.x + scrollX, y: r.y + scrollY, w: r.width, h: r.height };
+      // текст слоя: высота самого текста (внутренний span) — если больше блока, текст вылез за свою рамку
+      const inner = el.firstElementChild && el.firstElementChild.tagName === 'SPAN' && !el.firstElementChild.dataset.figmaId ? el.firstElementChild.getBoundingClientRect() : null;
+      return { id: el.dataset.figmaId, x: r.x + scrollX, y: r.y + scrollY, w: r.width, h: r.height, ...(inner ? { ih: inner.height } : {}) };
     }),
   );
   const overflowX = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 0.5);

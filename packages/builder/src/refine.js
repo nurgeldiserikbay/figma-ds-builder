@@ -52,15 +52,18 @@ export async function refinePage(browser, htmlPath, { refPath, tree, sources, wi
     const base = await page.evaluate((id) => {
       const el = document.querySelector(`[data-figma-id="${CSS.escape(id)}"]`);
       if (!el || !el.querySelector(':scope > span')) return null; // <input> и прочее без текста-спанов — не подстраиваем
-      const spans = [...el.querySelectorAll(':scope > span > span')];
-      return { ls: spans.map((s) => parseFloat(getComputedStyle(s).letterSpacing) || 0), fs: parseFloat(getComputedStyle(spans[0] || el).fontSize) || 16 };
+      // текст одного оформления — один span; несколько — span на кусок внутри общего
+      const nested = [...el.querySelectorAll(':scope > span > span')];
+      const spans = nested.length ? nested : [el.querySelector(':scope > span')];
+      return { single: !nested.length, ls: spans.map((s) => parseFloat(getComputedStyle(s).letterSpacing) || 0), fs: parseFloat(getComputedStyle(spans[0] || el).fontSize) || 16 };
     }, c.id);
     if (!base) continue;
 
     const apply = (dls, dy, dws = 0) => page.evaluate(({ id, ls, dls, dy, dws }) => {
       const el = document.querySelector(`[data-figma-id="${CSS.escape(id)}"]`);
       const inner = el.querySelector(':scope > span');
-      [...el.querySelectorAll(':scope > span > span')].forEach((s, i) => { s.style.letterSpacing = `${ls[i] + dls}px`; s.style.wordSpacing = dws ? `${dws}px` : ''; });
+      const nested = [...el.querySelectorAll(':scope > span > span')];
+      (nested.length ? nested : [inner]).forEach((s, i) => { s.style.letterSpacing = `${ls[i] + dls}px`; s.style.wordSpacing = dws ? `${dws}px` : ''; });
       inner.style.position = 'relative';
       inner.style.top = `${dy}px`;
     }, { id: c.id, ls: base.ls, dls, dy, dws });
@@ -94,7 +97,7 @@ export async function refinePage(browser, htmlPath, { refPath, tree, sources, wi
     // оставляем только заметное улучшение
     if (best.score < before * 0.9) {
       await apply(best.dls, best.dy, best.dws);
-      patches.push({ id: c.id, name: n.name, letterSpacing: base.ls.map((v) => Math.round((v + best.dls) * 100) / 100), wordSpacing: best.dws, dy: best.dy, before, after: best.score });
+      patches.push({ id: c.id, name: n.name, single: base.single, letterSpacing: base.ls.map((v) => Math.round((v + best.dls) * 100) / 100), wordSpacing: best.dws, dy: best.dy, before, after: best.score });
     } else {
       await apply(0, 0);
     }
@@ -107,7 +110,7 @@ export async function refinePage(browser, htmlPath, { refPath, tree, sources, wi
     return pixelmatch(ref.data, flattenWhite(img.data), null, img.width, img.height, { threshold: 0.1, includeAA: false });
   };
   const styleOf = (id) => page.evaluate((id) => {
-    const s = document.querySelector(`[data-figma-id="${CSS.escape(id)}"] > span > span`);
+    const s = document.querySelector(`[data-figma-id="${CSS.escape(id)}"] > span > span`) || document.querySelector(`[data-figma-id="${CSS.escape(id)}"] > span`);
     return s ? s.className : null;
   }, id);
   const byStyle = new Map();
@@ -122,15 +125,21 @@ export async function refinePage(browser, htmlPath, { refPath, tree, sources, wi
   for (const [cls, dys] of byStyle) {
     if (dys.some((d) => d !== dys[0])) continue; // тексты стиля не согласны — оставляем поправки по слоям
     const dy = dys[0];
+    // строка текста: сам span стиля (один кусок) или его родитель (несколько кусков)
     const set = (v) => page.evaluate(({ cls, v }) => {
-      for (const s of document.querySelectorAll(`.${CSS.escape(cls)}:first-child`)) {
-        const inner = s.parentElement;
-        if (!inner.parentElement?.hasAttribute('data-figma-id')) continue;
+      for (const s of document.querySelectorAll(`.${CSS.escape(cls)}`)) {
+        const inner = s.parentElement?.hasAttribute('data-figma-id') ? s : s.matches(':first-child') ? s.parentElement : null;
+        if (!inner || !inner.parentElement?.hasAttribute('data-figma-id')) continue;
         inner.style.position = 'relative';
         inner.style.top = v === null ? inner.dataset.top0 ?? '' : `${v}px`;
       }
     }, { cls, v });
-    await page.evaluate((cls) => { for (const s of document.querySelectorAll(`.${CSS.escape(cls)}:first-child`)) s.parentElement.dataset.top0 = s.parentElement.style.top; }, cls);
+    await page.evaluate((cls) => {
+      for (const s of document.querySelectorAll(`.${CSS.escape(cls)}`)) {
+        const inner = s.parentElement?.hasAttribute('data-figma-id') ? s : s.parentElement;
+        inner.dataset.top0 = inner.style.top;
+      }
+    }, cls);
     await set(dy);
     const t = await fullScore();
     if (t < total) {
@@ -150,11 +159,11 @@ export function patchesCss(patches) {
   const L = ['', '/* Поправки после сверки с эталоном Figma (ds-build refine) */'];
   for (const p of patches) {
     if (p.style) {
-      L.push(`[data-figma-id] > span:has(> .${p.style}:first-child) { position: relative; top: ${p.dy}px; } /* ${p.name} */`);
+      L.push(`[data-figma-id] > span:has(> .${p.style}:first-child), [data-figma-id] > .${p.style} { position: relative; top: ${p.dy}px; } /* ${p.name} */`);
       continue;
     }
     const sel = `[data-figma-id="${p.id}"]`;
-    p.letterSpacing.forEach((ls, i) => L.push(`${sel} > span > span:nth-child(${i + 1}) { letter-spacing: ${ls}px;${p.wordSpacing ? ` word-spacing: ${p.wordSpacing}px;` : ''} } /* ${p.name} */`));
+    p.letterSpacing.forEach((ls, i) => L.push(`${sel} > span${p.single ? '' : ` > span:nth-child(${i + 1})`} { letter-spacing: ${ls}px;${p.wordSpacing ? ` word-spacing: ${p.wordSpacing}px;` : ''} } /* ${p.name} */`));
     if (p.dy) L.push(`${sel} > span { position: relative; top: ${p.dy}px; }`);
   }
   return L.join('\n') + '\n';

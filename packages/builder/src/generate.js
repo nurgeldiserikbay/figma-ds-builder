@@ -223,10 +223,12 @@ function textEl(node, ctx) {
     ? { 'font-family': first['font-family'], 'font-size': first['font-size'], 'line-height': first['line-height'] } : {};
   const align = { LEFT: 'left', CENTER: 'center', RIGHT: 'right', JUSTIFIED: 'justify' }[t.align] || 'left';
   const noWrap = t.autoResize === 'WIDTH_AND_HEIGHT';
-  const inner = ctx.styles.classFor(
-    'text',
-    declarations({ display: 'block', width: '100%', 'text-align': align, 'white-space': noWrap ? 'pre' : 'pre-wrap', 'overflow-wrap': 'break-word', ...strut }),
-  );
+  const block = { display: 'block', width: '100%', 'text-align': align, 'white-space': noWrap ? 'pre' : 'pre-wrap', 'overflow-wrap': 'break-word', ...strut };
+  // текст одного оформления — один span (оформление и «стойка» строки вместе); несколько — по span на кусок
+  if (segs.length === 1) {
+    return { tag: 'span', cls: ctx.styles.classFor(tName(segs[0]), declarations({ ...block, ...scaled(segmentCss(segs[0], ctx)) })), text: chars, attrs: [], inline: true, kind: 'text' };
+  }
+  const inner = ctx.styles.classFor('text', declarations(block));
   return { tag: 'span', cls: inner, attrs: [], children: spans, inline: true, kind: 'text' };
 }
 
