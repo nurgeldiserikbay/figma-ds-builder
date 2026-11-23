@@ -75,7 +75,16 @@ function guessIncluded(n, st) {
  * поэтому толщину переносим в padding. Старые пакеты флага не знают — смотрим, где стоят дети.
  */
 export function normalizeTree(tree) {
+  // цветовой стиль Figma висит на слое (fillStyle/strokeStyle) — переносим на сплошную заливку, как переменную
+  const styleTo = (paints, style) => {
+    if (!style) return;
+    const solids = (paints || []).filter((p) => p.type === 'SOLID');
+    if (solids.length === 1 && !solids[0].variable && !solids[0].style) solids[0].style = style;
+  };
   (function walk(n) {
+    styleTo(n.fills, n.fillStyle);
+    styleTo(n.strokes, n.strokeStyle);
+    for (const sg of n.text?.segments || []) styleTo(sg.fills, sg.fillStyle);
     const L = n.layout, st = L && insideStroke(n);
     if (st && !L.strokesApplied) {
       let inc = L.strokesIncluded;

@@ -13,11 +13,15 @@ export function colorHex(c, opacity = 1) {
 }
 
 /** Контекст токенов: hex → имя CSS-переменной. Подставляем var(--x, #fallback). */
-export function colorValue(c, opacity, ctx, variable = null) {
+export function colorValue(c, opacity, ctx, variable = null, style = null) {
   const hex = colorHex(c, opacity);
-  // цвет привязан к переменной Figma — её имя (при прозрачности слоя значение уже другое — ищем по цвету)
-  const bound = variable && (opacity ?? 1) >= 1 ? ctx?.tokens?.varRef?.(variable) : null;
+  // цвет привязан к переменной Figma — её имя (при прозрачности слоя значение уже другое — ищем по цвету);
+  // иначе цветовой стиль Figma (Color style) — его токен
+  const opaque = (opacity ?? 1) >= 1;
+  const bound = variable && opaque ? ctx?.tokens?.varRef?.(variable) : null;
   if (bound) return `var(${bound}, ${hex})`;
+  const styled = style && opaque ? ctx?.tokens?.styleRef?.(style) : null;
+  if (styled) return `var(${styled}, ${hex})`;
   const v = ctx?.tokens?.colorVar(hex);
   return v ? `var(${v}, ${hex})` : hex;
 }
@@ -27,11 +31,18 @@ const visible = (p) => p && p.visible !== false && (p.opacity ?? 1) > 0;
 function paintLayer(p, ctx) {
   const op = p.opacity ?? 1;
   if (p.type === 'SOLID') {
-    const c = colorValue(p.color, op, ctx, p.variable);
+    const c = colorValue(p.color, op, ctx, p.variable, p.style);
     return { image: `linear-gradient(${c}, ${c})`, solid: c };
   }
   if (p.type && p.type.startsWith('GRADIENT') && p.css) {
-    return { image: p.css };
+    // переменные на точках градиента: i-й цвет в CSS → var(--…, цвет)
+    if (!p.stopVariables?.some(Boolean)) return { image: p.css };
+    let i = 0;
+    const css = p.css.replace(/rgba?\([^)]*\)|#[0-9a-fA-F]{3,8}\b/g, (m) => {
+      const ref = p.stopVariables[i++] && ctx?.tokens?.varRef?.(p.stopVariables[i - 1]);
+      return ref ? `var(${ref}, ${m})` : m;
+    });
+    return { image: css };
   }
   if (p.type === 'IMAGE' && p.src) {
     const size = { FILL: 'cover', FIT: 'contain', TILE: 'auto', CROP: 'cover' }[p.scaleMode] || 'cover';
@@ -62,14 +73,14 @@ export function fillsToCss(fills, ctx) {
 /** Первый видимый сплошной цвет (для текста). */
 export function solidColor(fills, ctx) {
   const p = (fills || []).filter(visible).reverse().find((f) => f.type === 'SOLID');
-  return p ? colorValue(p.color, p.opacity ?? 1, ctx, p.variable) : null;
+  return p ? colorValue(p.color, p.opacity ?? 1, ctx, p.variable, p.style) : null;
 }
 
 /** Обводка через outline: не влияет на раскладку и повторяет border-radius. */
 export function strokesToCss(node, ctx) {
   const p = (node.strokes || []).filter(visible).reverse().find((s) => s.type === 'SOLID');
   if (!p) return {};
-  const color = colorValue(p.color, p.opacity ?? 1, ctx, p.variable);
+  const color = colorValue(p.color, p.opacity ?? 1, ctx, p.variable, p.style);
   const w = node.strokeWeight;
   if (Array.isArray(w)) {
     // разные стороны: inset box-shadow по сторонам (только INSIDE — самый частый случай)
@@ -96,7 +107,9 @@ export function strokesToCss(node, ctx) {
     return { _dash: `url("data:image/svg+xml,${encodeURIComponent(svg).replace(/'/g, '%27')}")` };
   }
   const offset = { INSIDE: -w, CENTER: -w / 2, OUTSIDE: 0 }[node.strokeAlign || 'INSIDE'];
-  return { outline: `${px(w)} solid ${color}`, 'outline-offset': px(offset) };
+  const sw = node.vars?.strokeWeight;
+  const width = sw && sw.every((x) => x === sw[0]) ? withVar(ctx, sw[0], px(w)) : px(w);
+  return { outline: `${width} solid ${color}`, 'outline-offset': px(offset) };
 }
 
 export function effectsToCss(node, ctx) {
@@ -150,15 +163,16 @@ export function fontWeight(seg) {
 export function segmentCss(seg, ctx) {
   const o = {};
   if (seg.fontFamily) o['font-family'] = `"${seg.fontFamily}", sans-serif`;
-  if (Number.isFinite(seg.fontSize)) o['font-size'] = px(seg.fontSize);
-  if (seg.fontFamily || seg.fontWeight) o['font-weight'] = String(fontWeight(seg));
+  const V = seg.vars || {};
+  if (Number.isFinite(seg.fontSize)) o['font-size'] = withVar(ctx, V.fontSize, px(seg.fontSize));
+  if (seg.fontFamily || seg.fontWeight) o['font-weight'] = withVar(ctx, V.fontWeight, String(fontWeight(seg)));
   if (/italic|oblique/i.test(seg.fontStyle || '')) o['font-style'] = 'italic';
   const lh = seg.lineHeight;
-  if (lh && lh.unit === 'PIXELS') o['line-height'] = px(lh.value);
+  if (lh && lh.unit === 'PIXELS') o['line-height'] = withVar(ctx, V.lineHeight, px(lh.value));
   else if (lh && lh.unit === 'PERCENT') o['line-height'] = String(r2(lh.value / 100));
   else o['line-height'] = 'normal';
   const ls = seg.letterSpacing;
-  if (ls && ls.value) o['letter-spacing'] = ls.unit === 'PERCENT' ? `${r2(ls.value / 100)}em` : px(ls.value);
+  if (ls && ls.value) o['letter-spacing'] = ls.unit === 'PERCENT' ? `${r2(ls.value / 100)}em` : withVar(ctx, V.letterSpacing, px(ls.value));
   const color = solidColor(seg.fills, ctx);
   if (color) o.color = color;
   const tc = { UPPER: 'uppercase', LOWER: 'lowercase', TITLE: 'capitalize' }[seg.textCase];

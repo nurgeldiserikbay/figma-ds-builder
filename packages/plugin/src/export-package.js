@@ -53,9 +53,14 @@ function paints(list, ctx) {
     if (p.type === 'SOLID') {
       base.color = colorOf(p.color);
       var bound = p.boundVariables && p.boundVariables.color;
-      if (bound && ctx.names && ctx.names.vars[bound.id]) base.variable = ctx.names.vars[bound.id];
+      if (bound) base.variable = refName(ctx, 'vars', bound.id);
     }
-    else if (p.type.indexOf('GRADIENT') === 0) base.css = gradientCss(p);
+    else if (p.type.indexOf('GRADIENT') === 0) {
+      base.css = gradientCss(p);
+      // переменные на точках градиента
+      var sv = (p.gradientStops || []).map(function (st) { return st.boundVariables && st.boundVariables.color ? refName(ctx, 'vars', st.boundVariables.color.id) : null; });
+      if (sv.some(Boolean)) base.stopVariables = sv;
+    }
     else if (p.type === 'IMAGE' && p.imageHash) {
       base.src = 'images/' + p.imageHash + '.png';
       base.scaleMode = p.scaleMode;
@@ -103,11 +108,70 @@ function autoLayout(node) {
   };
 }
 
-/** Переменные, привязанные к отступам и радиусам слоя: { gap, counterGap, padding: [t,r,b,l], radius: [tl,tr,br,bl] } — имена. */
+/**
+ * Имя переменной или стиля по id. Локальные известны заранее; библиотечные (из подключённой библиотеки)
+ * узнаём после обхода фрейма (resolvePending) — пока в дереве стоит метка, её заменит имя.
+ */
+function refName(ctx, kind, id) {
+  if (!id || typeof id !== 'string' || !ctx.names) return undefined;
+  var known = ctx.names[kind][id];
+  if (known) return known;
+  ctx.pending[kind + '|' + id] = true;
+  return '\u0000' + kind + '|' + id;
+}
+
+/** Дозапрос имён библиотечных переменных и стилей, найденных в дереве. */
+async function resolvePending(ctx) {
+  var keys = Object.keys(ctx.pending);
+  for (var i = 0; i < keys.length; i++) {
+    var sep = keys[i].indexOf('|'), kind = keys[i].slice(0, sep), id = keys[i].slice(sep + 1);
+    if (ctx.names[kind][id] || ctx.names.missing[keys[i]]) continue;
+    try {
+      if (kind === 'vars') {
+        var v = await figma.variables.getVariableByIdAsync(id);
+        if (v) { ctx.names.vars[id] = v.name; ctx.names.remoteVars[id] = v; }
+      } else if (kind === 'modes') {
+        var parts = id.split(':'), cid = parts.slice(0, -1).join(':'), mid = parts[parts.length - 1];
+        var c = await figma.variables.getVariableCollectionByIdAsync(cid);
+        var m = c && c.modes.filter(function (x) { return x.modeId === mid; })[0];
+        if (m) ctx.names.modes[id] = c.name + '\u0001' + m.name;
+      } else {
+        var st = await figma.getStyleByIdAsync(id);
+        if (st) { ctx.names[kind][id] = st.name; ctx.names.remoteStyles[id] = st; }
+      }
+    } catch (e) { /* нет доступа к библиотеке — останется значение без имени */ }
+    if (!ctx.names[kind][id]) ctx.names.missing[keys[i]] = true;
+  }
+  ctx.pending = {};
+}
+
+/** JSON дерева: метки заменяются именами; не найденные имена убираются (значение остаётся). */
+function treeJson(tree, names) {
+  return JSON.stringify(tree, function (k, v) {
+    if (k === 'modes' && v && typeof v === 'object' && !Array.isArray(v)) {
+      // { id коллекции: метка } → { "Коллекция": "Режим" }
+      var m = {};
+      Object.keys(v).forEach(function (cid) {
+        var t = v[cid], full = typeof t === 'string' && t.charCodeAt(0) === 0 ? names.modes[t.slice(t.indexOf('|') + 1)] : t;
+        if (full) { var parts = full.split('\u0001'); m[parts[0]] = parts[1]; }
+      });
+      return Object.keys(m).length ? m : undefined;
+    }
+    if (typeof v !== 'string' || v.charCodeAt(0) !== 0) return v;
+    var sep = v.indexOf('|'), kind = v.slice(1, sep), id = v.slice(sep + 1);
+    var n = names[kind][id];
+    return n === undefined ? undefined : n;
+  });
+}
+
+/**
+ * Переменные, привязанные к свойствам слоя (имена): отступы, расстояния, радиусы, толщина обводки,
+ * прозрачность, размеры.
+ */
 function boundVars(node, ctx) {
   var bv = node.boundVariables;
   if (!bv || !ctx.names) return undefined;
-  var nm = function (k) { var a = bv[k]; return a && !Array.isArray(a) && ctx.names.vars[a.id] ? ctx.names.vars[a.id] : null; };
+  var nm = function (k) { var a = bv[k]; return a && !Array.isArray(a) ? refName(ctx, 'vars', a.id) || null : null; };
   var out = {}, any = false;
   var put = function (key, val) { if (val) { out[key] = val; any = true; } };
   put('gap', nm('itemSpacing'));
@@ -116,20 +180,56 @@ function boundVars(node, ctx) {
   if (pad.some(Boolean)) put('padding', pad);
   var rad = ['topLeftRadius', 'topRightRadius', 'bottomRightRadius', 'bottomLeftRadius'].map(nm);
   if (rad.some(Boolean)) put('radius', rad);
+  var sw = ['strokeTopWeight', 'strokeRightWeight', 'strokeBottomWeight', 'strokeLeftWeight'].map(nm);
+  if (!sw.some(Boolean) && nm('strokeWeight')) sw = [nm('strokeWeight'), nm('strokeWeight'), nm('strokeWeight'), nm('strokeWeight')];
+  if (sw.some(Boolean)) put('strokeWeight', sw);
+  put('opacity', nm('opacity'));
+  put('width', nm('width'));
+  put('height', nm('height'));
+  return any ? out : undefined;
+}
+
+/** Явно выбранные режимы переменных на слое: { "Color": "Dark" }. */
+function explicitModes(node, ctx) {
+  var em;
+  try { em = node.explicitVariableModes; } catch (e) { return undefined; }
+  if (!em || !ctx.names) return undefined;
+  var out = {}, any = false;
+  Object.keys(em).forEach(function (cid) { out[cid] = refName(ctx, 'modes', cid + ':' + em[cid]); any = true; });
   return any ? out : undefined;
 }
 
 /** Имена локальных переменных и стилей по id — чтобы в дереве были ссылки на дизайн-систему, а не только значения. */
 async function designNames() {
-  var names = { vars: {}, text: {}, effect: {} };
+  var names = { vars: {}, text: {}, effect: {}, paint: {}, modes: {}, remoteVars: {}, remoteStyles: {}, missing: {} };
   try { (await figma.variables.getLocalVariablesAsync()).forEach(function (v) { names.vars[v.id] = v.name; }); } catch (e) { /* нет доступа — без имён */ }
+  try {
+    (await figma.variables.getLocalVariableCollectionsAsync()).forEach(function (c) {
+      c.modes.forEach(function (m) { names.modes[c.id + ':' + m.modeId] = c.name + '\u0001' + m.name; });
+    });
+  } catch (e) { /* без режимов */ }
   try { (await figma.getLocalTextStylesAsync()).forEach(function (st) { names.text[st.id] = st.name; }); } catch (e) { /* без стилей */ }
   try { (await figma.getLocalEffectStylesAsync()).forEach(function (st) { names.effect[st.id] = st.name; }); } catch (e) { /* без стилей */ }
+  try { (await figma.getLocalPaintStylesAsync()).forEach(function (st) { names.paint[st.id] = st.name; }); } catch (e) { /* без стилей */ }
   return names;
 }
 
+/** Переменные на тексте: кегль, интерлиньяж, межбуквенный, шрифт, насыщенность. */
+function segVars(s, ctx) {
+  var bv = s.boundVariables;
+  if (!bv) return undefined;
+  var out = {}, any = false;
+  ['fontSize', 'lineHeight', 'letterSpacing', 'fontFamily', 'fontWeight', 'fontStyle'].forEach(function (k) {
+    var a = bv[k];
+    if (a && !Array.isArray(a) && a.id) { out[k] = refName(ctx, 'vars', a.id); any = true; }
+  });
+  return any ? out : undefined;
+}
+
 function textData(node, ctx) {
-  var segs = node.getStyledTextSegments(['fontName', 'fontSize', 'fontWeight', 'lineHeight', 'letterSpacing', 'fills', 'textDecoration', 'textCase', 'textStyleId']);
+  var fields = ['fontName', 'fontSize', 'fontWeight', 'lineHeight', 'letterSpacing', 'fills', 'textDecoration', 'textCase', 'textStyleId', 'fillStyleId', 'boundVariables'];
+  var segs;
+  try { segs = node.getStyledTextSegments(fields); } catch (e) { segs = node.getStyledTextSegments(fields.slice(0, 9)); } // старые версии Figma
   segs.forEach(function (s) {
     var k = s.fontName.family + '|' + s.fontName.style;
     var f = ctx.fonts[k] || (ctx.fonts[k] = { family: s.fontName.family, style: s.fontName.style, weight: s.fontWeight, sizes: {}, uses: 0 });
@@ -160,7 +260,9 @@ function textData(node, ctx) {
         letterSpacing: { unit: s.letterSpacing.unit, value: s.letterSpacing.value },
         textDecoration: s.textDecoration, textCase: s.textCase,
         fills: paints(s.fills, ctx),
-        textStyle: s.textStyleId && ctx.names ? ctx.names.text[s.textStyleId] : undefined,
+        textStyle: refName(ctx, 'text', s.textStyleId),
+        fillStyle: refName(ctx, 'paint', s.fillStyleId),
+        vars: segVars(s, ctx),
       };
     }),
   };
@@ -225,7 +327,12 @@ function serialize(node, ox, oy, ctx) {
   o.effects = effects(node);
   var vars = boundVars(node, ctx);
   if (vars) o.vars = vars;
-  if (ctx.names && node.effectStyleId && typeof node.effectStyleId === 'string' && ctx.names.effect[node.effectStyleId]) o.effectStyle = ctx.names.effect[node.effectStyleId];
+  if ('effectStyleId' in node && typeof node.effectStyleId === 'string') o.effectStyle = refName(ctx, 'effect', node.effectStyleId);
+  // цветовые стили (Color styles) на заливке и обводке — для файлов без переменных
+  if ('fillStyleId' in node && typeof node.fillStyleId === 'string') o.fillStyle = refName(ctx, 'paint', node.fillStyleId);
+  if ('strokeStyleId' in node && typeof node.strokeStyleId === 'string') o.strokeStyle = refName(ctx, 'paint', node.strokeStyleId);
+  var modes = explicitModes(node, ctx);
+  if (modes) o.modes = modes;
   var L = autoLayout(node);
   if (L) o.layout = L;
   if ('layoutPositioning' in node) o.layoutPositioning = node.layoutPositioning;
@@ -285,15 +392,16 @@ async function buildLayoutPackage(frames, opts) {
     var f = frames[i];
     progress(L('Фрейм {i} из {n}: {name}', { i: i + 1, n: frames.length, name: f.name }), i);
     var t = f.absoluteTransform;
-    var ctx = { images: images, vectors: [], instances: [], count: 0, fonts: fonts, errors: [], names: names };
+    var ctx = { images: images, vectors: [], instances: [], count: 0, fonts: fonts, errors: [], names: names, pending: {} };
     var tree;
     try { tree = serialize(f, t[0][2], t[1][2], ctx); } catch (e) {
       warnings.push(L('Фрейм «{name}» пропущен: {err}', { name: f.name, err: e && e.message ? e.message : String(e) }));
       continue;
     }
     if (ctx.errors.length) warnings.push(L('Фрейм «{name}»: не прочитаны слои ({n}), остались только их рамки: {list}', { name: f.name, n: ctx.errors.length, list: ctx.errors.slice(0, 3).join('; ') + (ctx.errors.length > 3 ? '; …' : '') }));
+    await resolvePending(ctx);
     var fid = fileId(f.id);
-    files.push({ path: 'frames/' + fid + '.json', data: JSON.stringify(tree) });
+    files.push({ path: 'frames/' + fid + '.json', data: treeJson(tree, names) });
 
     // эталон: рендер Figma
     // ровно в границах фрейма, даже если содержимое выступает за них.
@@ -337,8 +445,8 @@ async function buildLayoutPackage(frames, opts) {
   }).sort(function (a, b) { return b.uses - a.uses; });
   files.push({ path: 'fonts.json', data: JSON.stringify(fontList, null, 2) });
   try {
-    files.push({ path: 'variables.json', data: JSON.stringify(await exportVariables(), null, 2) });
-    files.push({ path: 'styles.json', data: JSON.stringify(await exportStyles(), null, 2) });
+    files.push({ path: 'variables.json', data: JSON.stringify(await exportVariables(names), null, 2) });
+    files.push({ path: 'styles.json', data: JSON.stringify(await exportStyles(names), null, 2) });
   } catch (e) { progress(L('Переменные/стили не выгружены: {err}', { err: e.message })); }
   if (opts.tokens) files.push({ path: 'tokens.json', data: JSON.stringify(opts.tokens, null, 2) });
   if (opts.analysis) files.push({ path: 'analysis.json', data: JSON.stringify(opts.analysis) });
@@ -358,42 +466,87 @@ async function buildLayoutPackage(frames, opts) {
   return { manifest: manifest, files: files, warnings: warnings };
 }
 
-/** Локальные переменные файла: коллекции, режимы, значения (алиасы — ссылкой на имя). */
-async function exportVariables() {
+/**
+ * Переменные: локальные коллекции файла и библиотечные переменные, которые встретились в макетах
+ * (с цепочкой алиасов). Значения по режимам, алиасы — ссылкой на имя.
+ */
+async function exportVariables(names) {
+  names = names || { remoteVars: {} };
   var cols = await figma.variables.getLocalVariableCollectionsAsync();
   var vars = await figma.variables.getLocalVariablesAsync();
   var byId = {};
   vars.forEach(function (v) { byId[v.id] = v; });
-  return cols.map(function (c) {
+  // библиотечные: те, что привязаны к слоям, и всё, на что они ссылаются
+  var queue = Object.keys(names.remoteVars).map(function (id) { return names.remoteVars[id]; });
+  var remote = {};
+  while (queue.length) {
+    var rv = queue.shift();
+    if (!rv || byId[rv.id] || remote[rv.id]) continue;
+    remote[rv.id] = rv;
+    var vals = rv.valuesByMode || {};
+    for (var mk in vals) {
+      var val = vals[mk];
+      if (val && val.type === 'VARIABLE_ALIAS' && !byId[val.id] && !remote[val.id]) {
+        try { queue.push(await figma.variables.getVariableByIdAsync(val.id)); } catch (e) { /* нет доступа */ }
+      }
+    }
+  }
+  var nameOf = function (id) { var v = byId[id] || remote[id]; return v ? v.name : id; };
+  var describe = function (v, modes) {
+    var values = {};
+    modes.forEach(function (m) {
+      var val = v.valuesByMode[m.modeId];
+      if (val && val.type === 'VARIABLE_ALIAS') val = { alias: nameOf(val.id) };
+      values[m.name] = val;
+    });
+    return { name: v.name, type: v.resolvedType, values: values, scopes: v.scopes, codeSyntax: v.codeSyntax || undefined };
+  };
+  var out = cols.map(function (c) {
     return {
       name: c.name,
       modes: c.modes.map(function (m) { return m.name; }),
-      variables: c.variableIds.map(function (id) { return byId[id]; }).filter(Boolean).map(function (v) {
-        var values = {};
-        c.modes.forEach(function (m) {
-          var val = v.valuesByMode[m.modeId];
-          if (val && val.type === 'VARIABLE_ALIAS') val = { alias: byId[val.id] ? byId[val.id].name : val.id };
-          values[m.name] = val;
-        });
-        return { name: v.name, type: v.resolvedType, values: values, scopes: v.scopes, codeSyntax: v.codeSyntax || undefined };
-      }),
+      variables: c.variableIds.map(function (id) { return byId[id]; }).filter(Boolean).map(function (v) { return describe(v, c.modes); }),
     };
   });
+  // библиотечные — по своим коллекциям (если библиотека их не отдаёт — одна коллекция «Library»)
+  var groups = {};
+  var ids = Object.keys(remote);
+  for (var i = 0; i < ids.length; i++) {
+    var v = remote[ids[i]], col = null;
+    try { col = await figma.variables.getVariableCollectionByIdAsync(v.variableCollectionId); } catch (e) { col = null; }
+    var key = col ? col.id : 'library';
+    if (!groups[key]) {
+      var modes = col ? col.modes : Object.keys(v.valuesByMode || {}).map(function (mid, j) { return { modeId: mid, name: j ? 'Mode ' + (j + 1) : 'Value' }; });
+      groups[key] = { name: col ? col.name : 'Library', remote: true, modesRaw: modes, variables: [] };
+    }
+    groups[key].variables.push(describe(v, groups[key].modesRaw));
+  }
+  Object.keys(groups).forEach(function (k) {
+    var g = groups[k];
+    out.push({ name: g.name, remote: true, modes: g.modesRaw.map(function (m) { return m.name; }), variables: g.variables });
+  });
+  return out;
 }
 
-/** Локальные стили: цвета, текст, эффекты, сетки. */
-async function exportStyles() {
+/** Стили: локальные и библиотечные, встретившиеся в макетах (remote: true). */
+async function exportStyles(names) {
   var paint = await figma.getLocalPaintStylesAsync();
   var text = await figma.getLocalTextStylesAsync();
   var effect = await figma.getLocalEffectStylesAsync();
-  var ctx = { images: {} };
+  var rs = names ? names.remoteStyles : {};
+  Object.keys(rs).forEach(function (id) {
+    var st = rs[id];
+    var list = st.type === 'PAINT' ? paint : st.type === 'TEXT' ? text : st.type === 'EFFECT' ? effect : null;
+    if (list && !list.some(function (x) { return x.id === st.id; })) { st.__remote = true; list.push(st); }
+  });
+  var ctx = { images: {}, names: names, pending: {} };
   return {
-    paint: paint.map(function (s) { return { name: s.name, paints: paints(s.paints, ctx) }; }),
+    paint: paint.map(function (s) { return { name: s.name, paints: paints(s.paints, ctx).map(function (p) { if (typeof p.variable === 'string' && p.variable.charCodeAt(0) === 0) delete p.variable; return p; }), remote: s.__remote || undefined }; }),
     text: text.map(function (s) {
-      return { name: s.name, fontFamily: s.fontName.family, fontStyle: s.fontName.style, fontSize: s.fontSize,
+      return { name: s.name, remote: s.__remote || undefined, fontFamily: s.fontName.family, fontStyle: s.fontName.style, fontSize: s.fontSize,
         lineHeight: s.lineHeight, letterSpacing: s.letterSpacing, textCase: s.textCase, textDecoration: s.textDecoration };
     }),
-    effect: effect.map(function (s) { return { name: s.name, effects: s.effects.map(function (e) {
+    effect: effect.map(function (s) { return { name: s.name, remote: s.__remote || undefined, effects: s.effects.map(function (e) {
       return e.type === 'DROP_SHADOW' || e.type === 'INNER_SHADOW'
         ? { type: e.type, x: e.offset.x, y: e.offset.y, blur: e.radius, spread: e.spread || 0, color: colorOf(e.color) }
         : { type: e.type, radius: e.radius };

@@ -86,3 +86,36 @@ ok('design-system/ из переменных и стилей Figma', () => {
   assert.doesNotMatch(css, /violet/);
   assert.match(toScss(f), /\$bg-accent: \$indigo-600;/);
 });
+
+ok('цветовые стили, переменные на тексте, градиенте, обводке, прозрачности; режим на слое', () => {
+  const vars2 = [...variables, { name: 'Lib', remote: true, modes: ['Default'], variables: [
+    { name: 'size/body', type: 'FLOAT', scopes: ['FONT_SIZE'], values: { Default: 16 } },
+    { name: 'stroke/thin', type: 'FLOAT', scopes: ['STROKE_FLOAT'], values: { Default: 2 } },
+    { name: 'opacity/muted', type: 'FLOAT', scopes: ['OPACITY'], values: { Default: 50 } },
+  ] }];
+  const st2 = { ...styles, paint: [{ name: 'Old/Accent', paints: [{ type: 'SOLID', visible: true, opacity: 1, color: { r: 1, g: 0, b: 0, a: 1 } }] }] };
+  const tk = loadTokens(null, vars2, st2);
+  const css0 = tk.css();
+  assert.match(css0, /--old-accent: #ff0000;/);
+  assert.match(css0, /--opacity-muted: 0\.5;/, 'прозрачность из Figma (0–100) → 0–1');
+  assert.match(css0, /:root, \[data-mode="light"\] \{/);
+  const tree = { id: '1:1', name: 'Screen', type: 'FRAME', x: 0, y: 0, w: 300, h: 100, visible: true, modes: { Color: 'Dark' }, fills: [], children: [
+    { id: '1:2', name: 'Old', type: 'RECTANGLE', x: 0, y: 0, w: 50, h: 50, visible: true, opacity: 0.5, vars: { opacity: 'opacity/muted', strokeWeight: ['stroke/thin', 'stroke/thin', 'stroke/thin', 'stroke/thin'] },
+      fills: [{ type: 'SOLID', visible: true, opacity: 1, color: { r: 1, g: 0, b: 0, a: 1 } }], fillStyle: 'Old/Accent',
+      strokes: [{ type: 'SOLID', visible: true, opacity: 1, color: { r: 0, g: 0, b: 0, a: 1 } }], strokeWeight: 2, strokeAlign: 'INSIDE' },
+    { id: '1:3', name: 'Grad', type: 'RECTANGLE', x: 60, y: 0, w: 50, h: 50, visible: true,
+      fills: [{ type: 'GRADIENT_LINEAR', visible: true, opacity: 1, css: 'linear-gradient(90deg, rgba(67, 56, 202, 1) 0%, rgba(255, 255, 255, 1) 100%)', stopVariables: ['indigo/600', null] }] },
+    { id: '1:4', name: 'T', type: 'TEXT', x: 120, y: 0, w: 100, h: 24, visible: true, text: { characters: 'Hi', autoResize: 'WIDTH_AND_HEIGHT',
+      segments: [{ start: 0, end: 2, fontFamily: 'Inter', fontStyle: 'Regular', fontWeight: 400, fontSize: 16, lineHeight: { unit: 'PIXELS', value: 24 }, letterSpacing: { unit: 'PIXELS', value: 0 },
+        fills: [{ type: 'SOLID', visible: true, opacity: 1, color: { r: 1, g: 0, b: 0, a: 1 } }], fillStyle: 'Old/Accent', vars: { fontSize: 'size/body' } }] } },
+  ] };
+  normalizeTree(tree);
+  const { css, html } = generateFrame(tree, { mode: 'flow', tokens: tk, assetUrl: (r) => r, title: 'S' });
+  assert.match(css, /background: var\(--old-accent, #ff0000\)/, 'цветовой стиль на заливке');
+  assert.match(css, /color: var\(--old-accent, #ff0000\)/, 'цветовой стиль на тексте');
+  assert.match(css, /opacity: var\(--opacity-muted, 0\.5\)/);
+  assert.match(css, /outline: var\(--stroke-thin, 2px\) solid/);
+  assert.match(css, /linear-gradient\(90deg, var\(--indigo-600, rgba\(67, 56, 202, 1\)\) 0%, rgba\(255, 255, 255, 1\) 100%\)/);
+  assert.match(css, /font-size: var\(--size-body, 16px\)/);
+  assert.match(html, /data-mode="dark"/);
+});

@@ -92,11 +92,16 @@ ID узлов Figma содержат `:` и `;` — в именах файлов
     "strokesIncluded": true   // обводка занимает место в раскладке (strokesIncludedInLayout): дети сдвинуты на её толщину.
                               // Нет поля (старые пакеты) — программа понимает это по положению детей
   },
-  // переменные Figma, привязанные к отступам и радиусам (имена переменных)
+  // переменные Figma, привязанные к свойствам слоя (имена переменных; и локальные, и из библиотеки)
   "vars": { "gap": "space/md", "counterGap": "space/md",
             "padding": ["space/sm", "space/lg", "space/sm", "space/lg"],   // null — сторона без переменной
-            "radius": ["radius/md", "radius/md", "radius/md", "radius/md"] },
+            "radius": ["radius/md", "radius/md", "radius/md", "radius/md"],
+            "strokeWeight": ["stroke/thin", "stroke/thin", "stroke/thin", "stroke/thin"],
+            "opacity": "opacity/muted", "width": "size/icon", "height": "size/icon" },
   "effectStyle": "Shadow/Card", // стиль эффекта Figma, если подключён
+  "fillStyle": "Brand/Accent",  // цветовой стиль (Color style) на заливке
+  "strokeStyle": "Brand/Line",  // цветовой стиль на обводке
+  "modes": { "Color": "Dark" }, // режим переменных, выбранный на слое (коллекция → режим)
   // как узел ведёт себя внутри Auto Layout родителя
   "layoutPositioning": "AUTO",          // AUTO | ABSOLUTE
   "sizing": { "h": "FIXED", "v": "HUG" }, // FIXED | HUG | FILL
@@ -117,7 +122,9 @@ ID узлов Figma содержат `:` и `;` — в именах файлов
         "letterSpacing": { "unit": "PIXELS", "value": 0 }, // PIXELS | PERCENT
         "textDecoration": "NONE", "textCase": "ORIGINAL",
         "fills": [ /* Paint */ ],
-        "textStyle": "Body/Medium" }  // текстовый стиль Figma, если подключён
+        "textStyle": "Body/Medium",   // текстовый стиль Figma, если подключён
+        "fillStyle": "Brand/Accent",  // цветовой стиль на тексте
+        "vars": { "fontSize": "size/body", "lineHeight": "…", "letterSpacing": "…", "fontFamily": "…", "fontWeight": "…" } }
     ]
   },
 
@@ -134,13 +141,16 @@ ID узлов Figma содержат `:` и `;` — в именах файлов
 ```jsonc
 { "type": "SOLID", "color": { "r": 0.23, "g": 0.51, "b": 0.96, "a": 1 }, "opacity": 1, "visible": true,
   "variable": "color/bg/accent" }  // имя локальной переменной, если цвет к ней привязан
-{ "type": "GRADIENT_LINEAR", "css": "linear-gradient(90deg, #3B82F6 0%, #8B5CF6 100%)", "opacity": 1 }
+{ "type": "GRADIENT_LINEAR", "css": "linear-gradient(90deg, #3B82F6 0%, #8B5CF6 100%)", "opacity": 1,
+  "stopVariables": ["brand/blue", null] }  // переменные на точках градиента (по порядку), если есть
 { "type": "IMAGE", "src": "images/ab12cd.png", "scaleMode": "FILL", "opacity": 1 }  // FILL | FIT | CROP | TILE
 ```
 
 Цвета — в диапазоне 0..1, как в Figma API. В `variables.json` у переменной есть `codeSyntax`
 (Code syntax из Figma, например `{ "WEB": "var(--bg-accent)" }`) — по нему программа называет CSS-переменные.
-Переменные из подключённых библиотек (не локальные) плагин пока не называет — для них остаётся значение. Градиенты плагин сразу переводит в CSS
+Переменные и стили из подключённых библиотек плагин называет так же, как локальные: в `variables.json` они
+лежат коллекциями с `"remote": true` (вместе с переменными, на которые ссылаются), в `styles.json` — с `"remote": true`.
+Если библиотека недоступна (нет доступа), остаётся значение без имени. Градиенты плагин сразу переводит в CSS
 (в анализаторе это уже есть).
 
 ## Что программа делает с пакетом

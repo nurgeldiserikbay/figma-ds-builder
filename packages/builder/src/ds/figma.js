@@ -55,6 +55,16 @@ export function withFigma(ds, variables, styles) {
   const isRadius = (it) => (it.v.scopes || []).includes('CORNER_RADIUS') || /radius|corner/i.test(it.v.name);
   const isSpace = (it) => !isRadius(it) && ((it.v.scopes || []).some((s) => s === 'GAP') || /space|spacing|gap|padding/i.test(it.v.name));
 
+  // файл без цветовых переменных, но с цветовыми стилями (Color styles) — палитра из стилей
+  if (!tokens.length) {
+    for (const st of styles?.paint || []) {
+      const solids = (st.paints || []).filter((p) => p.type === 'SOLID' && p.visible !== false);
+      if (solids.length !== 1) continue;
+      const hex = hexOf({ ...solids[0].color, a: (solids[0].color.a ?? 1) * (solids[0].opacity ?? 1) });
+      const name = slug(st.name);
+      tokens.push({ name, hex, css: `--${name}`, path: ['color', ...st.name.split('/').map(slug)], uses: usesByHex.get(hex.toLowerCase()) || 0, members: [hex], figma: st.name });
+    }
+  }
   const out = { ...ds, figma: true, colors: { ...ds.colors }, typography: { ...ds.typography }, spacing: { ...ds.spacing } };
   if (tokens.length) { out.colors.tokens = tokens; out.colors.semantic = semantic; out.colors.rare = []; }
   const space = numbers(isSpace);

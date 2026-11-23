@@ -47,7 +47,8 @@ export function variablesToTokens(collections) {
     if (v.type === 'COLOR' && val && typeof val === 'object') return hexOf(val);
     if (v.type === 'FLOAT' && typeof val === 'number') {
       const sc = v.scopes || [];
-      if (sc.some((x) => x === 'FONT_WEIGHT' || x === 'OPACITY')) return String(val);
+      if (sc.includes('OPACITY')) return String(Math.round(val) / 100); // в Figma прозрачность 0–100
+      if (sc.includes('FONT_WEIGHT')) return String(val);
       return `${Math.round(val * 100) / 100}px`;
     }
     if (v.type === 'STRING' && typeof val === 'string') return JSON.stringify(val);
@@ -59,7 +60,9 @@ export function variablesToTokens(collections) {
     (coll.modes || []).forEach((m, i) => {
       const val = valueOf(v, v.values?.[m]);
       if (val == null) return;
-      const key = i === 0 ? ':root' : `[data-mode="${String(m).toLowerCase().replace(/[^a-z0-9]+/g, '-')}"]`;
+      // первый режим — :root и свой data-mode (чтобы вложенный блок мог вернуться к нему внутри другого режима)
+      const sel = `[data-mode="${String(m).toLowerCase().replace(/[^a-z0-9]+/g, '-')}"]`;
+      const key = i === 0 ? `:root, ${sel}` : sel;
       if (!modes.has(key)) modes.set(key, []);
       modes.get(key).push(`  ${css}: ${val};`);
     });
@@ -75,7 +78,7 @@ export function variablesToTokens(collections) {
   };
   const ranked = list.filter((x) => x.v.type === 'COLOR').sort((a, b) => (b.v.scopes?.length ? 1 : 0) - (a.v.scopes?.length ? 1 : 0));
   for (const x of ranked) { const h = resolve(x.v.name); if (h && !byHex.has(h)) byHex.set(h, x.css); }
-  return { list, cssName, modes, byHex };
+  return { list, cssName, modes, byHex, used };
 }
 
 /** Стили эффектов Figma (styles.json) → --shadow-…: те же тени, что в макете. */
@@ -94,12 +97,31 @@ function effectTokens(styles) {
   return { map, lines };
 }
 
+/** Цветовые стили Figma (Color styles) → --имя-стиля; стиль на переменной — ссылкой на неё. */
+function paintTokens(styles, fv) {
+  const map = new Map(), lines = [];
+  const used = new Set(fv ? fv.used : []);
+  for (const st of styles?.paint || []) {
+    const solids = (st.paints || []).filter((p) => p.type === 'SOLID' && p.visible !== false);
+    if (solids.length !== 1) continue;
+    const p = solids[0];
+    const ref = p.variable && fv?.cssName.get(p.variable);
+    const val = ref ? `var(${ref})` : hexOf({ ...p.color, a: (p.color.a ?? 1) * (p.opacity ?? 1) });
+    let n = slugVar(st.name);
+    while (used.has(n)) n += '-style';
+    used.add(n); map.set(st.name, n); lines.push(`  ${n}: ${val};`);
+  }
+  return { map, lines };
+}
+
 export function loadTokens(json, variables = null, styles = null) {
   const fv = variables && variables.some((c) => (c.variables || []).length) ? variablesToTokens(variables) : null;
   const fx = effectTokens(styles);
+  const ps = paintTokens(styles, fv);
   const base = fv ? null : loadTokensJson(json);
   const modes = fv ? new Map(fv.modes) : new Map();
-  if (fx.lines.length) modes.set(':root', [...(modes.get(':root') || []), ...fx.lines]);
+  const rootKey = [...modes.keys()].find((k) => k.startsWith(':root')) || ':root';
+  if (fx.lines.length || ps.lines.length) modes.set(rootKey, [...(modes.get(rootKey) || []), ...ps.lines, ...fx.lines]);
   const figmaCss = [...modes].map(([sel, lines]) => `${sel} {\n${lines.join('\n')}\n}\n`).join('\n');
   return {
     count: fv ? fv.list.length : base.count,
@@ -107,7 +129,8 @@ export function loadTokens(json, variables = null, styles = null) {
     colorVar: (hex) => (fv ? fv.byHex.get(normHex(hex)) || null : base.colorVar(hex)),
     varRef: (name) => (fv ? fv.cssName.get(name) || null : null),
     effectVar: (name) => fx.map.get(name) || null,
-    css: () => (fv ? figmaCss : base.css() + (fx.lines.length ? `:root {\n${fx.lines.join('\n')}\n}\n` : '')),
+    styleRef: (name) => ps.map.get(name) || null,
+    css: () => (fv ? figmaCss : base.css() + (fx.lines.length || ps.lines.length ? `:root {\n${[...ps.lines, ...fx.lines].join('\n')}\n}\n` : '')),
   };
 }
 

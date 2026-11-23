@@ -90,7 +90,7 @@ function nodeVisualCss(node, ctx) {
   if (!node.svg && node.type !== 'TEXT') Object.assign(o, fillsToCss(node.fills, ctx));
   Object.assign(o, radiusToCss(node, ctx));
   if (node.clipsContent) o.overflow = 'hidden';
-  if (node.opacity !== undefined && node.opacity < 1) o.opacity = String(r2(node.opacity));
+  if (node.opacity !== undefined && node.opacity < 1) o.opacity = withVar(ctx, node.vars?.opacity, String(r2(node.opacity)));
   if (node.blendMode && !['NORMAL', 'PASS_THROUGH'].includes(node.blendMode)) {
     o['mix-blend-mode'] = node.blendMode.toLowerCase().replace(/_/g, '-');
   }
@@ -387,6 +387,9 @@ function buildEl(box, place, ctx, inPhrasing = false, grow = false) {
   const attrs = [];
   for (const [k, v] of Object.entries(sem?.attrs || {})) if (tag !== 'div' || k === 'role' || k === 'aria-label') attrs.push([k, v]);
   if (node) attrs.push(['data-figma-id', node.id], ['data-name', node.name]);
+  // режим переменных, выбранный на слое в Figma (Light/Dark…) — tokens.css переключает значения по data-mode
+  const mode = node?.modes && Object.values(node.modes)[0];
+  if (mode) attrs.push(['data-mode', String(mode).toLowerCase().replace(/[^a-z0-9]+/g, '-')]);
   return {
     tag, cls, style: placementStyle(place), attrs, children: kids, inlineChildren: inlineKids,
     id: node?.id, name: sem?.name || (node ? node.name : 'group'), kind: box.kind, component: node?.component || null,
