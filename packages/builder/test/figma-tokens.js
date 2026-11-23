@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { loadTokens } from '../src/tokens.js';
 import { normalizeTree } from '../src/package.js';
 import { generateFrame } from '../src/generate.js';
+import { withFigma } from '../src/ds/figma.js';
+import { toCss, toScss } from '../src/ds/export.js';
 
 const ok = (name, fn) => { fn(); console.log('OK', name); };
 
@@ -67,4 +69,20 @@ ok('вёрстка ссылается на переменные Figma', () => {
   assert.match(css, /padding: var\(--space-lg, 24px\) var\(--space-lg, 24px\)/);
   assert.match(css, /border-radius: var\(--radius-md, 10px\)/);
   assert.match(css, /box-shadow: var\(--shadow-card, /);
+});
+
+ok('design-system/ из переменных и стилей Figma', () => {
+  const ds = { meta: { date: 'd', frames: [] }, colors: { tokens: [{ name: 'violet-700', hex: '#4338ca', uses: 5, members: ['#4338ca'] }], semantic: [], gradients: [], rare: [{ hex: '#4339ca', into: '#4338ca' }] },
+    typography: { families: [{ role: 'primary', family: 'Inter' }], styles: [] }, spacing: { base: 4, tokens: [] }, radius: [], shadows: [], breakpoints: [], borders: [], audit: { score: 90, issues: [], metrics: {}, contrast: [] } };
+  const st = { ...styles, text: [{ name: 'Body/Medium', fontFamily: 'Inter', fontStyle: 'Semi Bold', fontSize: 16, lineHeight: { unit: 'PIXELS', value: 24 }, letterSpacing: { unit: 'PERCENT', value: -2 } }] };
+  const f = withFigma(ds, variables, st);
+  const css = toCss(f);
+  assert.match(css, /--indigo-600: #4338ca;/);
+  assert.match(css, /--bg-accent: var\(--indigo-600\);/);
+  assert.match(css, /--space-lg: 24px;/);
+  assert.match(css, /--radius-md: 10px;/);
+  assert.match(css, /--shadow-card: 0px 4px 12px 0px #00000040;/);
+  assert.match(css, /\.type-body-medium \{[^}]*font-weight: 600;[^}]*letter-spacing: -0\.32px;/);
+  assert.doesNotMatch(css, /violet/);
+  assert.match(toScss(f), /\$bg-accent: \$indigo-600;/);
 });

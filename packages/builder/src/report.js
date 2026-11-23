@@ -1,7 +1,7 @@
 // HTML-отчёт: эталон / вёрстка / разница + наложение с ползунком.
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
-export function buildReport({ file, threshold, textThreshold, results, responsive = [] }) {
+export function buildReport({ file, threshold, textThreshold, textAreaThreshold = 4, results, responsive = [] }) {
   const passed = results.filter((r) => r.pass).length;
   const cards = results
     .map((r) => {
@@ -9,7 +9,7 @@ export function buildReport({ file, threshold, textThreshold, results, responsiv
         : `<span class="badge ${r.pass ? 'ok' : 'fail'}">${r.pass ? 'pixel perfect ✓' : 'не прошло ✗'}</span>`;
       const g = r.geometry;
       const geo = g ? `<p class="meta">Геометрия: ${g.checked - g.failed} из ${g.checked} элементов совпадают с макетом (допуск ±${g.tolerance}px, макс. отклонение ${g.maxDelta}px)` +
-        (r.diff ? ` · pixel diff: ${r.diff.percent.toFixed(3)}%` + (r.pixels ? ` (текст ${r.pixels.textPct.toFixed(3)}%, остальное ${r.pixels.otherPct.toFixed(3)}%)` : '') : '') + '</p>' +
+        (r.diff ? ` · pixel diff: ${r.diff.percent.toFixed(3)}%` + (r.pixels ? ` (текст ${r.pixels.textPct.toFixed(3)}%${r.pixels.textAreaPct != null ? ` = ${r.pixels.textAreaPct.toFixed(1)}% площади текстов` : ''}, остальное ${r.pixels.otherPct.toFixed(3)}%)` : '') : '') + '</p>' +
         (g.issues.length ? '<ul class="warn">' + g.issues.slice(0, 10).map((i) => `<li>${esc(i.name)} (${esc(i.id)}): Δ ${i.delta}px — Figma ${i.figma.x},${i.figma.y} ${i.figma.w}×${i.figma.h}, вёрстка ${i.html.x},${i.html.y} ${i.html.w}×${i.html.h}</li>`).join('') + '</ul>' : '') : '';
       const tries = (r.attempts || [])
         .map((a) => `<li>${esc(a.mode === 'hybrid' ? `flow с закреплёнными блоками (${a.pinned})` : a.mode)}: pixel diff ${!Number.isFinite(a.percent) ? '—' : a.percent.toFixed(3) + '%'}, ошибок геометрии ${a.geometryFailed ?? '—'}${a.chosen ? ' — <b>выбран</b>' : ''}</li>`)
@@ -71,7 +71,7 @@ export function buildReport({ file, threshold, textThreshold, results, responsiv
 <body><main>
 <h1>Pixel diff: ${esc(file)}</h1>
 <p class="summary"><a href="design-system/design-system.md">Дизайн-система</a> · <a href="design-system/tokens.json">tokens.json</a> (импорт в Figma — кнопкой в плагине)</p>
-<p class="summary">Критерий: геометрия каждого элемента ±0.5px; несовпадающих пикселей вне текста не больше ${threshold}%, в тексте — не больше ${textThreshold}% · прошли ${passed} из ${results.length} фреймов</p>
+<p class="summary">Критерий: геометрия каждого элемента ±0.5px; несовпадающих пикселей вне текста не больше ${threshold}%, в тексте — не больше ${textThreshold}% экрана или ${textAreaThreshold}% площади текстов (сглаживание букв в Figma и браузере различается) · прошли ${passed} из ${results.length} фреймов</p>
 ${results.length > 6 ? `<nav class="card toc">
   <label class="only"><input type="checkbox" id="onlyFailed"${results.some((r) => r.pass === false) ? '' : ' disabled'}> показывать только фреймы с расхождениями</label>
   ${results.some((r) => r.pass === false) ? `<p class="meta"><b>Не прошли (${results.filter((r) => r.pass === false).length}):</b> ${results.filter((r) => r.pass === false).map((r) => `<a href="#f-${esc(r.dir)}">${esc(r.name)}</a>`).join(' · ')}</p>` : '<p class="meta">Все фреймы прошли проверку.</p>'}

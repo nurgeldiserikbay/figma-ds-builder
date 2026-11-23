@@ -92,8 +92,13 @@ function collect(frames) {
     };
     void WHITE;
 
-    (function walk(n, parent, depth) {
+    // неактивные элементы (State=Disabled и т. п.) по WCAG 1.4.3 не обязаны быть контрастными
+    const DISABLED = /disabled|inactive|неактив|недоступ|выключ/i;
+    const isDisabled = (n) => Object.entries(n.component?.variant || {}).some(([k, v]) => /state|состояни/i.test(k) && DISABLED.test(String(v)))
+      || ((n.type === 'COMPONENT' || n.type === 'INSTANCE') && /(?:^|,)\s*(?:state|состояние)\s*=\s*[^,]*(?:disabled|inactive|неактив|недоступ|выключ)/i.test(n.name || ''));
+    (function walk(n, parent, depth, disabled = false) {
       if (n.visible === false) return;
+      disabled = disabled || isDisabled(n);
       const isText = n.type === 'TEXT';
       const shapeLike = !isText && !n.svg && !n.vectorPlaceholder;
       // заливки
@@ -132,7 +137,7 @@ function collect(frames) {
           if (tc) {
             useColor(tc.color, tc.alpha, 'text', chars);
           }
-          if (tc && bg) {
+          if (tc && bg && !disabled) {
             const fg = over(tc.color, tc.alpha, bg);
             C.textChecks.push({ name: n.name, id: n.id, frame: tree.name, size: s.fontSize, weight: s.fontWeight || 400, fg, bg, chars, ratio: contrast(fg, bg) });
           }
@@ -144,7 +149,7 @@ function collect(frames) {
           }
         }
       }
-      if (scaled) { (n.children || []).forEach((c) => walk(c, n, depth + 1)); return; } // с копий берём только цвета
+      if (scaled) { (n.children || []).forEach((c) => walk(c, n, depth + 1, disabled)); return; } // с копий берём только цвета
       // радиусы
       if (n.radius && shapeLike) {
         const arr = Array.isArray(n.radius) ? n.radius : [n.radius, n.radius, n.radius, n.radius];
@@ -163,7 +168,7 @@ function collect(frames) {
 
       // отступы
       if (!scaled && n.children?.length) collectSpacing(n, C);
-      (n.children || []).forEach((c) => walk(c, n, depth + 1));
+      (n.children || []).forEach((c) => walk(c, n, depth + 1, disabled));
     })(tree, null, 0);
   }
   return C;

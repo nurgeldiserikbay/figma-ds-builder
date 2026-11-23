@@ -19,6 +19,7 @@ import { suggestNames, aiProviders } from './ai.js';
 import { analyzeSemantics } from './semantic.js';
 import { analyzeDesignSystem } from './ds/analyze.js';
 import { exportFiles, toTokens } from './ds/export.js';
+import { withFigma, hasFigmaSystem } from './ds/figma.js';
 import { familiesOf, facesOf, ensureFonts, buildFontsCss, defaultCacheDir } from './fonts.js';
 import { findComponents } from './components.js';
 import { preparePages, exportReact, exportVue, renderReact, renderVue, checkPageHtml, shippedCheckPage, projectAssetPrefix } from './frameworks.js';
@@ -56,6 +57,8 @@ ds-build build <пакет.zip> [ещё части.zip …] [опции]
   --threshold <%>      допустимая доля несовпадающих пикселей вне текста, по умолчанию 0.1
   --text-threshold <%> допуск для пикселей текста (растеризация шрифтов в Figma и браузере различается),
                        по умолчанию 0.5; положение текстовых блоков всё равно проверяется геометрией ±0.5px
+  --text-area-threshold <%> или доля от площади текстовых слоёв, по умолчанию 4 (сглаживание — 2–4%,
+                       не тот вес или кегль шрифта — от 4.6%); текст проходит, если укладывается в любой из допусков
   --frame <имя|id>     собрать только этот фрейм (можно несколько раз)
   --fonts <режим>      auto (по умолчанию) — бесплатные шрифты макета скачиваются из npm (@fontsource);
                        none — только шрифты, установленные в системе
@@ -89,13 +92,14 @@ ds-build build <пакет.zip> [ещё части.zip …] [опции]
 `;
 
 function parseArgs(argv) {
-  const a = { _: [], frames: [], css: [], frameworks: [], groups: {}, responsive: true, inlineSvg: true, cache: true, jobs: Math.max(1, Math.min(4, os.availableParallelism ? os.availableParallelism() : os.cpus().length)), layout: 'auto', threshold: 0.1, textThreshold: 0.5, out: 'out', verify: true, refine: true, analyze: true, fonts: 'auto', semantic: true, ai: false };
+  const a = { _: [], frames: [], css: [], frameworks: [], groups: {}, responsive: true, inlineSvg: true, cache: true, jobs: Math.max(1, Math.min(4, os.availableParallelism ? os.availableParallelism() : os.cpus().length)), layout: 'auto', threshold: 0.1, textThreshold: 0.5, textAreaThreshold: 4, out: 'out', verify: true, refine: true, analyze: true, fonts: 'auto', semantic: true, ai: false };
   for (let i = 0; i < argv.length; i++) {
     const k = argv[i];
     if (k === '--out') a.out = argv[++i];
     else if (k === '--layout') a.layout = argv[++i];
     else if (k === '--threshold') a.threshold = parseFloat(argv[++i]);
     else if (k === '--text-threshold') a.textThreshold = parseFloat(argv[++i]);
+    else if (k === '--text-area-threshold') a.textAreaThreshold = parseFloat(argv[++i]);
     else if (k === '--frame') a.frames.push(argv[++i]);
     else if (k === '--css') a.css.push(argv[++i]);
     else if (k === '--no-verify') a.verify = false;
@@ -159,15 +163,31 @@ function resolvePackageDir(input) {
 }
 
 /** Доли несовпадающих пикселей: текст отдельно от остального. */
-function pixelSplit(diff) {
+/** Площадь текстовых слоёв фрейма (px² эталона): мера, к которой относим расхождения в тексте. */
+function textAreaOf(tree, scale = 1) {
+  let a = 0;
+  (function walk(n) {
+    if (n.visible === false) return;
+    if (n.type === 'TEXT') a += (n.w || 0) * (n.h || 0);
+    (n.children || []).forEach(walk);
+  })(tree);
+  return a * scale * scale;
+}
+
+function pixelSplit(diff, textArea = 0) {
   if (!diff) return null;
   const total = diff.total || 1;
   const text = diff.sources?.byType?.['текст'] || 0;
-  return { textPct: (text / total) * 100, otherPct: ((diff.mismatched - text) / total) * 100 };
+  return { textPct: (text / total) * 100, otherPct: ((diff.mismatched - text) / total) * 100, textAreaPct: textArea > 0 ? (text / textArea) * 100 : null };
 }
-const pixelOk = (diff, args) => {
-  const p = pixelSplit(diff);
-  return !p || (p.otherPct <= args.threshold && p.textPct <= args.textThreshold);
+// Текст: Figma и браузер сглаживают буквы по-разному, на краях глифов это 2–4% площади текстов.
+// Доля от всего экрана наказывала маленькие фреймы (подпись 12px на бейдже — 1%), поэтому текст проходит,
+// если укладывается в долю экрана ИЛИ в долю площади текстов. Не тот вес или кегль шрифта — 4.6–10% площади.
+const pixelOk = (diff, args, textArea = 0) => {
+  const p = pixelSplit(diff, textArea);
+  if (!p) return true;
+  const textOk = p.textPct <= args.textThreshold || (p.textAreaPct !== null && p.textAreaPct <= args.textAreaThreshold);
+  return p.otherPct <= args.threshold && textOk;
 };
 
 function openFile(file) {
@@ -183,8 +203,12 @@ function runAnalysis(pkg, args, outDir) {
   if (args.minUses) opts.minUses = args.minUses;
   const ds = analyzeDesignSystem(pkg.frames.map((f) => ({ name: f.name, tree: f.tree() })), opts);
   fs.mkdirSync(outDir, { recursive: true });
-  for (const [name, data] of Object.entries(exportFiles(ds, pkg.manifest.file))) fs.writeFileSync(path.join(outDir, name), data);
-  return ds;
+  // переменные и стили Figma — источник имён и значений; анализ остаётся для аудита
+  const pj = (rel) => { const f = rel && path.join(pkg.dir, rel); return f && fs.existsSync(f) ? JSON.parse(fs.readFileSync(f, 'utf8')) : null; };
+  const vars = pj(pkg.manifest.variables || 'variables.json'), styles = pj(pkg.manifest.styles || 'styles.json');
+  const out = hasFigmaSystem(vars, styles) ? withFigma(ds, vars, styles) : ds;
+  for (const [name, data] of Object.entries(exportFiles(out, pkg.manifest.file, ds))) fs.writeFileSync(path.join(outDir, name), data);
+  return out;
 }
 
 async function analyze(args) {
@@ -280,7 +304,7 @@ async function build(args) {
   // не пересобирается — берётся готовый результат. Ключ учитывает всё, что влияет на вёрстку и проверку.
   const cacheRoot = path.join(defaultCacheDir(), 'frames');
   const optKey = crypto.createHash('sha256').update(JSON.stringify([
-    programHash(), args.layout, args.threshold, args.textThreshold, args.refine, args.semantic, args.inlineSvg, args.ai, args.verify, !!args.allowAbsolute,
+    programHash(), args.layout, args.threshold, args.textThreshold, args.textAreaThreshold, args.refine, args.semantic, args.inlineSvg, args.ai, args.verify, !!args.allowAbsolute,
     tokens.css(), extraCss, fs.existsSync(path.join(out, 'fonts.css')) ? fs.readFileSync(path.join(out, 'fonts.css'), 'utf8').replace(/url\([^)]*\)/g, '') : '', pkg.scale,
   ])).digest('hex');
   const slots = [];
@@ -289,6 +313,7 @@ async function build(args) {
   try {
     const buildFrame = async (f, idx) => {
       const tree = f.tree();
+      const textArea = textAreaOf(tree, pkg.scale);
       const dirName = safe(`${f.name}-${f.id}`);
       const fdir = path.join(out, dirName);
       fs.mkdirSync(fdir, { recursive: true });
@@ -333,7 +358,7 @@ async function build(args) {
         att.refined = true;
         const attemptDir = att.dir;
         const textMiss = att.diff?.sources?.top.some((t) => t.type === 'TEXT' && t.pixels >= 150);
-        if (!(args.refine && att.diff?.sources && (!pixelOk(att.diff, args) || textMiss))) return;
+        if (!(args.refine && att.diff?.sources && (!pixelOk(att.diff, args, textArea) || textMiss))) return;
         const patches = await refinePage(browser, path.join(attemptDir, 'index.html'), {
           refPath: path.join(fdir, 'reference.png'), tree, sources: att.diff.sources,
           width: f.width, height: f.height, scale: pkg.scale,
@@ -361,7 +386,7 @@ async function build(args) {
           att.refine = { before, after: att.percent, patches };
         }
       };
-      const okOf = (att) => !att.gen.stats.missing.length && (!att.geometry || att.geometry.failed === 0) && (!hasRef || pixelOk(att.diff, args));
+      const okOf = (att) => !att.gen.stats.missing.length && (!att.geometry || att.geometry.failed === 0) && (!hasRef || pixelOk(att.diff, args, textArea));
 
       const runAttempt = async (mode, absIds = null, refineNow = true) => {
         const gen = generateFrame(tree, { mode, absIds, svgText, inlineSvg: args.inlineSvg, tokens, assetUrl: (rel) => `../assets/${rel}`, title: f.name, extraCss, semantic: args.semantic, names });
@@ -403,7 +428,7 @@ async function build(args) {
           const moved = Math.abs(i.figma.x - i.html.x) > 0.5 || Math.abs(i.figma.y - i.html.y) > 0.5;
           bad.set(i.id, moved || !nodeById.get(i.id)?.children?.length ? 'parent' : 'self');
         }
-        if (hasRef && att.diff && !pixelOk(att.diff, args)) {
+        if (hasRef && att.diff && !pixelOk(att.diff, args, textArea)) {
           for (const t of att.diff.sources?.top || []) if (t.type !== 'TEXT' && t.pixels >= 50 && !bad.has(t.id)) bad.set(t.id, 'parent');
         }
         // сдвиг, унаследованный от несошедшегося предка, — не своя ошибка: берём только верхние
@@ -475,13 +500,13 @@ async function build(args) {
         gen: { mode: chosen.mode === 'absolute' ? 'absolute' : 'flow', absIds: chosen.pinned.length ? new Set(chosen.pinned) : null, title: f.name, names } };
       slots[idx].result = ({
         name: f.name, id: f.id, width: f.width, height: f.height, dir: dirName,
-        mode: chosen.mode, stats: chosen.gen.stats, fonts: chosen.fonts, diff: chosen.diff, geometry: chosen.geometry, refine: chosen.refine, pixels: pixelSplit(chosen.diff), pass,
+        mode: chosen.mode, stats: chosen.gen.stats, fonts: chosen.fonts, diff: chosen.diff, geometry: chosen.geometry, refine: chosen.refine, pixels: pixelSplit(chosen.diff, textArea), pass,
         pinned: chosen.pinned,
         attempts: attempts.map((a) => ({ mode: a.mode, pinned: a.pinned.length, percent: a.percent, geometryFailed: a.geometry?.failed ?? null, chosen: a.chosen })),
       });
       const geo = chosen.geometry ? `геометрия ${chosen.geometry.checked - chosen.geometry.failed}/${chosen.geometry.checked} (макс. ${chosen.geometry.maxDelta}px)` : '';
-      const sp = pixelSplit(chosen.diff);
-      const pix = hasRef ? `pixel diff ${chosen.percent.toFixed(3)}% (текст ${sp.textPct.toFixed(3)}%, остальное ${sp.otherPct.toFixed(3)}%)` : 'без эталона';
+      const sp = pixelSplit(chosen.diff, textArea);
+      const pix = hasRef ? `pixel diff ${chosen.percent.toFixed(3)}% (текст ${sp.textPct.toFixed(3)}%${sp.textAreaPct !== null ? ` = ${sp.textAreaPct.toFixed(1)}% площади текстов` : ''}, остальное ${sp.otherPct.toFixed(3)}%)` : 'без эталона';
       const ref = chosen.refine ? ` (до автодоработки ${chosen.refine.before.toFixed(3)}%, поправок ${chosen.refine.patches.length})` : '';
       const status = `${pix}${ref} · ${geo} · ${pass === null ? '' : pass ? 'OK' : 'FAIL'}`;
       const modeLabel = chosen.mode === 'hybrid' ? `flow, координаты закреплены у блоков: ${chosen.pinned.length}` : chosen.mode;
@@ -693,7 +718,7 @@ async function build(args) {
     await browser?.close();
   }
 
-  fs.writeFileSync(path.join(out, 'report.html'), buildReport({ file: pkg.manifest.file, threshold: args.threshold, textThreshold: args.textThreshold, results, responsive: responsive.map(({ components, ...r }) => r) }));
+  fs.writeFileSync(path.join(out, 'report.html'), buildReport({ file: pkg.manifest.file, threshold: args.threshold, textThreshold: args.textThreshold, textAreaThreshold: args.textAreaThreshold, results, responsive: responsive.map(({ components, ...r }) => r) }));
   fs.writeFileSync(path.join(out, 'report.json'), JSON.stringify({ file: pkg.manifest.file, threshold: args.threshold,
     results: results.map(({ stats, ...r }) => ({ ...r, stats })) }, null, 2));
   writeRootAgents(out, { file: pkg.manifest.file, results, codeOf, responsive, frames: pkg.frames, frameworks: args.frameworks, threshold: args.threshold });

@@ -16,7 +16,10 @@
             "a": 1
           }
         },
-        "scopes": []
+        "scopes": [],
+        "codeSyntax": {
+          "WEB": "var(--white)"
+        }
       },
       {
         "name": "ink/950",
@@ -29,7 +32,10 @@
             "a": 1
           }
         },
-        "scopes": []
+        "scopes": [],
+        "codeSyntax": {
+          "WEB": "var(--ink-950)"
+        }
       },
       {
         "name": "ink/900",
@@ -42,7 +48,10 @@
             "a": 1
           }
         },
-        "scopes": []
+        "scopes": [],
+        "codeSyntax": {
+          "WEB": "var(--ink-900)"
+        }
       },
       {
         "name": "ink/700",
@@ -55,7 +64,10 @@
             "a": 1
           }
         },
-        "scopes": []
+        "scopes": [],
+        "codeSyntax": {
+          "WEB": "var(--ink-700)"
+        }
       },
       {
         "name": "ink/500",
@@ -68,7 +80,10 @@
             "a": 1
           }
         },
-        "scopes": []
+        "scopes": [],
+        "codeSyntax": {
+          "WEB": "var(--ink-500)"
+        }
       },
       {
         "name": "ink/300",
@@ -81,7 +96,10 @@
             "a": 1
           }
         },
-        "scopes": []
+        "scopes": [],
+        "codeSyntax": {
+          "WEB": "var(--ink-300)"
+        }
       },
       {
         "name": "ink/200",
@@ -94,7 +112,10 @@
             "a": 1
           }
         },
-        "scopes": []
+        "scopes": [],
+        "codeSyntax": {
+          "WEB": "var(--ink-200)"
+        }
       },
       {
         "name": "ink/100",
@@ -107,7 +128,10 @@
             "a": 1
           }
         },
-        "scopes": []
+        "scopes": [],
+        "codeSyntax": {
+          "WEB": "var(--ink-100)"
+        }
       },
       {
         "name": "ink/50",
@@ -120,7 +144,10 @@
             "a": 1
           }
         },
-        "scopes": []
+        "scopes": [],
+        "codeSyntax": {
+          "WEB": "var(--ink-50)"
+        }
       },
       {
         "name": "indigo/700",
@@ -133,7 +160,10 @@
             "a": 1
           }
         },
-        "scopes": []
+        "scopes": [],
+        "codeSyntax": {
+          "WEB": "var(--indigo-700)"
+        }
       },
       {
         "name": "indigo/600",
@@ -146,7 +176,10 @@
             "a": 1
           }
         },
-        "scopes": []
+        "scopes": [],
+        "codeSyntax": {
+          "WEB": "var(--indigo-600)"
+        }
       },
       {
         "name": "indigo/500",
@@ -159,7 +192,10 @@
             "a": 1
           }
         },
-        "scopes": []
+        "scopes": [],
+        "codeSyntax": {
+          "WEB": "var(--indigo-500)"
+        }
       },
       {
         "name": "indigo/300",
@@ -172,7 +208,10 @@
             "a": 1
           }
         },
-        "scopes": []
+        "scopes": [],
+        "codeSyntax": {
+          "WEB": "var(--indigo-300)"
+        }
       },
       {
         "name": "indigo/100",
@@ -185,7 +224,10 @@
             "a": 1
           }
         },
-        "scopes": []
+        "scopes": [],
+        "codeSyntax": {
+          "WEB": "var(--indigo-100)"
+        }
       },
       {
         "name": "lime/400",
@@ -198,7 +240,10 @@
             "a": 1
           }
         },
-        "scopes": []
+        "scopes": [],
+        "codeSyntax": {
+          "WEB": "var(--lime-400)"
+        }
       },
       {
         "name": "lime/100",
@@ -211,7 +256,10 @@
             "a": 1
           }
         },
-        "scopes": []
+        "scopes": [],
+        "codeSyntax": {
+          "WEB": "var(--lime-100)"
+        }
       },
       {
         "name": "red/600",
@@ -224,7 +272,10 @@
             "a": 1
           }
         },
-        "scopes": []
+        "scopes": [],
+        "codeSyntax": {
+          "WEB": "var(--red-600)"
+        }
       },
       {
         "name": "red/100",
@@ -237,7 +288,10 @@
             "a": 1
           }
         },
-        "scopes": []
+        "scopes": [],
+        "codeSyntax": {
+          "WEB": "var(--red-100)"
+        }
       }
     ]
   },
@@ -258,7 +312,10 @@
         "scopes": [
           "FRAME_FILL",
           "SHAPE_FILL"
-        ]
+        ],
+        "codeSyntax": {
+          "WEB": "var(--bg-page)"
+        }
       },
       {
         "name": "color/bg/subtle",
@@ -271,7 +328,10 @@
         "scopes": [
           "FRAME_FILL",
           "SHAPE_FILL"
-        ]
+        ],
+        "codeSyntax": {
+          "WEB": "var(--bg-subtle)"
+        }
       },
       {
         "name": "color/bg/inverse",
@@ -284,7 +344,10 @@
         "scopes": [
           "FRAME_FILL",
           "SHAPE_FILL"
-        ]
+        ],
+        "codeSyntax": {
+          "WEB": "var(--bg-inverse)"
+        }
       },
       {
         "name": "color/bg/accent",
@@ -297,7 +360,10 @@
         "scopes": [
           "FRAME_FILL",
           "SHAPE_FILL"
-        ]
+        ],
+        "codeSyntax": {
+          "WEB": "var(--bg-accent)"
+        }
       },
       {
         "name": "color/bg/accent-hover",
@@ -310,7 +376,10 @@
         "scopes": [
           "FRAME_FILL",
           "SHAPE_FILL"
-        ]
+        ],
+        "codeSyntax": {
+          "WEB": "var(--bg-accent-hover)"
+        }
       },
       {
         "name": "color/bg/accent-subtle",
@@ -323,7 +392,10 @@
         "scopes": [
           "FRAME_FILL",
           "SHAPE_FILL"
-        ]
+        ],
+        "codeSyntax": {
+          "WEB": "var(--bg-accent-subtle)"
+        }
       },
       {
         "name": "color/bg/highlight",
@@ -336,7 +408,10 @@
         "scopes": [
           "FRAME_FILL",
           "SHAPE_FILL"
-        ]
+        ],
+        "codeSyntax": {
+          "WEB": "var(--bg-highlight)"
+        }
       },
       {
         "name": "color/bg/disabled",
@@ -349,7 +424,10 @@
         "scopes": [
           "FRAME_FILL",
           "SHAPE_FILL"
-        ]
+        ],
+        "codeSyntax": {
+          "WEB": "var(--bg-disabled)"
+        }
       },
       {
         "name": "color/bg/danger-subtle",
@@ -362,7 +440,10 @@
         "scopes": [
           "FRAME_FILL",
           "SHAPE_FILL"
-        ]
+        ],
+        "codeSyntax": {
+          "WEB": "var(--bg-danger-subtle)"
+        }
       },
       {
         "name": "color/text/primary",
@@ -374,7 +455,10 @@
         },
         "scopes": [
           "TEXT_FILL"
-        ]
+        ],
+        "codeSyntax": {
+          "WEB": "var(--text-primary)"
+        }
       },
       {
         "name": "color/text/secondary",
@@ -386,7 +470,10 @@
         },
         "scopes": [
           "TEXT_FILL"
-        ]
+        ],
+        "codeSyntax": {
+          "WEB": "var(--text-secondary)"
+        }
       },
       {
         "name": "color/text/muted",
@@ -398,7 +485,10 @@
         },
         "scopes": [
           "TEXT_FILL"
-        ]
+        ],
+        "codeSyntax": {
+          "WEB": "var(--text-muted)"
+        }
       },
       {
         "name": "color/text/inverse",
@@ -410,7 +500,10 @@
         },
         "scopes": [
           "TEXT_FILL"
-        ]
+        ],
+        "codeSyntax": {
+          "WEB": "var(--text-inverse)"
+        }
       },
       {
         "name": "color/text/accent",
@@ -422,7 +515,10 @@
         },
         "scopes": [
           "TEXT_FILL"
-        ]
+        ],
+        "codeSyntax": {
+          "WEB": "var(--text-accent)"
+        }
       },
       {
         "name": "color/text/disabled",
@@ -434,7 +530,10 @@
         },
         "scopes": [
           "TEXT_FILL"
-        ]
+        ],
+        "codeSyntax": {
+          "WEB": "var(--text-disabled)"
+        }
       },
       {
         "name": "color/text/danger",
@@ -446,7 +545,10 @@
         },
         "scopes": [
           "TEXT_FILL"
-        ]
+        ],
+        "codeSyntax": {
+          "WEB": "var(--text-danger)"
+        }
       },
       {
         "name": "color/border/default",
@@ -458,7 +560,10 @@
         },
         "scopes": [
           "STROKE_COLOR"
-        ]
+        ],
+        "codeSyntax": {
+          "WEB": "var(--border-default)"
+        }
       },
       {
         "name": "color/border/strong",
@@ -470,7 +575,10 @@
         },
         "scopes": [
           "STROKE_COLOR"
-        ]
+        ],
+        "codeSyntax": {
+          "WEB": "var(--border-strong)"
+        }
       },
       {
         "name": "color/border/focus",
@@ -482,7 +590,10 @@
         },
         "scopes": [
           "STROKE_COLOR"
-        ]
+        ],
+        "codeSyntax": {
+          "WEB": "var(--border-focus)"
+        }
       },
       {
         "name": "color/border/danger",
@@ -494,7 +605,10 @@
         },
         "scopes": [
           "STROKE_COLOR"
-        ]
+        ],
+        "codeSyntax": {
+          "WEB": "var(--border-danger)"
+        }
       }
     ]
   },
@@ -512,7 +626,10 @@
         },
         "scopes": [
           "GAP"
-        ]
+        ],
+        "codeSyntax": {
+          "WEB": "var(--space-2xs)"
+        }
       },
       {
         "name": "space/xs",
@@ -522,7 +639,10 @@
         },
         "scopes": [
           "GAP"
-        ]
+        ],
+        "codeSyntax": {
+          "WEB": "var(--space-xs)"
+        }
       },
       {
         "name": "space/sm",
@@ -532,7 +652,10 @@
         },
         "scopes": [
           "GAP"
-        ]
+        ],
+        "codeSyntax": {
+          "WEB": "var(--space-sm)"
+        }
       },
       {
         "name": "space/md",
@@ -542,7 +665,10 @@
         },
         "scopes": [
           "GAP"
-        ]
+        ],
+        "codeSyntax": {
+          "WEB": "var(--space-md)"
+        }
       },
       {
         "name": "space/lg",
@@ -552,7 +678,10 @@
         },
         "scopes": [
           "GAP"
-        ]
+        ],
+        "codeSyntax": {
+          "WEB": "var(--space-lg)"
+        }
       },
       {
         "name": "space/xl",
@@ -562,7 +691,10 @@
         },
         "scopes": [
           "GAP"
-        ]
+        ],
+        "codeSyntax": {
+          "WEB": "var(--space-xl)"
+        }
       },
       {
         "name": "space/2xl",
@@ -572,7 +704,10 @@
         },
         "scopes": [
           "GAP"
-        ]
+        ],
+        "codeSyntax": {
+          "WEB": "var(--space-2xl)"
+        }
       },
       {
         "name": "space/3xl",
@@ -582,7 +717,10 @@
         },
         "scopes": [
           "GAP"
-        ]
+        ],
+        "codeSyntax": {
+          "WEB": "var(--space-3xl)"
+        }
       },
       {
         "name": "space/4xl",
@@ -592,7 +730,10 @@
         },
         "scopes": [
           "GAP"
-        ]
+        ],
+        "codeSyntax": {
+          "WEB": "var(--space-4xl)"
+        }
       },
       {
         "name": "radius/sm",
@@ -602,7 +743,10 @@
         },
         "scopes": [
           "CORNER_RADIUS"
-        ]
+        ],
+        "codeSyntax": {
+          "WEB": "var(--radius-sm)"
+        }
       },
       {
         "name": "radius/md",
@@ -612,7 +756,10 @@
         },
         "scopes": [
           "CORNER_RADIUS"
-        ]
+        ],
+        "codeSyntax": {
+          "WEB": "var(--radius-md)"
+        }
       },
       {
         "name": "radius/lg",
@@ -622,7 +769,10 @@
         },
         "scopes": [
           "CORNER_RADIUS"
-        ]
+        ],
+        "codeSyntax": {
+          "WEB": "var(--radius-lg)"
+        }
       },
       {
         "name": "radius/xl",
@@ -632,7 +782,10 @@
         },
         "scopes": [
           "CORNER_RADIUS"
-        ]
+        ],
+        "codeSyntax": {
+          "WEB": "var(--radius-xl)"
+        }
       },
       {
         "name": "radius/full",
@@ -642,7 +795,10 @@
         },
         "scopes": [
           "CORNER_RADIUS"
-        ]
+        ],
+        "codeSyntax": {
+          "WEB": "var(--radius-full)"
+        }
       }
     ]
   }
