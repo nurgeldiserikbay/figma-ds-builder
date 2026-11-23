@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { loadPackage, copyAssets } from './package.js';
 import { loadTokens } from './tokens.js';
-import { generateFrame } from './generate.js';
+import { generateFrame, htmlOf } from './generate.js';
 import { openBrowser, renderPage } from './render.js';
 import { comparePng } from './diff.js';
 import { buildReport } from './report.js';
@@ -22,6 +22,7 @@ import { exportFiles, toTokens } from './ds/export.js';
 import { withFigma, hasFigmaSystem } from './ds/figma.js';
 import { familiesOf, facesOf, ensureFonts, buildFontsCss, defaultCacheDir } from './fonts.js';
 import { findComponents } from './components.js';
+import { componentizeTrees } from './componentize.js';
 import { preparePages, exportReact, exportVue, renderReact, renderVue, checkPageHtml, shippedCheckPage, projectAssetPrefix } from './frameworks.js';
 import { groupFrames, writeResponsive, textsOf } from './responsive.js';
 import { exportHtml } from './export-html.js';
@@ -688,6 +689,11 @@ async function build(args) {
       const pages = preparePages(fwPages);
       for (const p of pages) for (const fw of args.frameworks.filter((f) => f !== 'html')) codeOf.set(p.dir, [...(codeOf.get(p.dir) || []), `${fw}/src/pages/${p.component}.${fw === 'react' ? 'jsx' : 'vue'}`]);
       const groupsFw = responsive.map((r) => ({ name: r.name, members: r.components.map((c) => pages[fwPages.indexOf(c)]), widths: r.widths }));
+      // компоненты Figma (варианты, состояния) — те же классы, что в html/: деревья элементов получают классы
+      // компонентов, у страниц — общий CSS компонентов + свои стили (fw.css рядом со styles.css)
+      const cz = componentizeTrees(pages.map((p) => ({ root: p.root, css: fs.readFileSync(path.join(out, p.dir, 'styles.css'), 'utf8') })), (el) => htmlOf(el, 0));
+      // порядок: сначала компоненты, потом страница (своё у копий должно перекрывать модификаторы)
+      pages.forEach((p, i) => fs.writeFileSync(path.join(out, p.dir, 'fw.css'), `${cz.css}\n${cz.pageCss[i]}`));
       const comps = findComponents(pages);
       console.log(`Компоненты: ${comps.components.length}${comps.components.length ? ' — ' + comps.components.slice(0, 8).map((c) => `${c.name}×${c.instances.length}${c.props.length ? ` (${c.props.map((p) => p.name).join(', ')})` : ''}`).join(', ') : ''}`);
       for (const fw of args.frameworks.filter((f) => f !== 'html')) {
@@ -705,7 +711,7 @@ async function build(args) {
           const html = fs.readFileSync(path.join(out, p.dir, 'index.html'), 'utf8');
           const chk = path.join(out, `${p.dir}.${fw}-check`);
           fs.mkdirSync(chk, { recursive: true });
-          fs.writeFileSync(path.join(chk, 'index.html'), checkPageHtml(html, markup[p.component], p.dir));
+          fs.writeFileSync(path.join(chk, 'index.html'), checkPageHtml(html, markup[p.component], p.dir, 'fw.css'));
           const r = await renderPage(browser, path.join(chk, 'index.html'), { width: p.width, height: p.height, scale: pkg.scale, out: path.join(chk, 'render.png') });
           const d = comparePng(path.join(out, p.dir, 'render.png'), path.join(chk, 'render.png'), path.join(chk, 'diff.png'));
           const g = checkGeometry(p.tree, r.boxes);

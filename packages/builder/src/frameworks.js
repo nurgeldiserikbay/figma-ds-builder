@@ -329,7 +329,9 @@ function siteCss(siteDir, pages, fontsOut) {
   parts.push(fs.readFileSync(path.join(siteDir, 'tokens.css'), 'utf8'));
   const seen = new Set();
   for (const p of pages) {
-    for (const line of fs.readFileSync(path.join(siteDir, p.dir, 'styles.css'), 'utf8').split('\n')) {
+    // fw.css — стили страницы с классами компонентов (если компоненты собраны), иначе рабочие
+    const f = fs.existsSync(path.join(siteDir, p.dir, 'fw.css')) ? 'fw.css' : 'styles.css';
+    for (const line of fs.readFileSync(path.join(siteDir, p.dir, f), 'utf8').split('\n')) {
       if (!line.trim() || seen.has(line)) continue;
       seen.add(line);
       parts.push(line.replace(/url\("\.\.\/assets\//g, 'url("/assets/'));
@@ -558,10 +560,10 @@ export async function renderVue(pages, comps, opt = {}) {
 }
 
 /** HTML-страница проверки: разметка фреймворка в том же окружении (CSS, шрифты), что и HTML-версия. */
-export function checkPageHtml(htmlPage, markup, frameDir) {
+export function checkPageHtml(htmlPage, markup, frameDir, cssFile = 'styles.css') {
   return htmlPage
     .replace(/<body>[\s\S]*<\/body>/, () => `<body>\n${markup}\n</body>`)
-    .replace('href="styles.css"', `href="../${frameDir}/styles.css"`);
+    .replace('href="styles.css"', `href="../${frameDir}/${cssFile}"`);
 }
 
 /**

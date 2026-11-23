@@ -292,3 +292,25 @@ export function componentize(pages) {
   const css = compCss.length ? `/* Компоненты из Figma: общее, варианты (--…), состояния (:hover, :active, :disabled… и класс is-…) */\n${compCss.join('\n')}\n` : '';
   return { pages: result, css, components: out };
 }
+
+/**
+ * То же для React/Vue: компоненты по деревьям элементов страниц. Классы в деревьях заменяются на классы
+ * компонентов (на месте), CSS — общий CSS компонентов + стили страниц без ставших ненужными классов.
+ * @param pages [{ root: элемент генератора, css: стили страницы }]
+ * @param htmlOfEl (el) => разметка элемента (как в рабочей вёрстке, с data-component)
+ */
+export function componentizeTrees(pages, htmlOfEl) {
+  const r = componentize(pages.map((p) => ({ html: htmlOfEl(p.root), css: { 'styles.css': p.css } })));
+  r.pages.forEach((pg, i) => {
+    const parsed = parseHtml(pg.html).root.children[0];
+    (function assign(el, pe) {
+      if (!el || !pe) return;
+      if (pe.attrs.class !== undefined && el.cls !== undefined) el.cls = pe.attrs.class;
+      if (el.html !== undefined || el.text !== undefined) return;
+      const kids = el.children || [];
+      if (kids.length !== pe.children.length) return; // строение разошлось — дальше не трогаем
+      kids.forEach((k, j) => assign(k, pe.children[j]));
+    })(pages[i].root, parsed);
+  });
+  return { css: r.css, pageCss: r.pages.map((pg) => pg.css['styles.css']), components: r.components };
+}
