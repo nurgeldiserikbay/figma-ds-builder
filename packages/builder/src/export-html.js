@@ -14,16 +14,19 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { agentsMd } from './frameworks.js';
 import { className } from './semantic.js';
+import { componentize } from './componentize.js';
 
-const strip = (html) => html.replace(/ data-figma-id="[^"]*"/g, '').replace(/ data-name="[^"]*"/g, '');
+const strip = (html) => html.replace(/ data-(?:figma-id|name|component|variant)="[^"]*"/g, '');
 
 /**
  * Поправки, привязанные к слоям ([data-figma-id="…"]), → классы fix-N на этих элементах.
  * Возвращает новые html и css.
  */
-function rebindFixes(html, css) {
+function rebindFixes(html, css, prefix = 'fix') {
   const ids = [...new Set([...css.matchAll(/\[data-figma-id="([^"]+)"\]/g)].map((m) => m[1]))];
-  const cls = new Map(ids.map((id, i) => [id, `fix-${i + 1}`]));
+  // у адаптивной страницы несколько файлов стилей — у каждого свои номера (иначе fix-1 одного файла
+  // попадал бы на элемент другого)
+  const cls = new Map(ids.map((id, i) => [id, `${prefix}-${i + 1}`]));
   for (const [id, c] of cls) {
     const re = new RegExp(`(<[a-z0-9]+ class=")([^"]*)("[^>]*? data-figma-id="${id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}")`);
     html = html.replace(re, (_, a, b, rest) => `${a}${b} ${c}${rest}`);
@@ -90,23 +93,24 @@ export function exportHtml(siteDir, pages, groups = [], meta = {}) {
 ${cssFiles.map((c) => `<link rel="stylesheet" href="css/${c}">`).join('\n')}
 `;
   const out = [];
+  const entries = []; // { file, title, head, css: { имя: текст }, body, info }
 
   // страница фрейма: стили и разметка из рабочей вёрстки
-  const pageCss = (dir, file, slug, html) => {
-    let css = fs.readFileSync(path.join(siteDir, dir, file), 'utf8');
-    const r = rebindFixes(html, css);
-    const name = `${slug}.css`;
-    fs.writeFileSync(path.join(root, 'css', name), r.css); // url("../assets/…") из css/ по-прежнему верный
-    return { name, html: r.html };
+  const pageCss = (dir, file, slug, html, prefix = 'fix') => {
+    const css = fs.readFileSync(path.join(siteDir, dir, file), 'utf8');
+    const r = rebindFixes(html, css, prefix);
+    return { name: `${slug}.css`, css: r.css, html: r.html }; // url("../assets/…") из css/ по-прежнему верный
   };
 
+  // экраны, вошедшие в адаптивную страницу, отдельными файлами не дублируем: их вёрстка — в адаптивной
+  const inGroup = new Set(groups.flatMap((g) => g.members || []));
   for (const p of pages) {
+    if (inGroup.has(p.dir)) continue;
     const src = fs.readFileSync(path.join(siteDir, p.dir, 'index.html'), 'utf8');
     const slug = slugOf(p.title);
-    const body = src.slice(src.indexOf('<body>'));
-    const { name, html } = pageCss(p.dir, 'styles.css', slug, body);
-    fs.writeFileSync(path.join(root, `${slug}.html`), head(p.title, [name]) + '</head>\n' + strip(html).replace(/"\.\.\/assets\//g, '"assets/'));
-    out.push({ file: `${slug}.html`, css: name, title: p.title, page: p.page, from: p.dir, width: p.width, height: p.height });
+    const r = pageCss(p.dir, 'styles.css', slug, src.slice(src.indexOf('<body>')));
+    entries.push({ file: `${slug}.html`, title: p.title, extra: '', css: { [r.name]: r.css }, body: r.html,
+      info: { file: `${slug}.html`, css: r.name, title: p.title, page: p.page, from: p.dir, width: p.width, height: p.height } });
   }
 
   // адаптивные страницы: варианты (фиксированные или «резиновые») — каждый со своими стилями
@@ -115,18 +119,30 @@ ${cssFiles.map((c) => `<link rel="stylesheet" href="css/${c}">`).join('\n')}
     const slug = slugOf(g.name);
     const links = [...src.matchAll(/<link rel="stylesheet" href="\.\.\/([^"/]+)\/([^"]+\.css)">/g)];
     let body = src.slice(src.indexOf('<body>'));
-    const files = [];
+    const css = {};
     for (const [, dir, file] of links) {
       // у каждого варианта — свой файл стилей (поправки привязываются к разметке этой страницы)
-      const r = pageCss(dir, file, `${slug}-${files.length + 1}`, body);
+      const n = Object.keys(css).length + 1;
+      const r = pageCss(dir, file, `${slug}-${n}`, body, `fix${n}`);
       body = r.html;
-      files.push(r.name);
+      css[r.name] = r.css;
     }
     const style = (src.match(/<style>[\s\S]*?<\/style>/) || [''])[0];
     const title = (src.match(/<title>([^<]*)<\/title>/) || [, g.name])[1];
-    fs.writeFileSync(path.join(root, `${slug}.html`), head(title, files) + style + '\n</head>\n' + strip(body).replace(/"\.\.\/assets\//g, '"assets/'));
-    out.push({ file: `${slug}.html`, title: `${g.name} (адаптивная)`, name: g.name, from: g.dir, widths: g.widths, responsive: true });
+    entries.push({ file: `${slug}.html`, title, extra: style + '\n', css, body,
+      info: { file: `${slug}.html`, title: `${g.name} (адаптивная)`, name: g.name, from: g.dir, widths: g.widths, members: g.members || [], responsive: true } });
   }
+
+  // компоненты Figma: общий components.css, на страницах — классы компонентов и остатки копий
+  const comp = componentize(entries.map((e) => ({ html: e.body, css: e.css })));
+  if (comp.css) fs.writeFileSync(path.join(root, 'css', 'components.css'), comp.css);
+  entries.forEach((e, i) => {
+    const pg = comp.pages[i];
+    for (const [name, text] of Object.entries(pg.css)) fs.writeFileSync(path.join(root, 'css', name), text);
+    const files = [...(comp.css ? ['components.css'] : []), ...Object.keys(pg.css)];
+    fs.writeFileSync(path.join(root, e.file), head(e.title, files) + e.extra + '</head>\n' + strip(pg.html).replace(/"\.\.\/assets\//g, '"assets/'));
+    out.push(e.info);
+  });
 
   fs.writeFileSync(path.join(root, 'index.html'), `<!DOCTYPE html>
 <html lang="ru">
@@ -146,7 +162,7 @@ ${out.map((p) => `<li><a href="${p.file}">${p.title.replace(/[<&]/g, '')}</a></l
 `);
   fs.writeFileSync(path.join(root, 'AGENTS.md'), agentsMd('html', {
     pages: out.filter((p) => !p.responsive), resp: out.filter((p) => p.responsive),
-    css: fs.readFileSync(path.join(siteDir, 'tokens.css'), 'utf8'), meta,
+    css: fs.readFileSync(path.join(siteDir, 'tokens.css'), 'utf8'), meta, components: comp.components,
   }));
-  return { root, pages: out };
+  return { root, pages: out, components: comp.components };
 }

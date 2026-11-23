@@ -643,15 +643,14 @@ async function build(args) {
 
     // чистый HTML/CSS: самостоятельная папка html/, проверка — тот же рендер, что у рабочей вёрстки
     if (args.frameworks.includes('html') && fwPages.length) {
-      const ex = exportHtml(out, fwPages, responsive.map((r) => ({ name: r.name, dir: r.dir, widths: r.widths })), { file: pkg.manifest.file, check: checkSummary(results) });
+      const ex = exportHtml(out, fwPages, responsive.map((r) => ({ name: r.name, dir: r.dir, widths: r.widths, members: r.components.map((c) => c.dir) })), { file: pkg.manifest.file, check: checkSummary(results) });
       console.log(`HTML/CSS: ${path.relative(process.cwd(), ex.root) || ex.root}`);
-      for (const p of ex.pages) if (!p.responsive) codeOf.set(p.from, [...(codeOf.get(p.from) || []), `html/${p.file}`]);
+      for (const p of ex.pages) for (const from of p.responsive ? p.members : [p.from]) codeOf.set(from, [...(codeOf.get(from) || []), `html/${p.file}`]);
+      if (ex.components.length) console.log(`  компоненты: ${ex.components.map((c) => `${c.block} ×${c.copies}`).join(', ')} → html/css/components.css`);
       if (browser) {
         // параллельно, как и фреймы
         const checkOne = async (p, k) => {
-          // страница фрейма из кэша уже сверялась с этой же версией программы
-          const fromCache = !p.widths && results.find((r) => r.dir === p.from)?.cached;
-          if (fromCache) return;
+          // страницу проверяем всегда: общий CSS компонентов зависит от всех страниц сборки
           const checks = p.widths
             ? p.widths.map((w) => ({ w, h: fwPages.find((f) => Math.round(f.width) === w && responsive.find((r) => r.dir === p.from)?.components.includes(f))?.height, ref: path.join(out, p.from, `render-${w}.png`) }))
             : [{ w: p.width, h: p.height, ref: path.join(out, p.from, 'render.png') }];

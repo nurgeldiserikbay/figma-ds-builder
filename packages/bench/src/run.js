@@ -55,11 +55,16 @@ for (const src of sources) {
   for (let r = 1; r <= runs; r++) {
     const out = path.join(work, 'out', src.id + (runs > 1 ? `-run${r}` : ''));
     fs.rmSync(out, { recursive: true, force: true });
+    let log = '';
     try {
-      sh('node', [builderCli, 'build', pkg, '--out', out], { timeout: 1800000, env: { ...process.env, DS_BUILD_CACHE: path.join(work, 'cache') } });
+      log = sh('node', [builderCli, 'build', pkg, '--out', out, '--framework', 'html'], { timeout: 1800000, env: { ...process.env, DS_BUILD_CACHE: path.join(work, 'cache') } });
     } catch (e) {
       if (e.status !== 2) throw e; // 2 — есть фреймы, не прошедшие проверку
+      log = String(e.stdout || '');
     }
+    // html/ (с общим CSS компонентов) обязан рендериться так же, как рабочая вёрстка
+    const htmlBad = log.split('\n').filter((l) => /ОТЛИЧАЕТСЯ от рабочей вёрстки/.test(l));
+    if (r === 1) console.log(`  html/: ${htmlBad.length ? `ОТЛИЧАЕТСЯ — ${htmlBad.map((l) => l.trim()).join('; ')}` : 'все страницы совпадают с рабочей вёрсткой'}${/компоненты: (.*) →/.test(log) ? `; компоненты: ${log.match(/компоненты: (.*) →/)[1]}` : ''}`);
     const rep = JSON.parse(fs.readFileSync(path.join(out, 'report.json'), 'utf8'));
     fingerprints.push(JSON.stringify(rep.results.map((x) => [x.id, x.mode, x.diff?.mismatched ?? null, x.geometry?.failed])));
     if (r > 1) continue;

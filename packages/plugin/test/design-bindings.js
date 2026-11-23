@@ -38,6 +38,7 @@ const ctx = {
     currentPage: { selection: [], name: 'P' }, root: { name: 'F', children: [] }, mixed: Symbol('mixed'),
     getImageByHash: () => null,
     getLocalPaintStylesAsync: async () => [paintStyle], getLocalTextStylesAsync: async () => [textStyle], getLocalEffectStylesAsync: async () => [effectStyle],
+    getNodeByIdAsync: async (id) => (id === 'Button Override' ? renamed : null),
     getStyleByIdAsync: async (id) => remoteStyles[id] || [paintStyle, textStyle, effectStyle].find((s) => s.id === id) || null,
     variables: {
       getLocalVariableCollectionsAsync: async () => [localColl], getLocalVariablesAsync: async () => localVars,
@@ -75,13 +76,17 @@ const text = base('Text', 'TEXT', 360, {
     throw new Error('ждали поля boundVariables');
   },
 });
-const frame = base('Screen', 'FRAME', 0, { width: 500, height: 100, children: [card, oldStyle, grad, text], explicitVariableModes: { 'VC:1': 'm2' }, async exportAsync() { return new Uint8Array([1]); } });
+const btnSet = { type: 'COMPONENT_SET', name: 'Button' };
+const btnMain = { type: 'COMPONENT', name: 'Variant=Primary', parent: btnSet };
+const renamed = base('Button Override', 'INSTANCE', 400, { variantProperties: { Variant: 'Primary' }, children: [], getMainComponentAsync: async () => btnMain });
+const frame = base('Screen', 'FRAME', 0, { width: 500, height: 100, children: [card, oldStyle, grad, text, renamed], explicitVariableModes: { 'VC:1': 'm2' }, async exportAsync() { return new Uint8Array([1]); } });
 frame.parent = { type: 'PAGE', name: 'Стр' };
 
 const pkg = await ctx.buildLayoutPackage([frame], {});
 const file = (p) => JSON.parse(pkg.files.find((f) => f.path === p || (p === 'tree' && /^frames\/.*\.json$/.test(f.path))).data);
 const tree = file('tree');
-const [c, o, g, t] = tree.children;
+const [c, o, g, t, r] = tree.children;
+assert.deepEqual(r.component, { name: 'Button', variant: { Variant: 'Primary' } }, 'переименованная копия — имя набора компонента');
 assert.deepEqual(tree.modes, { Color: 'Dark' }, 'режим на фрейме');
 assert.equal(c.fills[0].variable, 'bg/brand', 'библиотечная переменная на заливке — по имени');
 assert.equal(c.strokeStyle, 'Brand/Line', 'библиотечный цветовой стиль на обводке');

@@ -127,7 +127,11 @@ async function resolvePending(ctx) {
     var sep = keys[i].indexOf('|'), kind = keys[i].slice(0, sep), id = keys[i].slice(sep + 1);
     if (ctx.names[kind][id] || ctx.names.missing[keys[i]]) continue;
     try {
-      if (kind === 'vars') {
+      if (kind === 'main') {
+        var inst = await figma.getNodeByIdAsync(id);
+        var mc = inst && inst.getMainComponentAsync ? await inst.getMainComponentAsync() : null;
+        ctx.names.main[id] = mc ? (mc.parent && mc.parent.type === 'COMPONENT_SET' ? mc.parent.name : mc.name) : ctx.names.mainFallback[id];
+      } else if (kind === 'vars') {
         var v = await figma.variables.getVariableByIdAsync(id);
         if (v) { ctx.names.vars[id] = v.name; ctx.names.remoteVars[id] = v; }
       } else if (kind === 'modes') {
@@ -140,6 +144,7 @@ async function resolvePending(ctx) {
         if (st) { ctx.names[kind][id] = st.name; ctx.names.remoteStyles[id] = st; }
       }
     } catch (e) { /* нет доступа к библиотеке — останется значение без имени */ }
+    if (kind === 'main' && !ctx.names.main[id]) ctx.names.main[id] = ctx.names.mainFallback[id];
     if (!ctx.names[kind][id]) ctx.names.missing[keys[i]] = true;
   }
   ctx.pending = {};
@@ -201,7 +206,7 @@ function explicitModes(node, ctx) {
 
 /** Имена локальных переменных и стилей по id — чтобы в дереве были ссылки на дизайн-систему, а не только значения. */
 async function designNames() {
-  var names = { vars: {}, text: {}, effect: {}, paint: {}, modes: {}, remoteVars: {}, remoteStyles: {}, missing: {} };
+  var names = { vars: {}, text: {}, effect: {}, paint: {}, modes: {}, main: {}, mainFallback: {}, remoteVars: {}, remoteStyles: {}, missing: {} };
   try { (await figma.variables.getLocalVariablesAsync()).forEach(function (v) { names.vars[v.id] = v.name; }); } catch (e) { /* нет доступа — без имён */ }
   try {
     (await figma.variables.getLocalVariableCollectionsAsync()).forEach(function (c) {
@@ -343,7 +348,10 @@ function serialize(node, ox, oy, ctx) {
     // набор вариантов с ошибкой (красное предупреждение в Figma) — variantProperties бросает исключение
     var variant;
     try { variant = node.variantProperties || undefined; } catch (e) { variant = undefined; }
-    o.component = { name: node.name, variant: variant };
+    // имя главного компонента (набора вариантов), а не слоя: копию могли переименовать («Button Override»)
+    ctx.pending['main|' + node.id] = true;
+    ctx.names.mainFallback[node.id] = node.name;
+    o.component = { name: '\u0000main|' + node.id, variant: variant };
     ctx.instances.push(node);
   }
 

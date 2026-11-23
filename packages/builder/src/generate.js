@@ -406,6 +406,12 @@ function buildEl(box, place, ctx, inPhrasing = false, grow = false) {
   const attrs = [];
   for (const [k, v] of Object.entries(sem?.attrs || {})) if (tag !== 'div' || k === 'role' || k === 'aria-label') attrs.push([k, v]);
   if (node) attrs.push(['data-figma-id', node.id], ['data-name', node.name]);
+  const comp = node && ctx.comps?.get(node.id);
+  if (comp) {
+    attrs.push(['data-component', comp.name]);
+    const v = Object.entries(comp.variant || {}).map(([k, x]) => `${k}=${x}`).join(', ');
+    if (v) attrs.push(['data-variant', v]);
+  }
   // режим переменных, выбранный на слое в Figma (Light/Dark…) — tokens.css переключает значения по data-mode
   const mode = node?.modes && Object.values(node.modes)[0];
   if (mode) attrs.push(['data-mode', String(mode).toLowerCase().replace(/[^a-z0-9]+/g, '-')]);
@@ -458,7 +464,19 @@ export function generateFrame(tree, { mode = 'flow', absIds = null, fluid = fals
   const sem = semantic ? analyzeSemantics(tree) : null;
   // имена от ИИ (если включён) — только для безликих слоёв; теги остаются алгоритмическими
   if (sem && names) for (const [id, name] of names) { const e = sem.get(id); if (e) e.name = className(name); }
-  const ctx = { styles, tokens, assetUrl, semantic: sem, downgrade: new Set(), fluid, fluidSkip, svgText, inlineSvg: inlineSvgOpt };
+  // компоненты Figma: экземпляры и варианты наборов — data-component / data-variant (для общего CSS компонентов)
+  const comps = new Map();
+  (function walk(n, parent) {
+    const variantOf = (name) => Object.fromEntries(String(name).split(',').map((p) => p.split('=').map((x) => x.trim())).filter((p) => p.length === 2 && p[0]));
+    if (n.type === 'INSTANCE' && n.component?.name) comps.set(n.id, { name: n.component.name, variant: n.component.variant || {} });
+    else if (n.type === 'COMPONENT') {
+      const v = variantOf(n.name);
+      const inSet = parent?.type === 'COMPONENT_SET' || Object.keys(v).length > 0;
+      comps.set(n.id, inSet && parent ? { name: parent.name, variant: v } : { name: n.name, variant: {} });
+    }
+    (n.children || []).forEach((c) => walk(c, n));
+  })(tree, null);
+  const ctx = { styles, tokens, assetUrl, semantic: sem, downgrade: new Set(), fluid, fluidSkip, svgText, inlineSvg: inlineSvgOpt, comps };
   const root = buildBox(tree, { mode, absIds });
   const rootEl = buildEl(root, null, ctx, false, fluid);
   // не уже макета: ниже его ширины страница уменьшается целиком (zoom), а не сжимается

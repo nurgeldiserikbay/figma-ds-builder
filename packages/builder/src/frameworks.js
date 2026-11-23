@@ -88,7 +88,7 @@ function vuePropValue(kind, v) {
 /** c.keep = null — проверка (все метки слоёв); Set — отдаваемый код (только нужные CSS поправок). */
 function keepAttr(k, v, pk, c) {
   if (!c.keep) return true;
-  if (k === 'data-name') return false;
+  if (k === 'data-name' || k === 'data-component' || k === 'data-variant') return false;
   if (k !== 'data-figma-id') return true;
   return c.mode === 'comp' ? c.keepIdx.has(c.idIndex.get(pk)) : c.keep.has(v);
 }
@@ -595,7 +595,7 @@ function cssVars(css) {
   return out;
 }
 
-export function agentsMd(kind, { pages, comps, resp = [], routesList, css, icons = 0, meta = {} }) {
+export function agentsMd(kind, { pages, comps, resp = [], routesList, css, icons = 0, meta = {}, components = [] }) {
   const ext = kind === 'react' ? 'jsx' : kind === 'vue' ? 'vue' : 'html';
   const L = [];
   L.push(`# ${meta.file || 'Сайт'} — вёрстка из Figma`);
@@ -613,7 +613,7 @@ export function agentsMd(kind, { pages, comps, resp = [], routesList, css, icons
   L.push('|---|---|---|---|');
   for (const r of resp) {
     L.push(kind === 'html'
-      ? `| ${r.file || r.component} | — | ${r.name} (адаптивная) | ${r.widths.join(' / ')} |`
+      ? `| ${r.file || r.component} | css/${(r.file || '').replace(/\.html$/, '')}-*.css | ${r.name} (адаптивная) | ${r.widths.join(' / ')} |`
       : `| #${r.route} | src/pages/${r.component}.${ext} | ${r.name} (адаптивная: ${r.members.map((m) => m.component).join(', ')}) | ${r.widths.join(' / ')} |`);
   }
   for (const p of pages) {
@@ -634,6 +634,16 @@ export function agentsMd(kind, { pages, comps, resp = [], routesList, css, icons
       const props = c.props.map((p) => `${p.name}:${p.kind}`).join(', ') || '—';
       L.push(`| src/components/${c.name}.${ext} | ${props} | ${c.instances.length} |`);
     }
+  }
+  if (kind === 'html' && components.length) {
+    L.push('');
+    L.push('## Компоненты (css/components.css)');
+    L.push('');
+    L.push('Компоненты из Figma: общий класс, части — `блок__часть`, варианты — `блок--значение`, состояния — `:hover`, `:active`, `:disabled` и т. п. (для показа без наведения — класс `is-…`). Новую кнопку или карточку собирай из этих классов, не копируя стили.');
+    L.push('');
+    L.push('| класс | компонент Figma | варианты | состояния | на страницах |');
+    L.push('|---|---|---|---|---|');
+    for (const c of components) L.push(`| .${c.block} | ${c.name} | ${c.modifiers.join(', ') || '—'} | ${c.states.join(', ') || '—'} | ${c.copies} |`);
   }
   const vars = cssVars(css || '');
   if (vars.length) {
@@ -656,7 +666,7 @@ export function agentsMd(kind, { pages, comps, resp = [], routesList, css, icons
   L.push('');
   L.push('- Цвета, шрифты, тени — только через токены `var(--…)`, новые значения не вписывать.');
   L.push('- Размеры и отступы блоков взяты из макета и проверены. Не меняй их, если задача не об этом.');
-  L.push(`- Классы с суффиксом (\`card-1x2y3\`) — стили конкретного блока ${kind === 'html' ? 'в css/<страница>.css' : 'в src/styles/site.css'}; найти стиль — поиском по имени класса.`);
+  L.push(`- Классы с суффиксом (\`card-1x2y3\`) — стили конкретного блока${kind === 'html' ? ' или своё у копии компонента (размер, переопределения)' : ''} ${kind === 'html' ? 'в css/<страница>.css' : 'в src/styles/site.css'}; найти стиль — поиском по имени класса.`);
   if (kind === 'html') L.push('- Иконки вставлены в страницы как <svg>: правь их там же или вынеси в файлы, если нужно.');
   if (icons) L.push(`- Иконки (${icons}) — в \`src/icons.js\`, в коде — \`icons.имя\`. Файл большой (SVG), читать его целиком не нужно.`);
   L.push(`- Не нужно читать: ${kind === 'html' ? '`css/fonts.css`' : '`src/styles/fonts.css`'} (шрифты)${icons ? ', `src/icons.js` (векторы)' : ''}, ${kind === 'html' ? '`assets/`' : '`public/`'} (файлы картинок и шрифтов).`);
