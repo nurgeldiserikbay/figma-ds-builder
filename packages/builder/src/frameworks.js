@@ -73,14 +73,48 @@ function propMap(comp) {
   return m;
 }
 
+/** Параметры вариантов и атрибутов состояния у места шаблона (path). */
+function variantAt(c, pk) {
+  if (c.mode !== 'comp' || !c.comp) return null;
+  const v = c.comp.props.filter((p) => p.kind === 'vprop' && p.path === pk);
+  const a = c.comp.props.filter((p) => p.kind === 'attr' && p.path === pk);
+  const extra = c.comp.props.find((p) => p.kind === 'cls' && p.path === pk && p.extraOf !== undefined);
+  if (!v.length && !a.length) return null;
+  // атрибут → имя параметра; такие атрибуты шаблона не пишем как есть
+  const attrs = [...a.map((p) => [p.attr, p.name, p.plain]), ...v.flatMap((p) => (p.attrs || []).map((x) => [x, p.name]))];
+  return { v, attrs, extra, skip: new Set(attrs.map(([x]) => x)) };
+}
+const q1 = (x) => `'${String(x).replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
+const mapJs = (m) => `({ ${Object.entries(m).map(([k, c]) => `${/^[a-z_$][\w$]*$/i.test(k) ? k : q1(k)}: ${q1(c)}`).join(', ')} })`;
+/** Класс корня из параметров вариантов: ['button', ({ secondary: 'button--secondary' })[variant], …].join(' '). */
+function variantClassJs(va) {
+  const parts = [q1(va.v[0].base), ...va.v.map((p) => `${mapJs(p.map)}[${p.bool ? `String(${p.name})` : p.name}]`)];
+  if (va.extra) parts.push(va.extra.name);
+  return `[${parts.join(', ')}].filter(Boolean).join(' ')`;
+}
+function reactAttrJs(a, name, plain) {
+  if (plain) return `${{ for: 'htmlFor', tabindex: 'tabIndex', readonly: 'readOnly', maxlength: 'maxLength', autocomplete: 'autoComplete' }[a] || a}={${name}}`;
+  if (a === 'aria-current') return `aria-current={${name} ? 'page' : undefined}`;
+  return `${a}={${name}}`;
+}
+function vueAttrJs(a, name, plain) {
+  if (plain) return `:${a}="${name}"`;
+  if (a === 'aria-current') return `:aria-current="${name} ? 'page' : undefined"`;
+  if (a === 'disabled') return `:disabled="${name}"`;
+  // Vue убирает атрибут со значением false — aria-* нужен строкой «false»
+  return `:${a}="${name} === undefined ? undefined : String(${name})"`;
+}
+
 /** Значение параметра в месте использования (React — JS-выражение). */
 function reactPropValue(kind, v) {
+  if (typeof v === 'boolean') return String(v);
   if (kind === 'style') return styleObjJs(v);
   if (kind === 'src') { const rel = assetRel(v || ''); return rel ? `asset(${jsStr(rel)})` : jsStr(v || ''); }
   return jsStr(v ?? '');
 }
 /** Vue — выражение для :prop. */
 function vuePropValue(kind, v) {
+  if (typeof v === 'boolean') return String(v);
   if (kind === 'src') { const rel = assetRel(v || ''); return rel ? `asset(${jsStr(rel)})` : jsStr(v || ''); }
   return jsStr(v ?? '');
 }
@@ -127,9 +161,10 @@ function jsx(el, c, depth, p = []) {
   if (c.mode === 'page' && c.instanceOf.has(el)) {
     const inst = c.instanceOf.get(el);
     c.used.add(inst.comp.name);
-    const props = inst.comp.props.map((pr) => {
+    const props = inst.comp.props.filter((pr) => !(['vprop', 'attr'].includes(pr.kind) || pr.extraOf !== undefined) || (inst.values[pr.name] !== undefined && inst.values[pr.name] !== '')).map((pr) => {
       if (pr.kind === 'src' && assetRel(inst.values[pr.name] || '')) c.usesAsset = true;
       if (pr.kind === 'html') return `${pr.name}={${htmlProp(inst.values[pr.name], c, pr.name)}}`;
+      if (pr.kind === 'vprop' && !pr.bool) return `${pr.name}="${inst.values[pr.name]}"`;
       return `${pr.name}={${reactPropValue(pr.kind, inst.values[pr.name])}}`;
     });
     const ids = idsFor(inst, c.keep);
@@ -141,12 +176,17 @@ function jsx(el, c, depth, p = []) {
   if (el.text !== undefined) {
     // ссылка в тексте — <a href>, остальное — span
     const t = el.tag || 'span';
-    const extra = (el.attrs || []).filter(([k]) => !k.startsWith('data-')).map(([k, v]) => ` ${jsxAttr(k, v)}`).join('');
+    const vt = variantAt(c, pk);
+    const extra = (el.attrs || []).filter(([k]) => !k.startsWith('data-') && !vt?.skip.has(k)).map(([k, v]) => ` ${jsxAttr(k, v)}`).join('')
+      + (vt ? vt.attrs.map(([a, name, plain]) => ` ${reactAttrJs(a, name, plain)}`).join('') : '');
     return `${pad}<${t} className=${pp.cls ? `{${pp.cls}}` : `"${el.cls}"`}${extra}>{${pp.text || jsStr(el.text)}}</${t}>`;
   }
   const attrs = [];
-  if (pp.cls) attrs.push(`className={${pp.cls}}`);
+  const va = variantAt(c, pk);
+  if (va?.v.length) attrs.push(`className={${variantClassJs(va)}}`);
+  else if (pp.cls) attrs.push(`className={${pp.cls}}`);
   else if (el.cls) attrs.push(`className="${el.cls}"`);
+  if (va) for (const [a, name, plain] of va.attrs) attrs.push(reactAttrJs(a, name, plain));
   if (el.html !== undefined) {
     attrs.push(pp.style ? `style={${pp.style}}` : `style={${styleObjJs(el.style)}}`);
     c.usesIcons ||= !pp.html;
@@ -167,7 +207,7 @@ function jsx(el, c, depth, p = []) {
   else if (pp.style) attrs.push(`style={${pp.style}}`);
   else if (el.style) attrs.push(`style={${styleObjJs(el.style)}}`);
   for (const [k, v] of el.attrs || []) {
-    if (!keepAttr(k, v, pk, c)) continue;
+    if (!keepAttr(k, v, pk, c) || va?.skip.has(k)) continue;
     if (k === 'data-figma-id' && c.mode === 'comp') attrs.push(`data-figma-id={ids?.[${c.idIndex.get(pk)}]}`);
     else attrs.push(jsxAttr(k, v));
   }
@@ -182,7 +222,7 @@ function jsx(el, c, depth, p = []) {
 
 function reactComponent(comp, o = {}) {
   const keepIdx = keepIdxOf(comp, o.keep, o.instanceOf);
-  const c = { mode: 'comp', propAt: propMap(comp), idIndex: new Map(comp.idPaths.map((p, i) => [p, i])), used: new Set(), keep: o.keep, keepIdx, icons: o.icons };
+  const c = { mode: 'comp', comp, propAt: propMap(comp), idIndex: new Map(comp.idPaths.map((p, i) => [p, i])), used: new Set(), keep: o.keep, keepIdx, icons: o.icons };
   const body = jsx(comp.template, c, 2);
   const withIds = keepIdx.size > 0;
   const args = [...comp.props.map((p) => p.name), ...(withIds ? ['ids'] : []), 'style'].join(', ');
@@ -220,9 +260,11 @@ function vueTpl(el, c, depth, p = []) {
   if (c.mode === 'page' && c.instanceOf.has(el)) {
     const inst = c.instanceOf.get(el);
     c.used.add(inst.comp.name);
-    const props = inst.comp.props.map((pr) => {
+    const props = inst.comp.props.filter((pr) => !(['vprop', 'attr'].includes(pr.kind) || pr.extraOf !== undefined) || (inst.values[pr.name] !== undefined && inst.values[pr.name] !== '')).map((pr) => {
       if (pr.kind === 'src' && assetRel(inst.values[pr.name] || '')) c.usesAsset = true;
       if (pr.kind === 'html') return `:${pr.name}="${htmlProp(inst.values[pr.name], c, pr.name)}"`;
+      if (pr.kind === 'vprop' && !pr.bool) return `${pr.name}="${inst.values[pr.name]}"`;
+      if (pr.kind === 'cls' && pr.extraOf !== undefined) return `class-name="${escAttr(inst.values[pr.name])}"`;
       return `:${pr.name}="${escAttr(vuePropValue(pr.kind, inst.values[pr.name]))}"`;
     });
     const ids = idsFor(inst, c.keep);
@@ -233,12 +275,17 @@ function vueTpl(el, c, depth, p = []) {
   const pp = c.propAt?.get(pk) || {};
   if (el.text !== undefined) {
     const t = el.tag || 'span';
-    const extra = (el.attrs || []).filter(([k]) => !k.startsWith('data-')).map(([k, v]) => ` ${k}="${escAttr(v)}"`).join('');
+    const vt = variantAt(c, pk);
+    const extra = (el.attrs || []).filter(([k]) => !k.startsWith('data-') && !vt?.skip.has(k)).map(([k, v]) => ` ${k}="${escAttr(v)}"`).join('')
+      + (vt ? vt.attrs.map(([a, name, plain]) => ` ${vueAttrJs(a, name, plain)}`).join('') : '');
     return `${pad}<${t} ${pp.cls ? `:class="${pp.cls}"` : `class="${el.cls}"`}${extra}>{{ ${pp.text || escAttr(jsStr(el.text))} }}</${t}>`;
   }
   const attrs = [];
-  if (pp.cls) attrs.push(`:class="${pp.cls}"`);
+  const va = variantAt(c, pk);
+  if (va?.v.length) attrs.push(`:class="${escAttr(variantClassJs(va))}"`);
+  else if (pp.cls) attrs.push(`:class="${pp.cls}"`);
   else if (el.cls) attrs.push(`class="${el.cls}"`);
+  if (va) for (const [a, name, plain] of va.attrs) attrs.push(vueAttrJs(a, name, plain));
   if (el.html !== undefined) {
     attrs.push(pp.style ? `:style="${pp.style}"` : `style="${escAttr(el.style)}"`);
     c.usesIcons ||= !pp.html;
@@ -258,7 +305,7 @@ function vueTpl(el, c, depth, p = []) {
   else if (pp.style) attrs.push(`:style="${pp.style}"`);
   else if (el.style) attrs.push(`style="${escAttr(el.style)}"`);
   for (const [k, v] of el.attrs || []) {
-    if (!keepAttr(k, v, pk, c)) continue;
+    if (!keepAttr(k, v, pk, c) || va?.skip.has(k)) continue;
     if (k === 'data-figma-id' && c.mode === 'comp') attrs.push(`:data-figma-id="ids?.[${c.idIndex.get(pk)}]"`);
     else attrs.push(`${k}="${escAttr(v)}"`);
   }
@@ -273,7 +320,7 @@ function vueTpl(el, c, depth, p = []) {
 
 function vueComponentParts(comp, o = {}) {
   const keepIdx = keepIdxOf(comp, o.keep, o.instanceOf);
-  const c = { mode: 'comp', propAt: propMap(comp), idIndex: new Map(comp.idPaths.map((p, i) => [p, i])), used: new Set(), keep: o.keep, keepIdx, icons: o.icons };
+  const c = { mode: 'comp', comp, propAt: propMap(comp), idIndex: new Map(comp.idPaths.map((p, i) => [p, i])), used: new Set(), keep: o.keep, keepIdx, icons: o.icons };
   const template = vueTpl(comp.template, c, 1);
   const props = [...comp.props.map((p) => p.name), ...(keepIdx.size ? ['ids'] : []), 'style'];
   return { template, props, usesAsset: c.usesAsset, usesIcons: c.usesIcons, withIds: keepIdx.size > 0 };
@@ -282,7 +329,11 @@ function vueComponentParts(comp, o = {}) {
 function vueComponent(comp, o = {}) {
   const { template, props, usesAsset, usesIcons, withIds } = vueComponentParts(comp, o);
   const kinds = Object.fromEntries(comp.props.map((p) => [p.name, p.kind]));
-  const defs = props.map((p) => (p === 'ids' ? 'ids: Array' : p === 'style' || kinds[p] === 'style' ? `${p}: [String, Object]` : `${p}: String`)).join(', ');
+  const pr = Object.fromEntries(comp.props.map((p) => [p.name, p]));
+  const defs = props.map((p) => (p === 'ids' ? 'ids: Array' : p === 'style' || kinds[p] === 'style' ? `${p}: [String, Object]`
+    : kinds[p] === 'attr' && pr[p].plain ? `${p}: String`
+    : kinds[p] === 'attr' ? `${p}: { type: [Boolean, String], default: undefined }`
+    : kinds[p] === 'vprop' && pr[p].bool ? `${p}: { type: Boolean, default: undefined }` : `${p}: String`)).join(', ');
   return `<script setup>
 ${usesAsset ? "import { asset } from '../assets.js';\n" : ''}${usesIcons ? "import { icons } from '../icons.js';\n" : ''}// Компонент из макета: ${comp.instances.length} использований.${withIds ? ' ids — слои Figma, к которым привязаны поправки в CSS.' : ''}
 defineProps({ ${defs} });
@@ -664,12 +715,13 @@ export function agentsMd(kind, { pages, comps, resp = [], routesList, css, icons
     L.push('');
     L.push('## Компоненты');
     L.push('');
-    L.push('Повторяющиеся блоки макета. Параметры: text — текст, src — картинка, html — иконка из icons.js, cls — вариант оформления, style — положение.');
+    L.push('Повторяющиеся блоки макета. Параметры: text — текст, src — картинка, html — иконка из icons.js, cls — вариант оформления, style — положение,');
+    L.push('vprop — свойство варианта компонента Figma (значения — в скобках; `variant="secondary"` даёт класс `button--secondary`), attr — атрибут (disabled, aria-selected, placeholder…).');
     L.push('');
     L.push('| компонент | параметры | использований |');
     L.push('|---|---|---|');
     for (const c of comps.components) {
-      const props = c.props.map((p) => `${p.name}:${p.kind}`).join(', ') || '—';
+      const props = c.props.map((p) => (p.kind === 'vprop' ? `${p.name}:vprop (${p.bool ? 'true/false' : [...new Set(p.values.filter(Boolean))].join('/')})` : `${p.name}:${p.kind}`)).join(', ') || '—';
       L.push(`| src/components/${c.name}.${ext} | ${props} | ${c.instances.length} |`);
     }
   }

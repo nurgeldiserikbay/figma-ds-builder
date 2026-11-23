@@ -80,6 +80,44 @@ function stateSelectors(state, tag, block) {
   return [cls];
 }
 
+const YES = /^(true|yes|on|да|1)$/i, NO = /^(false|no|off|нет|0)$/i;
+/** Класс модификатора: «Type=Secondary» → --secondary; «Selected=true» → --selected, «Selected=false» → --not-selected. */
+function modName(block, k, v) {
+  if (YES.test(v)) return `${block}--${className(k)}`;
+  if (NO.test(v)) return `${block}--not-${className(k)}`;
+  return `${block}--${className(v)}`;
+}
+const NATIVE_DISABLE = new Set(['button', 'input', 'select', 'textarea', 'fieldset']);
+/**
+ * Атрибуты доступности из свойств варианта: Selected/Checked/Open/Pressed/Current/Disabled (да/нет) и такие же
+ * значения State. Для чекбокса, переключателя, радио по имени компонента — роль и фокус с клавиатуры.
+ */
+export function ariaOf(variant, stateKey, tag, block) {
+  const a = {};
+  const put = (key, on) => {
+    if (/^(selected|выбран\S*)$/i.test(key)) a['aria-selected'] = String(on);
+    else if (/^(checked|отмечен\S*)$/i.test(key)) a['aria-checked'] = String(on);
+    else if (/^(open|opened|expanded|открыт\S*|раскрыт\S*)$/i.test(key)) a['aria-expanded'] = String(on);
+    else if (/^(pressed|toggled|on|включ\S*)$/i.test(key)) a['aria-pressed'] = String(on);
+    else if (/^(current|текущ\S*)$/i.test(key)) { if (on) a['aria-current'] = 'page'; }
+    else if (/^(disabled|inactive|недоступ\S*|неактив\S*)$/i.test(key)) {
+      if (on) { if (NATIVE_DISABLE.has(tag)) a.disabled = ''; else a['aria-disabled'] = 'true'; }
+    } else return false;
+    return true;
+  };
+  for (const [k, v] of Object.entries(variant || {})) {
+    // State=Pressed — это нажатие (:active), а не переключатель aria-pressed
+    if (k === stateKey) { if (!/^(pressed|on|включ)/i.test(v)) put(v, true); }
+    else if (YES.test(v)) put(k, true);
+    else if (NO.test(v)) put(k, false);
+  }
+  if ('aria-checked' in a && !['input'].includes(tag)) {
+    a.role = /switch|toggle|переключ/i.test(block) ? 'switch' : /radio|радио/i.test(block) ? 'radio' : 'checkbox';
+    if (tag !== 'button' && tag !== 'a') a.tabindex = '0';
+  }
+  return a;
+}
+
 function parseVariant(v) {
   const o = {};
   for (const part of String(v || '').split(',')) {
@@ -202,7 +240,7 @@ export function componentize(pages) {
           const mod = diff(common(sameVal.map((j) => D[j][i].o)), base);
           // свойство, которое у части копий этого значения другое, модификатором не считаем
           if (!Object.keys(mod).length) continue;
-          const mcls = `${block}--${className(val)}`;
+          const mcls = modName(block, k, val);
           // часть: «.button--x .button__label» (0,2,0) — своё у копии (.c.c, тоже 0,2,0, но позже) сильнее
           rules.push([i === 0 ? `.${block}.${mcls}` : `.${mcls} .${names[i]}`, mod]);
           modsUsed.add(`${k}=${val}`);
@@ -219,7 +257,7 @@ export function componentize(pages) {
         const st = stateOf(m);
         const pseudo = stateSelectors(st, tag, block);
         // модификаторы этого варианта, которые реально есть в CSS
-        const mods = propKeys.map((k) => m.variant[k]).filter(Boolean).map((v) => `${block}--${className(v)}`)
+        const mods = propKeys.filter((k) => m.variant[k]).map((k) => modName(block, k, m.variant[k]))
           .filter((c) => rules.some(([s]) => s.includes(`.${c}`)));
         const pre = `.${block}${mods.map((c) => `.${c}`).join('')}`;
         for (let i = 0; i < P; i++) {
@@ -250,7 +288,7 @@ export function componentize(pages) {
         if (i === 0) {
           for (const k of propKeys) {
             const v = m.variant[k];
-            if (v && rules.some(([s]) => s.includes(`.${block}--${className(v)}`))) cls.push(`${block}--${className(v)}`);
+            if (v && rules.some(([s]) => s.includes(`.${modName(block, k, v)}`))) cls.push(modName(block, k, v));
           }
           if (!isDefault(m) && rules.some(([s]) => s.includes(`.is-${className(stateOf(m))}`))) cls.push(`is-${className(stateOf(m))}`);
         }
@@ -264,7 +302,14 @@ export function componentize(pages) {
         }
         cls.push(...unknown);
         m.pendings = m.pendings || [];
-        m.pendings.push([m.parts[i].el, cls.join(' ')]);
+        let value = cls.join(' ');
+        if (i === 0) {
+          // атрибуты доступности варианта — после class (значение вставляется между кавычками class="…")
+          const extraAttrs = Object.entries(ariaOf(m.variant, stateKey, tag, block)).filter(([k]) => !(k in m.root.attrs));
+          // последняя кавычка — та, что закрывала class
+          if (extraAttrs.length) value += `"${extraAttrs.map(([k, v]) => ` ${k}="${v}"`).join('')}`.slice(0, -1);
+        }
+        m.pendings.push([m.parts[i].el, value]);
       }
       if (!m.skip) for (const [el, c] of m.pendings) m.pg.repl.set(el, c);
     }
@@ -306,6 +351,8 @@ export function componentizeTrees(pages, htmlOfEl) {
     (function assign(el, pe) {
       if (!el || !pe) return;
       if (pe.attrs.class !== undefined && el.cls !== undefined) el.cls = pe.attrs.class;
+      // атрибуты доступности из вариантов (aria-selected, disabled…) — и в дерево для React/Vue
+      if (el.attrs) for (const [k, v] of Object.entries(pe.attrs)) if (/^(aria-|disabled$|role$|tabindex$)/.test(k) && !el.attrs.some(([x]) => x === k)) el.attrs.push([k, v]);
       if (el.html !== undefined || el.text !== undefined) return;
       const kids = el.children || [];
       if (kids.length !== pe.children.length) return; // строение разошлось — дальше не трогаем

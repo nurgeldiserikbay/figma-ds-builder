@@ -38,7 +38,23 @@ assert.match(r.pages[1].css['b.css'], new RegExp(`\\.${own[1]}\\.${own[1]} \\{ w
 assert.doesNotMatch(r.pages[0].css['a.css'], /\.p-def/, 'старые классы копий убраны из CSS страницы');
 assert.match(r.pages[0].css['a.css'], /\.row \{/, 'остальное на месте');
 assert.deepEqual(r.components.map((c) => c.block), ['button']);
+assert.match(r.pages[0].html, /class="button button--secondary is-disabled" disabled="" type="button"/, 'неактивная кнопка — disabled');
+assert.doesNotMatch(r.pages[0].html, /class="button button--primary is-hover"[^>]*disabled/);
 console.log('компоненты в CSS: варианты, состояния, своё у копий — OK');
+
+// свойства-переключатели: Selected=true/false → aria-selected и модификатор --selected (не --true)
+{
+  const tab = (cls, v) => `<div class="${cls}" data-figma-id="x" data-name="Tab" data-component="Tab" data-variant="${v}"><span class="tt">Вкладка</span></div>`;
+  const chk = (cls, v) => `<div class="${cls}" data-figma-id="y" data-name="Checkbox" data-component="Checkbox" data-variant="${v}"><span class="tt">Да</span></div>`;
+  const pg = { html: `<body>\n${tab('a1', 'Selected=true')}\n${tab('a2', 'Selected=false')}\n${tab('a3', 'Selected=false')}\n${chk('c1', 'Checked=true')}\n${chk('c2', 'Checked=false')}\n</body>`,
+    css: { 'p.css': '.a1 { display: block; color: blue; }\n.a2 { display: block; color: gray; }\n.a3 { display: block; color: gray; }\n.c1 { display: block; background: green; }\n.c2 { display: block; background: white; }\n.tt { display: block; }\n' } };
+  const r2 = componentize([pg]);
+  assert.match(r2.css, /\.tab\.tab--selected \{ color: blue; \}/, 'модификатор по имени свойства');
+  assert.match(r2.pages[0].html, /class="tab tab--selected" aria-selected="true"/);
+  assert.match(r2.pages[0].html, /class="tab" aria-selected="false"/);
+  assert.match(r2.pages[0].html, /class="checkbox checkbox--checked" aria-checked="true" role="checkbox" tabindex="0"/, 'чекбокс — роль и фокус');
+  console.log('Selected/Checked/Open из вариантов → aria-атрибуты — OK');
+}
 
 // имена классов без хеша: уникальные — как есть, повторы — с номером, имена компонентов не занимаем
 {

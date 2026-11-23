@@ -75,7 +75,9 @@
 переименовали; общие стили — один раз в `components.css`. Повторяющиеся блоки становятся компонентами React/Vue
 с параметрами.
 
-**В планах:** Свойства компонентов Figma (Component properties) — прямо как props в коде (`<Button variant="secondary">`).
+**Уже работает:** Свойства вариантов компонента Figma — параметры компонентов React/Vue: `<Button variant="secondary" state="hover">`.
+
+**В планах:** Остальные свойства компонента (текст, показать/скрыть, замена иконки) — тоже параметрами с именами из Figma.
 
 ## 5. Состояния — вариантами компонента
 
@@ -93,7 +95,9 @@
 `is-hover`…); остальные свойства (`Type=Secondary`, `Size=L`) → модификаторы `.button--secondary`. Так в HTML, React и Vue.
 Варианты, которых нет в макете, программа не придумывает.
 
-**В планах:** `Selected`, `Checked`, `Open` → атрибуты `aria-selected`, `aria-checked`, `aria-expanded`.
+**Уже работает:** `Selected`, `Checked`, `Open`, `Current`, `Disabled` (true/false или значение `State`) → атрибуты
+`aria-selected`, `aria-checked`, `aria-expanded`, `aria-current`, `disabled`; у чекбокса и переключателя — роль и
+фокус с клавиатуры.
 
 **Уже работает:** PNG всех экранов кладутся в `screens/` с понятными именами — агент и разработчик видят все состояния.
 
