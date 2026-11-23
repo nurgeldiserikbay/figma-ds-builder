@@ -25,3 +25,22 @@ const nested = analyzeSemantics({ ...tree, children: [box('x', 'form / Вход'
 assert.equal(nested.get('x')?.tag, 'form');
 assert.notEqual(nested.get('y')?.tag, 'form', 'форма в форме не вкладывается');
 console.log('смысловые теги по именам слоёв (header, nav, main, section, aside, form) — OK');
+
+// поле ввода (экземпляр «Input» с текстом в рамке) — <input> с подсказкой, а не кнопка
+{
+  const { generateFrame } = await import('../src/generate.js');
+  const t = (id, chars, x, y, w, h) => ({ id, name: 'Value', type: 'TEXT', x, y, w, h, visible: true, text: { characters: chars, autoResize: 'HEIGHT', segments: [{ start: 0, end: chars.length, fontFamily: 'Inter', fontSize: 16, fontWeight: 400, lineHeight: { unit: 'PIXELS', value: 24 }, fills: [{ type: 'SOLID', visible: true, color: { r: 0.4, g: 0.4, b: 0.4, a: 1 } }] }] } });
+  const field = { id: 'f', name: 'Field', type: 'FRAME', x: 0, y: 0, w: 320, h: 48, visible: true, fills: [{ type: 'SOLID', visible: true, color: { r: 1, g: 1, b: 1, a: 1 } }], strokes: [{ type: 'SOLID', visible: true, color: { r: 0.8, g: 0.8, b: 0.8, a: 1 } }], strokeWeight: 1, radius: [10, 10, 10, 10],
+    layout: { mode: 'HORIZONTAL', gap: 0, padding: [12, 16, 12, 16], primaryAlign: 'MIN', counterAlign: 'MIN' }, children: [t('v', 'Ваша почта', 16, 12, 288, 24)] };
+  const input = { id: 'i', name: 'Input', type: 'INSTANCE', component: { name: 'Input', variant: { State: 'Default' } }, x: 0, y: 0, w: 320, h: 48, visible: true, fills: [], layout: { mode: 'VERTICAL', gap: 4, padding: [0, 0, 0, 0], primaryAlign: 'MIN', counterAlign: 'MIN' }, children: [field] };
+  const tree2 = { id: 'r', name: 'Form', type: 'FRAME', x: 0, y: 0, w: 400, h: 100, visible: true, fills: [], children: [input] };
+  const s2 = analyzeSemantics(tree2);
+  assert.equal(s2.get('v')?.tag, 'input', 'значение поля — <input>');
+  assert.equal(s2.get('v').attrs.type, 'email');
+  assert.equal(s2.get('v').attrs.placeholder, 'Ваша почта');
+  assert.notEqual(s2.get('i')?.tag, 'button', 'поле ввода — не кнопка');
+  const { html } = generateFrame(tree2, { mode: 'flow', assetUrl: (r) => r, title: 'F' });
+  assert.match(html, /<input [^>]*type="email" placeholder="Ваша почта"[^>]*>/);
+  assert.doesNotMatch(html, /<\/input>/);
+  console.log('поле ввода → <input type="email" placeholder> — OK');
+}

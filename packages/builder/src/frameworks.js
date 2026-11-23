@@ -255,7 +255,7 @@ function vueTpl(el, c, depth, p = []) {
     else attrs.push(`${k}="${escAttr(v)}"`);
   }
   const kids = el.children || [];
-  if (!kids.length) return `${pad}<${el.tag} ${attrs.join(' ')}></${el.tag}>`;
+  if (!kids.length) return el.void ? `${pad}<${el.tag} ${attrs.join(' ')} />` : `${pad}<${el.tag} ${attrs.join(' ')}></${el.tag}>`;
   const prevHint = c.hint;
   c.hint = dataName(el) || prevHint;
   const inner = kids.map((k, i) => vueTpl(k, c, depth + 1, [...p, i])).join('\n');

@@ -458,12 +458,12 @@ function scaleNames(values, anchor) {
 function spacing(C, opts) {
   const vals = C.spacing.filter((s) => s.v >= 1);
   const totalW = vals.reduce((s, x) => s + x.w, 0) || 1;
-  // базовая единица: наибольшая из 8/6/5/4/3/2, на которую ложится ≥ 70% веса значений
+  // базовая единица: наибольшая из 8/6/5/4/3/2, на которую ложится почти всё (≥ 90%) — сетка 4 с шагом 12
+  // не должна превращаться в «сетку 8, четверть отступов мимо»; если такой нет — наибольшая с ≥ 70% веса
   let base = 1;
-  for (const b of [8, 6, 5, 4, 3, 2]) {
-    const share = vals.filter((s) => Math.abs(s.v - Math.round(s.v / b) * b) <= 0.5).reduce((a, x) => a + x.w, 0) / totalW;
-    if (share >= opts.baseShare) { base = b; break; }
-  }
+  const shareOf = (b) => vals.filter((s) => Math.abs(s.v - Math.round(s.v / b) * b) <= 0.5).reduce((a, x) => a + x.w, 0) / totalW;
+  const BASES = [8, 6, 5, 4, 3, 2];
+  base = BASES.find((b) => shareOf(b) >= 0.9) || BASES.find((b) => shareOf(b) >= opts.baseShare) || 1;
   // «примагничивание» геометрических значений к сетке; значения из Auto Layout — как есть
   // точные значения Auto Layout вне сетки остаются, только если встречаются часто (иначе — к сетке, в «редкие»)
   const exactW = new Map();

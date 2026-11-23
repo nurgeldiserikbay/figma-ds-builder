@@ -239,8 +239,18 @@ export function anchorOf(c, parentRect, parentNode) {
   return 'MIN';
 }
 
+/** Высота «по содержимому» (Hug, текст с автовысотой): при растяжении блок становится ниже или выше. */
+const hugsHeight = (n) => !!n && (n.sizing?.v === 'HUG' || (n.type === 'TEXT' && ['HEIGHT', 'WIDTH_AND_HEIGHT'].includes(n.text?.autoResize)));
+
 /** Инлайн-правки для ребёнка растущего контейнера; возвращает { style, grow }. */
 function fluidChild(parent, child, index, places, kids) {
+  const f = fluidChildRaw(parent, child, index, places, kids);
+  // растянутый текст переносится иначе — высота по содержимому, иначе остаётся пустота (или текст вылезает)
+  if (f.grow && hugsHeight(child.node) && parent.flow !== 'abs') f.style = `${f.style} height: auto;`.trim();
+  return f;
+}
+
+function fluidChildRaw(parent, child, index, places, kids) {
   const pr = parent.rect, r = child.rect;
   const lg = r.x - pr.x, rg = pr.x + pr.w - (r.x + r.w);
   const n = child.node;
@@ -300,10 +310,11 @@ function buildEl(box, place, ctx, inPhrasing = false, grow = false) {
   const node = box.node;
   const sem = node && box.kind === 'node' && ctx.semantic ? ctx.semantic.get(node.id) : null;
   let tag = sem?.tag || 'div';
+  let voidEl = false;
   if (ctx.downgrade?.has(node?.id)) tag = 'div';
   // внутри button/a/h*/p допустимы только строчные элементы: вложенная кнопка или ссылка
   // заставила бы HTML-парсер закрыть внешнюю и перестроить дерево
-  if (inPhrasing) tag = 'span';
+  if (inPhrasing && tag !== 'input') tag = 'span';
   // список, разложенный по рядам через обёртки, остаётся div (li должны быть прямыми детьми ul)
   if (tag === 'ul' && (box.children || []).some((c) => c.kind !== 'node')) {
     tag = 'div';
@@ -355,6 +366,14 @@ function buildEl(box, place, ctx, inPhrasing = false, grow = false) {
     if (node.svg && node.svgSpace === 'box') kids.push(svgImg(node, ctx, node.svgBox || { x: 0, y: 0, w: box.rect.w, h: box.rect.h }));
     // дети повёрнутого слоя — со своими матрицами, внутри рамки
     children.forEach((c, i) => kids.push(buildEl(c, places[i], ctx, childPhrasing)));
+  } else if (node?.type === 'TEXT' && box.kind === 'node' && tag === 'input') {
+    // поле ввода: текст макета — подсказка (placeholder); шрифт и цвет — на самом <input>
+    const seg = node.text?.segments?.[0] || node.text?.style || {};
+    const sc = segmentCss(seg, ctx);
+    for (const k of ['font-family', 'font-size', 'font-weight', 'font-style', 'line-height', 'letter-spacing', 'color', 'text-transform']) if (sc[k]) flow[k] = sc[k];
+    flow['text-align'] = { CENTER: 'center', RIGHT: 'right' }[node.text?.align] || 'left';
+    kids = [];
+    voidEl = true;
   } else if (node?.type === 'TEXT' && box.kind === 'node') {
     const va = { TOP: 'flex-start', CENTER: 'center', BOTTOM: 'flex-end' }[node.text?.verticalAlign] || 'flex-start';
     Object.assign(flow, { display: 'flex', 'flex-direction': 'column', 'justify-content': va });
@@ -391,7 +410,7 @@ function buildEl(box, place, ctx, inPhrasing = false, grow = false) {
   const mode = node?.modes && Object.values(node.modes)[0];
   if (mode) attrs.push(['data-mode', String(mode).toLowerCase().replace(/[^a-z0-9]+/g, '-')]);
   return {
-    tag, cls, style: placementStyle(place), attrs, children: kids, inlineChildren: inlineKids,
+    tag, cls, style: placementStyle(place), attrs, children: kids, inlineChildren: inlineKids, void: voidEl || undefined,
     id: node?.id, name: sem?.name || (node ? node.name : 'group'), kind: box.kind, component: node?.component || null,
   };
 }
@@ -404,6 +423,7 @@ export function htmlOf(el, depth = 1) {
   if (el.style) attrs.push(`style="${el.style}"`);
   for (const [k, v] of el.attrs) attrs.push(`${k}="${esc(v)}"`);
   const open = `${pad}<${el.tag} ${attrs.join(' ')}>`;
+  if (el.void) return open; // <input> без закрывающего тега
   const kids = el.children || [];
   if (!kids.length) return `${open}</${el.tag}>`;
   if (el.inlineChildren) return `${open}${kids.map(inlineHtml).join('')}</${el.tag}>`;
@@ -442,7 +462,7 @@ export function generateFrame(tree, { mode = 'flow', absIds = null, fluid = fals
   const root = buildBox(tree, { mode, absIds });
   const rootEl = buildEl(root, null, ctx, false, fluid);
   // не уже макета: ниже его ширины страница уменьшается целиком (zoom), а не сжимается
-  if (fluid) rootEl.style = `${rootEl.style ? rootEl.style + ' ' : ''}width: 100%; min-width: ${px(tree.w)};`;
+  if (fluid) rootEl.style = `${rootEl.style ? rootEl.style + ' ' : ''}width: 100%; min-width: ${px(tree.w)};${tree.layout && tree.layout.mode !== 'NONE' && hugsHeight(tree) ? ' height: auto;' : ''}`;
   const body = htmlOf(rootEl, 1);
 
   // полнота: каждый видимый слой должен попасть в вёрстку (кроме вобранных фонов и содержимого векторов)

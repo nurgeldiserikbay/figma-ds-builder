@@ -799,6 +799,45 @@
         "codeSyntax": {
           "WEB": "var(--radius-full)"
         }
+      },
+      {
+        "name": "opacity/muted",
+        "type": "FLOAT",
+        "values": {
+          "Value": 50
+        },
+        "scopes": [
+          "OPACITY"
+        ],
+        "codeSyntax": {
+          "WEB": "var(--opacity-muted)"
+        }
+      },
+      {
+        "name": "type/size/lead",
+        "type": "FLOAT",
+        "values": {
+          "Value": 18
+        },
+        "scopes": [
+          "FONT_SIZE"
+        ],
+        "codeSyntax": {
+          "WEB": "var(--type-size-lead)"
+        }
+      },
+      {
+        "name": "stroke/thick",
+        "type": "FLOAT",
+        "values": {
+          "Value": 2
+        },
+        "scopes": [
+          "STROKE_FLOAT"
+        ],
+        "codeSyntax": {
+          "WEB": "var(--stroke-thick)"
+        }
       }
     ]
   }

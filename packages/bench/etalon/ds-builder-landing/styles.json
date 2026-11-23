@@ -1,5 +1,38 @@
 {
-  "paint": [],
+  "paint": [
+    {
+      "name": "Legacy/Orange",
+      "paints": [
+        {
+          "type": "SOLID",
+          "opacity": 1,
+          "visible": true,
+          "color": {
+            "r": 0.9764705896377563,
+            "g": 0.45098039507865906,
+            "b": 0.08627451211214066,
+            "a": 1
+          }
+        }
+      ]
+    },
+    {
+      "name": "Legacy/Teal",
+      "paints": [
+        {
+          "type": "SOLID",
+          "opacity": 1,
+          "visible": true,
+          "color": {
+            "r": 0.05882352963089943,
+            "g": 0.4627451002597809,
+            "b": 0.4313725531101227,
+            "a": 1
+          }
+        }
+      ]
+    }
+  ],
   "text": [
     {
       "name": "Caption",

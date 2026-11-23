@@ -51,7 +51,7 @@ export async function refinePage(browser, htmlPath, { refPath, tree, sources, wi
 
     const base = await page.evaluate((id) => {
       const el = document.querySelector(`[data-figma-id="${CSS.escape(id)}"]`);
-      if (!el) return null;
+      if (!el || !el.querySelector(':scope > span')) return null; // <input> и прочее без текста-спанов — не подстраиваем
       const spans = [...el.querySelectorAll(':scope > span > span')];
       return { ls: spans.map((s) => parseFloat(getComputedStyle(s).letterSpacing) || 0), fs: parseFloat(getComputedStyle(spans[0] || el).fontSize) || 16 };
     }, c.id);

@@ -2,7 +2,7 @@
   "format": "ds-package",
   "version": 1,
   "file": "DS Builder — эталонный макет для теста",
-  "createdAt": "2026-11-23T08:51:34.569Z",
+  "createdAt": "2026-11-23T09:50:50.881Z",
   "scale": 1,
   "fonts": "fonts.json",
   "variables": "variables.json",
@@ -59,6 +59,36 @@
       "layers": 5
     },
     {
+      "id": "11:70",
+      "name": "Metric",
+      "page": "Components",
+      "width": 430,
+      "height": 49,
+      "tree": "frames/11_70.json",
+      "png": "frames/11_70.png",
+      "layers": 3
+    },
+    {
+      "id": "11:94",
+      "name": "Step",
+      "page": "Components",
+      "width": 384,
+      "height": 148,
+      "tree": "frames/11_94.json",
+      "png": "frames/11_94.png",
+      "layers": 5
+    },
+    {
+      "id": "11:133",
+      "name": "Section Heading",
+      "page": "Components",
+      "width": 1150,
+      "height": 188,
+      "tree": "frames/11_133.json",
+      "png": "frames/11_133.png",
+      "layers": 7
+    },
+    {
       "id": "4:3",
       "name": "Главная — Desktop",
       "page": "Landing",
@@ -73,10 +103,20 @@
       "name": "Главная — Mobile",
       "page": "Landing",
       "width": 390,
-      "height": 4070,
+      "height": 4094,
       "tree": "frames/5_36.json",
       "png": "frames/5_36.png",
       "layers": 106
+    },
+    {
+      "id": "12:8",
+      "name": "Трудные случаи",
+      "page": "Трудные случаи",
+      "width": 1440,
+      "height": 1058,
+      "tree": "frames/12_8.json",
+      "png": "frames/12_8.png",
+      "layers": 45
     }
   ]
 }

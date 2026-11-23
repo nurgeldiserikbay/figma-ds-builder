@@ -188,7 +188,8 @@ export function auditDesign(pkg, ds, extra = {}) {
   sec('tokens', 'Переменные и стили', '6-переменные-variables-и-стили-вместо-просто-цветов',
     tokScore >= 4 ? 'ok' : tokScore >= 2 ? 'warn' : 'bad',
     `Переменных: ${varCount} (цвета ${colorVars}, числа ${numVars}); текстовых стилей: ${textStyles}; стилей эффектов: ${effectStyles}. ` +
-    `Разных цветов в макетах: ${ds.colors.mergedFrom} → после объединения близких ${ds.colors.tokens.length}; ${gridText}.`,
+    (ds.figma ? `Разных цветов в макетах: ${ds.colors.mergedFrom}, цветов в палитре Figma: ${ds.colors.tokens.length}; ${gridText}.`
+      : `Разных цветов в макетах: ${ds.colors.mergedFrom} → после объединения близких ${ds.colors.tokens.length}; ${gridText}.`),
     [
       !varCount && { text: 'Локальных переменных нет. Цвета, отступы и радиусы стоит завести переменными (палитра + смысловые). Переменные из подключённой командной библиотеки плагин пока не видит.' },
       varCount && !numVars && { text: 'Переменных для отступов и радиусов нет — только цвета.' },

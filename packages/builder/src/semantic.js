@@ -34,6 +34,36 @@ function signature(n, depth = 0) {
   return own + '[' + kids.map((k) => signature(k, depth + 1)).join(',') + ']';
 }
 
+const INPUT_RE = /(^|[\s/_-])(input|text ?field|textfield|field|form ?field|search|email|e-mail|поле|поиск|ввод)([\s/_-]|$)/i;
+/** Поле ввода: блок с именем input/field/поле… (или экземпляр такого компонента) и текстом-значением в окрашенной рамке. */
+export function inputValueOf(n, parentName = '') {
+  if (n.type === 'TEXT' || !visible(n)) return null;
+  const named = INPUT_RE.test(n.name || '') || INPUT_RE.test(n.component?.name || '')
+    || (n.type === 'COMPONENT' && INPUT_RE.test(parentName || '')); // вариант в наборе «Input»
+  if (!named) return null;
+  const t = texts(n);
+  if (!t.length || t.length > 3) return null;
+  // значение — первый текст, лежащий в окрашенной рамке высотой с поле
+  const boxOf = (node, id) => {
+    let hit = null;
+    (function walk(x) { for (const c of x.children || []) { if (!visible(c)) continue; if (findNode(c, id) && c.id !== id) { if (hasPaint(c) || (c.strokes || []).length) hit = c; walk(c); } } })(node);
+    return hit || ((hasPaint(node) || (node.strokes || []).length) ? node : null);
+  };
+  for (const v of t) {
+    const b = boxOf(n, v.id);
+    if (b && b.h >= 28 && b.h <= 72 && chars(v) <= 60) return v;
+  }
+  return null;
+}
+const inputType = (n, v) => {
+  const s = `${n.name} ${n.component?.name || ''} ${v.text?.characters || ''}`;
+  if (/mail|почт/i.test(s)) return 'email';
+  if (/search|поиск|найти/i.test(s)) return 'search';
+  if (/pass|парол/i.test(s)) return 'password';
+  if (/phone|тел/i.test(s)) return 'tel';
+  return 'text';
+};
+
 function isButtonLike(n) {
   if (n.type === 'TEXT' || !visible(n) || n.transform) return false;
   if (/button|btn|кнопк/i.test(n.name || '') || /button|btn/i.test(n.component?.name || '')) return true;
@@ -133,11 +163,19 @@ export function analyzeSemantics(tree) {
     return headCache;
   };
 
+  const inInput = new Set();
   (function walk(n, parent) {
     if (!visible(n)) return;
     const kids = (n.children || []).filter(visible);
 
-    if (n !== tree && !out.has(n.id) && isButtonLike(n)) {
+    // поле ввода: значение — <input> с подсказкой (placeholder), сам блок — не кнопка
+    const val = !inInput.has(n.id) && !phrasing.has(n.id) ? inputValueOf(n, parent?.name) : null;
+    if (val) {
+      (function mark(x) { inInput.add(x.id); (x.children || []).forEach(mark); })(n);
+      const ph = (val.text?.characters || '').trim();
+      set(val, 'input', isGenericName(val.name) ? 'input' : null, { type: inputType(n, val), placeholder: ph, 'aria-label': ph });
+    }
+    if (n !== tree && !out.has(n.id) && !inInput.has(n.id) && isButtonLike(n)) {
       set(n, 'button', isGenericName(n.name) ? 'button' : null, { type: 'button' });
       markPhrasing(n);
     }
@@ -212,5 +250,8 @@ export const SEMANTIC_RESET = [
   'ul, ol { list-style: none; }',
   'header, footer, section, nav, main, article, li { display: block; }',
   'a { color: inherit; text-decoration: none; display: block; }',
+  // поле ввода: вид задаёт рамка из макета, у самого <input> — только шрифт и цвет подсказки
+  'input { font: inherit; color: inherit; background: none; border: 0; padding: 0; margin: 0; outline: none; display: block; min-width: 0; }',
+  'input::placeholder { color: inherit; opacity: 1; }',
   'button { font: inherit; color: inherit; background: none; border: 0; padding: 0; margin: 0; text-align: inherit; cursor: pointer; display: block; }',
 ].join('\n');
