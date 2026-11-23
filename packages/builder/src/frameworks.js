@@ -136,7 +136,10 @@ function jsx(el, c, depth, p = []) {
   }
   const pp = c.propAt?.get(pk) || {};
   if (el.text !== undefined) {
-    return `${pad}<span className=${pp.cls ? `{${pp.cls}}` : `"${el.cls}"`}>{${pp.text || jsStr(el.text)}}</span>`;
+    // ссылка в тексте — <a href>, остальное — span
+    const t = el.tag || 'span';
+    const extra = (el.attrs || []).filter(([k]) => !k.startsWith('data-')).map(([k, v]) => ` ${k}=${jsStr(v)}`).join('');
+    return `${pad}<${t} className=${pp.cls ? `{${pp.cls}}` : `"${el.cls}"`}${extra}>{${pp.text || jsStr(el.text)}}</${t}>`;
   }
   const attrs = [];
   if (pp.cls) attrs.push(`className={${pp.cls}}`);
@@ -226,7 +229,9 @@ function vueTpl(el, c, depth, p = []) {
   }
   const pp = c.propAt?.get(pk) || {};
   if (el.text !== undefined) {
-    return `${pad}<span ${pp.cls ? `:class="${pp.cls}"` : `class="${el.cls}"`}>{{ ${pp.text || escAttr(jsStr(el.text))} }}</span>`;
+    const t = el.tag || 'span';
+    const extra = (el.attrs || []).filter(([k]) => !k.startsWith('data-')).map(([k, v]) => ` ${k}="${escAttr(v)}"`).join('');
+    return `${pad}<${t} ${pp.cls ? `:class="${pp.cls}"` : `class="${el.cls}"`}${extra}>{{ ${pp.text || escAttr(jsStr(el.text))} }}</${t}>`;
   }
   const attrs = [];
   if (pp.cls) attrs.push(`:class="${pp.cls}"`);
@@ -367,6 +372,24 @@ export function preparePages(pages) {
   });
 }
 
+/**
+ * Переходы прототипа в деревьях элементов: путь к рабочей папке фрейма (../<папка>/index.html) → #маршрут
+ * страницы проекта (экран адаптивной страницы — её маршрут). Меняет деревья на месте.
+ */
+export function relinkRoutes(pages, groups = []) {
+  const route = new Map(pages.map((p) => [p.dir, p.route]));
+  for (const g of respInfo(groups)) for (const m of g.members) route.set(m.dir, g.route);
+  const walk = (el) => {
+    if (!el) return;
+    for (const a of el.attrs || []) {
+      const m = a[0] === 'href' && /^\.\.\/([^/]+)\/index\.html$/.exec(a[1]);
+      if (m) a[1] = route.has(m[1]) ? `#${route.get(m[1])}` : '#';
+    }
+    (el.children || []).forEach(walk);
+  };
+  pages.forEach((p) => walk(p.root));
+}
+
 function respInfo(groups) {
   return groups.map((g) => {
     const name = `${pascal(g.name)}Responsive`;
@@ -439,9 +462,14 @@ const routes = { ${routesList.map((p) => `'${p.route}': ${p.component}`).join(',
 const first = '${routesList[0]?.route}';
 
 export default function App() {
-  const [route, setRoute] = useState(() => location.hash.slice(1) || first);
+  // #маршрут — страница; другой #якорь (переход «Scroll to» из прототипа) — прокрутка на текущей странице
+  const [route, setRoute] = useState(() => (routes[location.hash.slice(1)] ? location.hash.slice(1) : first));
   useEffect(() => {
-    const on = () => setRoute(location.hash.slice(1) || first);
+    const on = () => {
+      const h = location.hash.slice(1);
+      if (routes[h]) setRoute(h);
+      else document.getElementById(h)?.scrollIntoView();
+    };
     addEventListener('hashchange', on);
     return () => removeEventListener('hashchange', on);
   }, []);
@@ -485,8 +513,13 @@ ${routesList.map((p) => `import ${p.component} from './pages/${p.component}.vue'
 // Страницы из макетов; переключение — #${routesList[0]?.route}
 const routes = { ${routesList.map((p) => `'${p.route}': ${p.component}`).join(', ')} };
 const first = '${routesList[0]?.route}';
-const route = ref(location.hash.slice(1) || first);
-const on = () => (route.value = location.hash.slice(1) || first);
+// #маршрут — страница; другой #якорь (переход «Scroll to» из прототипа) — прокрутка на текущей странице
+const route = ref(routes[location.hash.slice(1)] ? location.hash.slice(1) : first);
+const on = () => {
+  const h = location.hash.slice(1);
+  if (routes[h]) route.value = h;
+  else document.getElementById(h)?.scrollIntoView();
+};
 onMounted(() => addEventListener('hashchange', on));
 onUnmounted(() => removeEventListener('hashchange', on));
 const Page = computed(() => routes[route.value] || routes[first]);

@@ -23,7 +23,7 @@ import { withFigma, hasFigmaSystem } from './ds/figma.js';
 import { familiesOf, facesOf, ensureFonts, buildFontsCss, defaultCacheDir } from './fonts.js';
 import { findComponents } from './components.js';
 import { componentizeTrees } from './componentize.js';
-import { preparePages, exportReact, exportVue, renderReact, renderVue, checkPageHtml, shippedCheckPage, projectAssetPrefix } from './frameworks.js';
+import { relinkRoutes, preparePages, exportReact, exportVue, renderReact, renderVue, checkPageHtml, shippedCheckPage, projectAssetPrefix } from './frameworks.js';
 import { groupFrames, writeResponsive, textsOf } from './responsive.js';
 import { exportHtml } from './export-html.js';
 import { unzipFile } from './unzip.js';
@@ -306,10 +306,13 @@ async function build(args) {
   const cacheRoot = path.join(defaultCacheDir(), 'frames');
   const optKey = crypto.createHash('sha256').update(JSON.stringify([
     programHash(), args.layout, args.threshold, args.textThreshold, args.textAreaThreshold, args.refine, args.semantic, args.inlineSvg, args.ai, args.verify, !!args.allowAbsolute,
-    tokens.css(), extraCss, fs.existsSync(path.join(out, 'fonts.css')) ? fs.readFileSync(path.join(out, 'fonts.css'), 'utf8').replace(/url\([^)]*\)/g, '') : '', pkg.scale,
+    tokens.css(), extraCss, frames.map((f) => f.id).join(','), fs.existsSync(path.join(out, 'fonts.css')) ? fs.readFileSync(path.join(out, 'fonts.css'), 'utf8').replace(/url\([^)]*\)/g, '') : '', pkg.scale,
   ])).digest('hex');
   const slots = [];
   let cached = 0, doneCount = 0;
+  // переходы прототипа «Navigate to» → страница фрейма из этой сборки (папки фреймов лежат рядом)
+  const frameDirs = new Map(frames.map((f) => [f.id, safe(`${f.name}-${f.id}`)]));
+  const frameHref = (id) => (frameDirs.has(id) ? `../${frameDirs.get(id)}/index.html` : null);
 
   try {
     const buildFrame = async (f, idx) => {
@@ -328,7 +331,7 @@ async function build(args) {
         for (const name of fs.readdirSync(hit)) if (name !== 'meta.json') fs.copyFileSync(path.join(hit, name), path.join(fdir, name));
         // дерево элементов для React/Vue и адаптивности — тем же генератором (миллисекунды)
         const absIds = meta.pinned.length ? new Set(meta.pinned) : null;
-        const gen = generateFrame(tree, { mode: meta.genMode, absIds, svgText, inlineSvg: args.inlineSvg, tokens, assetUrl: (rel) => `../assets/${rel}`, title: f.name, extraCss, semantic: args.semantic, names: meta.names ? new Map(meta.names) : null });
+        const gen = generateFrame(tree, { mode: meta.genMode, absIds, svgText, inlineSvg: args.inlineSvg, tokens, assetUrl: (rel) => `../assets/${rel}`, title: f.name, extraCss, frameHref, semantic: args.semantic, names: meta.names ? new Map(meta.names) : null });
         slots[idx] = {
           fw: { title: f.name, page: f.page, dir: dirName, root: gen.root, tree, width: f.width, height: f.height,
             gen: { mode: meta.genMode, absIds, title: f.name, names: meta.names ? new Map(meta.names) : null } },
@@ -390,7 +393,7 @@ async function build(args) {
       const okOf = (att) => !att.gen.stats.missing.length && (!att.geometry || att.geometry.failed === 0) && (!hasRef || pixelOk(att.diff, args, textArea));
 
       const runAttempt = async (mode, absIds = null, refineNow = true) => {
-        const gen = generateFrame(tree, { mode, absIds, svgText, inlineSvg: args.inlineSvg, tokens, assetUrl: (rel) => `../assets/${rel}`, title: f.name, extraCss, semantic: args.semantic, names });
+        const gen = generateFrame(tree, { mode, absIds, svgText, inlineSvg: args.inlineSvg, tokens, assetUrl: (rel) => `../assets/${rel}`, title: f.name, extraCss, frameHref, semantic: args.semantic, names });
         // пробные варианты — рядом с папкой фрейма (та же глубина, пути к assets не меняются)
         const attemptDir = args.layout === 'auto' ? path.join(out, `${dirName}.try-${mode}${absIds ? `-${attempts.length}` : ''}`) : fdir;
         fs.mkdirSync(attemptDir, { recursive: true });
@@ -546,7 +549,7 @@ async function build(args) {
         const writeFluid = (v) => {
           // следующий по ширине макет — к его значениям плавно идут кегль, отступы, сетки
           const next = variants[variants.indexOf(v) + 1];
-          const fg = generateFrame(v.tree, { ...v.gen, fluid: true, fluidSkip: v.skip, peer: next ? next.tree : null, svgText, inlineSvg: args.inlineSvg, tokens, assetUrl: (rel) => `../assets/${rel}`, extraCss, semantic: args.semantic });
+          const fg = generateFrame(v.tree, { ...v.gen, fluid: true, fluidSkip: v.skip, peer: next ? next.tree : null, svgText, inlineSvg: args.inlineSvg, tokens, assetUrl: (rel) => `../assets/${rel}`, extraCss, frameHref, semantic: args.semantic });
           fs.writeFileSync(path.join(out, v.dir, 'fluid.html'), fg.html);
           // поправки после сверки (межбуквенные и т. п.) — те же, что у фиксированной вёрстки этого макета
           const fixed = fs.existsSync(path.join(out, v.dir, 'styles.css')) ? fs.readFileSync(path.join(out, v.dir, 'styles.css'), 'utf8') : '';
@@ -689,6 +692,7 @@ async function build(args) {
       const pages = preparePages(fwPages);
       for (const p of pages) for (const fw of args.frameworks.filter((f) => f !== 'html')) codeOf.set(p.dir, [...(codeOf.get(p.dir) || []), `${fw}/src/pages/${p.component}.${fw === 'react' ? 'jsx' : 'vue'}`]);
       const groupsFw = responsive.map((r) => ({ name: r.name, members: r.components.map((c) => pages[fwPages.indexOf(c)]), widths: r.widths }));
+      relinkRoutes(pages, groupsFw);
       // компоненты Figma (варианты, состояния) — те же классы, что в html/: деревья элементов получают классы
       // компонентов, у страниц — общий CSS компонентов + свои стили (fw.css рядом со styles.css)
       const cz = componentizeTrees(pages.map((p) => ({ root: p.root, css: fs.readFileSync(path.join(out, p.dir, 'styles.css'), 'utf8') })), (el) => htmlOf(el, 0));

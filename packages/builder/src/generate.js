@@ -215,7 +215,8 @@ function textEl(node, ctx) {
     if (F.lh && o['line-height']) o['line-height'] = clampPx(F.lh, ctx.peer.w0, ctx.peer.w1);
     return o;
   };
-  const spans = segs.map((s) => ({ tag: 'span', cls: ctx.styles.classFor(tName(s), declarations(scaled(segmentCss(s, ctx)))), text: chars.slice(s.start, s.end), attrs: [], inline: true }));
+  // ссылка на части текста (Link в Figma) — <a href> вместо span
+  const spans = segs.map((s) => ({ tag: s.href ? 'a' : 'span', cls: ctx.styles.classFor(tName(s), declarations(scaled(segmentCss(s, ctx)))), text: chars.slice(s.start, s.end), attrs: s.href ? linkAttrs(s.href, s.link, ctx) : [], inline: true }));
   // «стойка» строки — шрифт и интерлиньяж первого сегмента: иначе блок берёт их от body (16px, normal),
   // и строка с интерлиньяжем меньше ~18px становится выше, а текст сдвигается вниз на 2–3px
   const first = scaled(segmentCss(segs[0], ctx));
@@ -225,7 +226,7 @@ function textEl(node, ctx) {
   const noWrap = t.autoResize === 'WIDTH_AND_HEIGHT';
   const block = { display: 'block', width: '100%', 'text-align': align, 'white-space': noWrap ? 'pre' : 'pre-wrap', 'overflow-wrap': 'break-word', ...strut };
   // текст одного оформления — один span (оформление и «стойка» строки вместе); несколько — по span на кусок
-  if (segs.length === 1) {
+  if (segs.length === 1 && !segs[0].href) {
     return { tag: 'span', cls: ctx.styles.classFor(tName(segs[0]), declarations({ ...block, ...scaled(segmentCss(segs[0], ctx)) })), text: chars, attrs: [], inline: true, kind: 'text' };
   }
   const inner = ctx.styles.classFor('text', declarations(block));
@@ -333,6 +334,17 @@ function fluidChildRaw(parent, child, index, places, kids) {
   return { style: '', grow: false };
 }
 
+/** href из семантики: метка figma-frame:<id> → путь к странице этого фрейма (или # — фрейма нет в сборке). */
+function resolveHref(h, ctx) {
+  const m = /^figma-frame:(.+)$/.exec(h);
+  return m ? ctx.frameHref?.(m[1]) || '#' : h;
+}
+function linkAttrs(href, link, ctx) {
+  const a = [['href', resolveHref(href, ctx)]];
+  if (link?.type === 'url' && link.newTab !== false && /^https?:/i.test(link.url || '')) a.push(['target', '_blank'], ['rel', 'noopener']);
+  return a;
+}
+
 function buildEl(box, place, ctx, inPhrasing = false, grow = false) {
   const node = box.node;
   const sem = node && box.kind === 'node' && ctx.semantic ? ctx.semantic.get(node.id) : null;
@@ -431,7 +443,14 @@ function buildEl(box, place, ctx, inPhrasing = false, grow = false) {
   const base = box.kind === 'mask' ? (sem?.name || node.name) + '-mask' : sem?.name || (node ? node.name : 'group');
   const cls = ctx.styles.classFor(base, decl);
   const attrs = [];
-  for (const [k, v] of Object.entries(sem?.attrs || {})) if (tag !== 'div' || k === 'role' || k === 'aria-label') attrs.push([k, v]);
+  for (const [k, v] of Object.entries(sem?.attrs || {})) {
+    if (tag === 'div' && k !== 'role' && k !== 'aria-label') continue;
+    if (tag === 'span' && ['href', 'target', 'rel', 'action'].includes(k)) continue; // ссылка внутри ссылки стала span
+    attrs.push([k, k === 'href' ? resolveHref(v, ctx) : v]);
+  }
+  // цель «Scroll to» из прототипа — якорь
+  const anchor = node && box.kind === 'node' && ctx.semantic?.anchors?.get(node.id);
+  if (anchor) attrs.push(['id', anchor]);
   if (node) attrs.push(['data-figma-id', node.id], ['data-name', node.name]);
   const comp = node && ctx.comps?.get(node.id);
   if (comp) {
@@ -475,7 +494,10 @@ function inlineHtml(el) {
     const a = el.attrs.map(([k, v]) => `${k}="${esc(v)}"`).join(' ');
     return `<img ${a} style="${el.style}">`;
   }
-  if (el.text !== undefined) return `<span class="${el.cls}">${esc(el.text)}</span>`;
+  if (el.text !== undefined) {
+    const t = el.tag || 'span';
+    return `<${t} class="${el.cls}"${(el.attrs || []).map(([k, v]) => ` ${k}="${esc(v)}"`).join('')}>${esc(el.text)}</${t}>`;
+  }
   const attrs = [`class="${el.cls}"`];
   if (el.style) attrs.push(`style="${el.style}"`);
   for (const [k, v] of el.attrs || []) attrs.push(`${k}="${esc(v)}"`);
@@ -486,7 +508,7 @@ function inlineHtml(el) {
  * Генерирует страницу для одного фрейма.
  * @returns {{ html: string, css: string, stats: object }}
  */
-export function generateFrame(tree, { mode = 'flow', absIds = null, fluid = false, fluidSkip = null, peer = null, svgText = null, inlineSvg: inlineSvgOpt = true, tokens, assetUrl, title, extraCss = [], semantic = true, names = null }) {
+export function generateFrame(tree, { mode = 'flow', absIds = null, fluid = false, fluidSkip = null, peer = null, svgText = null, inlineSvg: inlineSvgOpt = true, tokens, assetUrl, title, extraCss = [], semantic = true, names = null, frameHref = null }) {
   const styles = new StyleRegistry();
   const sem = semantic ? analyzeSemantics(tree) : null;
   // имена от ИИ (если включён) — только для безликих слоёв; теги остаются алгоритмическими
@@ -503,7 +525,7 @@ export function generateFrame(tree, { mode = 'flow', absIds = null, fluid = fals
     }
     (n.children || []).forEach((c) => walk(c, n));
   })(tree, null);
-  const ctx = { styles, tokens, assetUrl, semantic: sem, downgrade: new Set(), fluid, fluidSkip, svgText, inlineSvg: inlineSvgOpt, comps, peer: fluid && peer ? peerMaps(tree, peer) : null };
+  const ctx = { styles, tokens, assetUrl, frameHref, semantic: sem, downgrade: new Set(), fluid, fluidSkip, svgText, inlineSvg: inlineSvgOpt, comps, peer: fluid && peer ? peerMaps(tree, peer) : null };
   const root = buildBox(tree, { mode, absIds });
   const rootEl = buildEl(root, null, ctx, false, fluid);
   // не уже макета: ниже его ширины страница уменьшается целиком (zoom), а не сжимается

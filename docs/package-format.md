@@ -102,6 +102,13 @@ ID узлов Figma содержат `:` и `;` — в именах файлов
   "fillStyle": "Brand/Accent",  // цветовой стиль (Color style) на заливке
   "strokeStyle": "Brand/Line",  // цветовой стиль на обводке
   "modes": { "Color": "Dark" }, // режим переменных, выбранный на слое (коллекция → режим)
+  // переход из прототипа по нажатию (On click / On press), если есть:
+  //   { "type": "url", "url": "https://…", "newTab": true } — Open link
+  //   { "type": "frame", "id": "4:3" }  — Navigate to (верхний фрейм)
+  //   { "type": "scroll", "id": "7:12" } — Scroll to (слой на той же странице)
+  //   { "type": "back" }                 — Back
+  // программа делает из слоя ссылку <a href>; наведение, Change to и всплывающие окна не берутся
+  "link": { "type": "frame", "id": "4:3" },
   // как узел ведёт себя внутри Auto Layout родителя
   "layoutPositioning": "AUTO",          // AUTO | ABSOLUTE
   "sizing": { "h": "FIXED", "v": "HUG" }, // FIXED | HUG | FILL
@@ -124,7 +131,8 @@ ID узлов Figma содержат `:` и `;` — в именах файлов
         "fills": [ /* Paint */ ],
         "textStyle": "Body/Medium",   // текстовый стиль Figma, если подключён
         "fillStyle": "Brand/Accent",  // цветовой стиль на тексте
-        "vars": { "fontSize": "size/body", "lineHeight": "…", "letterSpacing": "…", "fontFamily": "…", "fontWeight": "…" } }
+        "vars": { "fontSize": "size/body", "lineHeight": "…", "letterSpacing": "…", "fontFamily": "…", "fontWeight": "…" },
+        "link": { "type": "url", "url": "https://…" } } // ссылка на части текста (Link): url или { "type": "node", "id": "4:3" }
     ]
   },
 

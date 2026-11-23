@@ -166,12 +166,20 @@ ${cssFiles.map((c) => `<link rel="stylesheet" href="css/${c}">`).join('\n')}
   comp.pages = comp.pages.map((pg) => plainNames(pg, comp.css));
   if (comp.css) fs.writeFileSync(path.join(root, 'css', 'components.css'), comp.css);
   // общий сброс стилей браузера (одинаковый у всех страниц) — один раз в css/base.css
-  const RESET = /^(?:\/\* Сгенерировано figma-ds-builder[^\n]*|\*, \*::before[^\n]*|html, body \{[^\n]*|h1, h2[^\n]*|ul, ol \{[^\n]*|header, footer[^\n]*|a \{ color: inherit[^\n]*|input(?:::placeholder)? \{[^\n]*|button \{ font: inherit[^\n]*)\n/gm;
+  const RESET = /^(?:\/\* Сгенерировано figma-ds-builder[^\n]*|\*, \*::before[^\n]*|html, body \{[^\n]*|h1, h2[^\n]*|ul, ol \{[^\n]*|header, footer[^\n]*|a \{ color: inherit[^\n]*|form \{ display[^\n]*|input(?:::placeholder)? \{[^\n]*|button \{ font: inherit[^\n]*)\n/gm;
   const base = [];
   for (const pg of comp.pages) for (const text of Object.values(pg.css)) for (const m of text.matchAll(RESET)) if (!base.includes(m[0])) base.push(m[0]);
   if (base.length) fs.writeFileSync(path.join(root, 'css', 'base.css'), base.join(''));
+  // переходы прототипа: путь к рабочей папке фрейма → файл страницы (экран адаптивной — её файл)
+  const fileOf = new Map();
+  for (const e of entries) {
+    fileOf.set(e.info.from, e.file);
+    for (const m of e.info.members || []) fileOf.set(m, e.file);
+  }
+  const relink = (html) => html.replace(/ href="\.\.\/([^"/]+)\/index\.html"/g, (m, d) => ` href="${fileOf.get(d) || '#'}"`);
   entries.forEach((e, i) => {
     const pg = comp.pages[i];
+    pg.html = relink(pg.html);
     for (const [name, text] of Object.entries(pg.css)) fs.writeFileSync(path.join(root, 'css', name), base.length ? text.replace(RESET, '') : text);
     const files = [...(base.length ? ['base.css'] : []), ...(comp.css ? ['components.css'] : []), ...Object.keys(pg.css)];
     fs.writeFileSync(path.join(root, e.file), head(e.title, files) + e.extra + '</head>\n' + strip(pg.html).replace(/"\.\.\/assets\//g, '"assets/'));

@@ -232,9 +232,12 @@ function segVars(s, ctx) {
 }
 
 function textData(node, ctx) {
-  var fields = ['fontName', 'fontSize', 'fontWeight', 'lineHeight', 'letterSpacing', 'fills', 'textDecoration', 'textCase', 'textStyleId', 'fillStyleId', 'boundVariables'];
+  var fields = ['fontName', 'fontSize', 'fontWeight', 'lineHeight', 'letterSpacing', 'fills', 'textDecoration', 'textCase', 'textStyleId', 'fillStyleId', 'boundVariables', 'hyperlink'];
   var segs;
-  try { segs = node.getStyledTextSegments(fields); } catch (e) { segs = node.getStyledTextSegments(fields.slice(0, 9)); } // старые версии Figma
+  // старые версии Figma знают не все поля: пробуем без ссылок, затем без стилей
+  try { segs = node.getStyledTextSegments(fields); } catch (e) {
+    try { segs = node.getStyledTextSegments(fields.slice(0, 11)); } catch (e2) { segs = node.getStyledTextSegments(fields.slice(0, 9)); }
+  }
   segs.forEach(function (s) {
     var k = s.fontName.family + '|' + s.fontName.style;
     var f = ctx.fonts[k] || (ctx.fonts[k] = { family: s.fontName.family, style: s.fontName.style, weight: s.fontWeight, sizes: {}, uses: 0 });
@@ -268,6 +271,7 @@ function textData(node, ctx) {
         textStyle: refName(ctx, 'text', s.textStyleId),
         fillStyle: refName(ctx, 'paint', s.fillStyleId),
         vars: segVars(s, ctx),
+        link: textLink(s.hyperlink),
       };
     }),
   };
@@ -306,6 +310,39 @@ function serializeSafe(node, ox, oy, ctx) {
   }
 }
 
+/** Ссылка в тексте (Link в Figma): адрес или слой, к которому ведёт. */
+function textLink(h) {
+  if (!h || isMixed(h) || !h.value) return undefined;
+  return h.type === 'URL' ? { type: 'url', url: h.value } : { type: 'node', id: h.value };
+}
+
+/**
+ * Переход из прототипа по нажатию: адрес (Open link), другой фрейм (Navigate to) или прокрутка к слою (Scroll to).
+ * Наведение, смена варианта (Change to) и всплывающие окна — не ссылки, их не берём.
+ */
+function protoLink(node) {
+  var list;
+  try { list = node.reactions; } catch (e) { return undefined; }
+  if (!list || !list.length) return undefined;
+  for (var i = 0; i < list.length; i++) {
+    var r = list[i];
+    var t = r.trigger && r.trigger.type;
+    if (t !== 'ON_CLICK' && t !== 'ON_PRESS') continue;
+    var acts = r.actions || (r.action ? [r.action] : []);
+    for (var j = 0; j < acts.length; j++) {
+      var a = acts[j];
+      if (!a) continue;
+      if (a.type === 'URL' && a.url) return { type: 'url', url: a.url, newTab: a.openInNewTab !== false };
+      if (a.type === 'NODE' && a.destinationId) {
+        if (a.navigation === 'NAVIGATE') return { type: 'frame', id: a.destinationId };
+        if (a.navigation === 'SCROLL_TO') return { type: 'scroll', id: a.destinationId };
+      }
+      if (a.type === 'BACK') return { type: 'back' };
+    }
+  }
+  return undefined;
+}
+
 function serialize(node, ox, oy, ctx) {
   ctx.count++;
   var g = geometry(node, ox, oy);
@@ -338,6 +375,8 @@ function serialize(node, ox, oy, ctx) {
   if ('strokeStyleId' in node && typeof node.strokeStyleId === 'string') o.strokeStyle = refName(ctx, 'paint', node.strokeStyleId);
   var modes = explicitModes(node, ctx);
   if (modes) o.modes = modes;
+  var link = protoLink(node);
+  if (link) o.link = link;
   var L = autoLayout(node);
   if (L) o.layout = L;
   if ('layoutPositioning' in node) o.layoutPositioning = node.layoutPositioning;

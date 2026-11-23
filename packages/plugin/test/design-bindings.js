@@ -61,9 +61,12 @@ const card = base('Card', 'FRAME', 0, {
   strokes: [solid({ r: 0.8, g: 0.8, b: 0.8 })], strokeStyleId: 'S:lp', strokeWeight: 1, strokeAlign: 'INSIDE',
   effectStyleId: 'S:e1', effects: effectStyle.effects,
   boundVariables: { strokeWeight: alias('V:lib4') },
+  reactions: [{ trigger: { type: 'ON_HOVER' }, actions: [{ type: 'NODE', destinationId: '9:9', navigation: 'CHANGE_TO' }] },
+    { trigger: { type: 'ON_CLICK' }, actions: [{ type: 'NODE', destinationId: '4:3', navigation: 'NAVIGATE' }] }],
   children: [],
 });
-const oldStyle = base('Old', 'RECTANGLE', 120, { fills: paintStyle.paints, fillStyleId: 'S:p1' });
+const oldStyle = base('Old', 'RECTANGLE', 120, { fills: paintStyle.paints, fillStyleId: 'S:p1',
+  reactions: [{ trigger: { type: 'ON_CLICK' }, action: { type: 'URL', url: 'https://example.com' } }] });
 const grad = base('Grad', 'RECTANGLE', 240, { fills: [{ type: 'GRADIENT_LINEAR', visible: true, opacity: 1, gradientTransform: [[1, 0, 0], [0, 1, 0]],
   gradientStops: [{ position: 0, color: { r: 0, g: 0.4, b: 1, a: 1 }, boundVariables: { color: alias('V:lib1') } }, { position: 1, color: { r: 1, g: 1, b: 1, a: 1 } }] }] });
 const seg = (start, end, styleId, extra = {}) => ({ start, end, fontName: { family: 'Inter', style: 'Regular' }, fontSize: 16, fontWeight: 400,
@@ -72,7 +75,7 @@ const seg = (start, end, styleId, extra = {}) => ({ start, end, fontName: { fami
 const text = base('Text', 'TEXT', 360, {
   characters: 'Hello world', textAlignHorizontal: 'LEFT', textAlignVertical: 'TOP', textAutoResize: 'WIDTH_AND_HEIGHT',
   getStyledTextSegments: (fields) => {
-    if (fields.includes('boundVariables')) return [seg(0, 5, 'S:t1', { boundVariables: { fontSize: alias('V:lib3') } }), seg(6, 11, 'S:lt')];
+    if (fields.includes('boundVariables')) return [seg(0, 5, 'S:t1', { boundVariables: { fontSize: alias('V:lib3') } }), seg(6, 11, 'S:lt', { hyperlink: { type: 'URL', value: 'https://example.com/w' } })];
     throw new Error('ждали поля boundVariables');
   },
 });
@@ -99,6 +102,11 @@ assert.equal(t.text.segments[1].textStyle, 'Brand/Caption', 'библиотеч�
 assert.deepEqual(t.text.segments[0].vars, { fontSize: 'size/body' }, 'кегль на переменной');
 assert.equal(t.text.segments[0].fills[0].variable, 'color/text/primary');
 assert.ok(!JSON.stringify(tree).includes('\\u0000'), 'в дереве не осталось меток');
+assert.deepEqual(c.link, { type: 'frame', id: '4:3' }, 'переход Navigate to по нажатию (наведение и Change to — не ссылки)');
+assert.deepEqual(o.link, { type: 'url', url: 'https://example.com', newTab: true }, 'Open link (старое поле action)');
+assert.equal(g.link, undefined);
+assert.deepEqual(t.text.segments[1].link, { type: 'url', url: 'https://example.com/w' }, 'ссылка в тексте');
+assert.equal(t.text.segments[0].link, undefined);
 
 const vars = file('variables.json');
 const lib = vars.find((x) => x.remote);
@@ -110,4 +118,4 @@ const styles = file('styles.json');
 assert.ok(styles.text.some((s) => s.name === 'Brand/Caption' && s.remote), 'библиотечный текстовый стиль в styles.json');
 assert.ok(styles.paint.some((s) => s.name === 'Brand/Line' && s.remote));
 assert.ok(styles.paint.some((s) => s.name === 'Old/Accent' && !s.remote));
-console.log('привязки к дизайн-системе: локальные и библиотечные переменные, стили, текст, градиент, режимы — OK');
+console.log('привязки к дизайн-системе: локальные и библиотечные переменные, стили, текст, градиент, режимы, ссылки прототипа — OK');

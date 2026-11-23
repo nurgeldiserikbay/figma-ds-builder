@@ -203,7 +203,7 @@ export function analyzeSemantics(tree) {
     // список: ≥3 соседа одинаковой структуры
     if (!out.has(n.id) && kids.length >= 3 && kids.every((k) => k.type !== 'TEXT')) {
       const sig = signature(kids[0]);
-      if (kids.every((k) => signature(k) === sig) && !kids.some((k) => out.get(k.id)?.tag === 'button')) {
+      if (kids.every((k) => signature(k) === sig) && !kids.some((k) => out.get(k.id)?.tag === 'button' || k.link)) {
         set(n, 'ul', isGenericName(n.name) ? 'list' : null);
         kids.forEach((k) => { if (!out.has(k.id)) set(k, 'li', isGenericName(k.name) ? 'item' : null); });
       }
@@ -241,7 +241,98 @@ export function analyzeSemantics(tree) {
     kids.forEach((k) => walk(k, n));
   })(tree, null);
 
+  applyLinks(tree, out, set, inInput);
+  applyForms(tree, out, inInput);
   return out;
+}
+
+const LINKABLE = new Set(['div', 'a', 'button', 'span', 'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6']);
+/** Имя якоря для «Scroll to»: из имени слоя, уникальное на странице. */
+function anchorName(node, used) {
+  let base = className(node.name) || 'section';
+  if (/^(block|shape|group|frame)$/.test(base)) base = 'section';
+  let n = base, k = 2;
+  while (used.has(n)) n = `${base}-${k++}`;
+  used.add(n);
+  return n;
+}
+
+/**
+ * Переходы прототипа (link в пакете) → <a href>. Адрес и «Back» — сразу; «Navigate to» — метка
+ * figma-frame:<id>, генератор заменяет её путём к странице; «Scroll to» — #якорь на слое-цели.
+ * Ссылка в ссылке или кнопке (их браузер разрывает) и ссылка на поле ввода не делаются.
+ */
+function applyLinks(tree, out, set, inInput) {
+  const anchors = new Map(); // id слоя-цели → имя якоря
+  const used = new Set();
+  const all = [];
+  (function idx(n) { all.push(n); (n.children || []).forEach(idx); })(tree);
+  const byId = new Map(all.map((n) => [n.id, n]));
+  const hrefOf = (link) => {
+    if (link.type === 'url') return link.url;
+    if (link.type === 'back') return 'javascript:history.back()';
+    const target = byId.get(link.id);
+    if (link.type === 'scroll' || (link.type === 'node' && target && target !== tree)) {
+      if (!target) return '#';
+      if (target === tree) return '#';
+      if (!anchors.has(target.id)) anchors.set(target.id, anchorName(target, used));
+      return `#${anchors.get(target.id)}`;
+    }
+    return `figma-frame:${link.id}`;
+  };
+  (function walk(n, blocked) {
+    if (!visible(n)) return;
+    let block = blocked;
+    if (n !== tree && n.link && !blocked && !inInput.has(n.id)) {
+      const e = out.get(n.id);
+      const hasInput = (function f(x) { return inInput.has(x.id) || (x.children || []).some(f); })(n);
+      if (!hasInput && (!e || LINKABLE.has(e.tag))) {
+        const attrs = { href: hrefOf(n.link) };
+        if (n.link.type === 'url' && n.link.newTab !== false && /^https?:/i.test(n.link.url)) Object.assign(attrs, { target: '_blank', rel: 'noopener' });
+        set(n, 'a', e?.name && e.tag !== 'div' && e.tag !== 'span' ? e.name : isGenericName(n.name) ? 'link' : null, attrs);
+        block = true;
+      }
+    }
+    // уже ссылка/кнопка (по виду) — внутри новых ссылок быть не может
+    if (['a', 'button'].includes(out.get(n.id)?.tag)) block = true;
+    // ссылки в тексте: сегментам нужен href; внутри ссылки/кнопки остаются простым текстом
+    if (n.type === 'TEXT') for (const sg of n.text?.segments || []) if (sg.link) sg.href = block ? null : hrefOf(sg.link);
+    (n.children || []).forEach((c) => walk(c, block));
+  })(tree, false);
+  out.anchors = anchors;
+}
+
+/**
+ * Форма: поля ввода и кнопка в одном небольшом блоке → <form>, кнопка — type="submit".
+ * Блок ищется от поля вверх: ближайший предок, в котором есть кнопка (не вся страница, не шире 1000×800).
+ */
+function applyForms(tree, out, inInput) {
+  const inputs = [...out.entries()].filter(([, e]) => e.tag === 'input').map(([id]) => id);
+  if (!inputs.length) return;
+  const parents = new Map();
+  (function idx(n) { for (const c of n.children || []) { parents.set(c.id, n); idx(c); } })(tree);
+  const nodeOf = new Map();
+  (function idx(n) { nodeOf.set(n.id, n); (n.children || []).forEach(idx); })(tree);
+  const buttonsIn = (n) => { const r = []; (function f(x) { if (out.get(x.id)?.tag === 'button') r.push(x); else (x.children || []).forEach(f); })(n); return r; };
+  const done = new Set();
+  for (const id of inputs) {
+    // уже внутри формы (по имени слоя или найденной раньше)
+    let p = parents.get(id), inForm = false;
+    for (let q = p; q; q = parents.get(q.id)) if (out.get(q.id)?.tag === 'form') inForm = true;
+    if (inForm) continue;
+    for (; p && p !== tree; p = parents.get(p.id)) {
+      if (p.w > 1000 || p.h > 800) break;
+      const btns = buttonsIn(p);
+      if (!btns.length) continue;
+      const e = out.get(p.id);
+      if (e && e.tag !== 'div') break; // ссылка, кнопка, секция, пункт списка… — не трогаем
+      if (done.has(p.id)) break;
+      out.set(p.id, { tag: 'form', name: e?.name && e.tag !== 'div' ? e.name : isGenericName(p.name) ? 'form' : className(p.name), attrs: { action: '#' } });
+      done.add(p.id);
+      for (const b of btns) out.get(b.id).attrs = { ...out.get(b.id).attrs, type: 'submit' };
+      break;
+    }
+  }
 }
 
 /** Сброс стилей для семантических тегов: чтобы теги не меняли вид. */
@@ -249,7 +340,8 @@ export const SEMANTIC_RESET = [
   'h1, h2, h3, h4, h5, h6, p, ul, ol, li, figure { margin: 0; padding: 0; font: inherit; }',
   'ul, ol { list-style: none; }',
   'header, footer, section, nav, main, article, li { display: block; }',
-  'a { color: inherit; text-decoration: none; display: block; }',
+  'a { color: inherit; text-decoration: none; }',
+  'form { display: block; margin: 0; }',
   // поле ввода: вид задаёт рамка из макета, у самого <input> — только шрифт и цвет подсказки
   'input { font: inherit; color: inherit; background: none; border: 0; padding: 0; margin: 0; outline: none; display: block; min-width: 0; }',
   'input::placeholder { color: inherit; opacity: 1; }',
