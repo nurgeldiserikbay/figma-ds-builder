@@ -7,6 +7,7 @@ import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { loadPackage, copyAssets } from './package.js';
+import { optimizeImages, applyImageSet } from './images.js';
 import { loadTokens } from './tokens.js';
 import { generateFrame, htmlOf } from './generate.js';
 import { openBrowser, renderPage } from './render.js';
@@ -294,6 +295,8 @@ async function build(args) {
 
   console.log(`Пакет: ${pkg.manifest.file} · фреймов: ${frames.length} · токенов цвета: ${tokens.count}`);
   const browser = args.verify ? await openBrowser() : null;
+  // картинки: WebP по размеру показа (1x/2x) — заливки в деревьях ссылаются на новые файлы
+  const imageSet = await optimizeImages(browser, out, frames.map((f) => f.tree()), { log: (m) => console.log(m) });
   const results = [];
   const fwPages = [];
   const responsive = [];
@@ -316,7 +319,7 @@ async function build(args) {
 
   try {
     const buildFrame = async (f, idx) => {
-      const tree = f.tree();
+      const tree = applyImageSet(f.tree(), imageSet);
       const textArea = textAreaOf(tree, pkg.scale);
       const dirName = safe(`${f.name}-${f.id}`);
       const fdir = path.join(out, dirName);

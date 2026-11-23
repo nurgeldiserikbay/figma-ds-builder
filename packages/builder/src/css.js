@@ -46,8 +46,11 @@ function paintLayer(p, ctx) {
   }
   if (p.type === 'IMAGE' && p.src) {
     const size = { FILL: 'cover', FIT: 'contain', TILE: 'auto', CROP: 'cover' }[p.scaleMode] || 'cover';
+    // WebP по размеру показа (images.js): 1x и 2x — браузер берёт нужный по плотности экрана
+    const set = p.set && p.set.x1 !== p.set.x2
+      ? `image-set(url("${ctx.assetUrl(p.set.x1)}") 1x, url("${ctx.assetUrl(p.set.x2)}") 2x)` : null;
     return {
-      image: `url("${ctx.assetUrl(p.src)}")`,
+      image: set || `url("${ctx.assetUrl(p.set ? p.set.x1 : p.src)}")`,
       size,
       repeat: p.scaleMode === 'TILE' ? 'repeat' : 'no-repeat',
     };

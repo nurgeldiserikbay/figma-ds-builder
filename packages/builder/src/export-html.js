@@ -13,7 +13,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { agentsMd } from './frameworks.js';
-import { className } from './semantic.js';
+import { className, isGenericName } from './semantic.js';
 import { componentize } from './componentize.js';
 
 const strip = (html) => html.replace(/ data-(?:figma-id|name|component|variant)="[^"]*"/g, '');
@@ -35,6 +35,58 @@ function rebindFixes(html, css, prefix = 'fix') {
   // общий сдвиг для стиля текста: «[data-figma-id] > span:has(…)» → «span:has(…)»
   css = css.replace(/\[data-figma-id\] > span:has\(/g, 'span:has(').replace(/\[data-figma-id\] > \./g, '.');
   return { html, css };
+}
+
+/**
+ * Одинаковые иконки на странице — один раз: SVG-«спрайт» в начале <body> (<g id> в <defs>), на местах —
+ * <svg …><use href="#…"/></svg> с теми же атрибутами корня (размер, viewBox, fill). Иконка, встреченная один раз,
+ * остаётся как была. id внутри иконки (градиенты, маски) получают префикс её имени.
+ */
+export function spriteIcons(html) {
+  const re = /<svg style="display:block;width:100%;height:100%" aria-hidden="true" focusable="false"[^>]*>[\s\S]*?<\/svg>/g;
+  const found = [];
+  for (const m of html.matchAll(re)) {
+    const svg = m[0];
+    const open = svg.slice(0, svg.indexOf('>') + 1);
+    const inner = svg.slice(open.length, -'</svg>'.length);
+    if (/<svg\b/.test(inner)) continue; // вложенный svg — регулярное выражение его не разберёт
+    const pre = (/\bid="(s[A-Za-z0-9_]+-)/.exec(inner) || [])[1];
+    const norm = pre ? inner.split(pre).join('\u0000') : inner;
+    // имя — по слою вокруг (data-name ближайшего родителя: «icon / close» → close)
+    const before = html.slice(Math.max(0, m.index - 600), m.index);
+    const dn = [...before.matchAll(/data-name="([^"]*)"/g)].map((x) => x[1]).reverse()
+      .find((x) => !isGenericName(x) && !/^(vector|union|subtract|intersect|exclude|path|shape|ellipse|line|polygon|star|icon)(\s*\d+)?$/i.test(x.trim())) || '';
+    found.push({ index: m.index, svg, open, norm, name: dn });
+  }
+  const groups = new Map();
+  for (const f of found) {
+    const k = f.open + f.norm;
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(f);
+  }
+  const used = new Set();
+  const defs = [];
+  const swap = new Map();
+  for (const list of groups.values()) {
+    if (list.length < 2) continue;
+    let base = className(list[0].name.replace(/^(icons?|иконк[аи])\s*[/:-]\s*/i, '')) || 'icon';
+    if (!/^icon/.test(base)) base = `icon-${base}`;
+    let id = base, k = 2;
+    while (used.has(id)) id = `${base}-${k++}`;
+    used.add(id);
+    defs.push(`<g id="${id}">${list[0].norm.split('\u0000').join(`${id}-`)}</g>`);
+    for (const f of list) swap.set(f.index, `${f.open}<use href="#${id}"/></svg>`);
+  }
+  if (!defs.length) return html;
+  let out = '', last = 0;
+  for (const f of found) {
+    if (!swap.has(f.index)) continue;
+    out += html.slice(last, f.index) + swap.get(f.index);
+    last = f.index + f.svg.length;
+  }
+  out += html.slice(last);
+  const sprite = `<svg aria-hidden="true" focusable="false" style="position:absolute;width:0;height:0;overflow:hidden"><defs>\n${defs.join('\n')}\n</defs></svg>`;
+  return out.replace(/<body>\n?/, (b) => `${b}${sprite}\n`);
 }
 
 /**
@@ -179,7 +231,7 @@ ${cssFiles.map((c) => `<link rel="stylesheet" href="css/${c}">`).join('\n')}
   const relink = (html) => html.replace(/ href="\.\.\/([^"/]+)\/index\.html"/g, (m, d) => ` href="${fileOf.get(d) || '#'}"`);
   entries.forEach((e, i) => {
     const pg = comp.pages[i];
-    pg.html = relink(pg.html);
+    pg.html = spriteIcons(relink(pg.html));
     for (const [name, text] of Object.entries(pg.css)) fs.writeFileSync(path.join(root, 'css', name), base.length ? text.replace(RESET, '') : text);
     const files = [...(base.length ? ['base.css'] : []), ...(comp.css ? ['components.css'] : []), ...Object.keys(pg.css)];
     fs.writeFileSync(path.join(root, e.file), head(e.title, files) + e.extra + '</head>\n' + strip(pg.html).replace(/"\.\.\/assets\//g, '"assets/'));

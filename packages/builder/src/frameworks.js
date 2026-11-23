@@ -118,6 +118,9 @@ function htmlProp(v, c, hint) {
 // React (JSX)
 // ---------------------------------------------------------------------------------------------
 
+/** Атрибут JSX: в строке "…" JSX не понимает экранирования — кавычки и \\ только через {"…"}. */
+const jsxAttr = (k, v) => (/["\\\n{}<>&]/.test(String(v)) ? `${k}={${jsStr(v)}}` : `${k}="${v}"`);
+
 function jsx(el, c, depth, p = []) {
   const pad = '  '.repeat(depth);
   const pk = pathKey(p);
@@ -138,7 +141,7 @@ function jsx(el, c, depth, p = []) {
   if (el.text !== undefined) {
     // ссылка в тексте — <a href>, остальное — span
     const t = el.tag || 'span';
-    const extra = (el.attrs || []).filter(([k]) => !k.startsWith('data-')).map(([k, v]) => ` ${k}=${jsStr(v)}`).join('');
+    const extra = (el.attrs || []).filter(([k]) => !k.startsWith('data-')).map(([k, v]) => ` ${jsxAttr(k, v)}`).join('');
     return `${pad}<${t} className=${pp.cls ? `{${pp.cls}}` : `"${el.cls}"`}${extra}>{${pp.text || jsStr(el.text)}}</${t}>`;
   }
   const attrs = [];
@@ -166,7 +169,7 @@ function jsx(el, c, depth, p = []) {
   for (const [k, v] of el.attrs || []) {
     if (!keepAttr(k, v, pk, c)) continue;
     if (k === 'data-figma-id' && c.mode === 'comp') attrs.push(`data-figma-id={ids?.[${c.idIndex.get(pk)}]}`);
-    else attrs.push(`${k}=${jsStr(v)}`);
+    else attrs.push(jsxAttr(k, v));
   }
   const kids = el.children || [];
   if (!kids.length) return `${pad}<${el.tag} ${attrs.join(' ')} />`;
