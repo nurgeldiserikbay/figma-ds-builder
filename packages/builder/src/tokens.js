@@ -18,7 +18,100 @@ function walk(obj, path, out) {
   for (const [k, v] of Object.entries(obj)) if (!k.startsWith('$')) walk(v, [...path, k], out);
 }
 
-export function loadTokens(json) {
+const slugVar = (name) => '--' + String(name).trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+const hexOf = (c) => {
+  const h = (x) => Math.round(Math.max(0, Math.min(1, x)) * 255).toString(16).padStart(2, '0');
+  const a = c.a ?? 1;
+  return `#${h(c.r)}${h(c.g)}${h(c.b)}${a < 1 ? h(a) : ''}`;
+};
+
+/**
+ * Переменные Figma (variables.json плагина) → CSS-переменные с теми же именами, что видит дизайнер:
+ * имя для кода из Figma (Code syntax → Web), иначе имя переменной (color/bg/page → --color-bg-page).
+ * Алиасы остаются ссылками (var(--…)), первый режим — :root, остальные — [data-mode="…"].
+ */
+export function variablesToTokens(collections) {
+  const list = [];
+  const used = new Set();
+  const cssName = new Map(); // имя в Figma → --имя
+  for (const c of collections || []) for (const v of c.variables || []) {
+    const web = v.codeSyntax?.WEB && String(v.codeSyntax.WEB).match(/--[A-Za-z0-9_-]+/);
+    let n = web ? web[0] : slugVar(v.name);
+    if (used.has(n)) n = slugVar(`${c.name} ${v.name}`);
+    used.add(n);
+    cssName.set(v.name, n);
+    list.push({ coll: c, v, css: n });
+  }
+  const valueOf = (v, val) => {
+    if (val && typeof val === 'object' && 'alias' in val) return cssName.has(val.alias) ? `var(${cssName.get(val.alias)})` : null;
+    if (v.type === 'COLOR' && val && typeof val === 'object') return hexOf(val);
+    if (v.type === 'FLOAT' && typeof val === 'number') {
+      const sc = v.scopes || [];
+      if (sc.some((x) => x === 'FONT_WEIGHT' || x === 'OPACITY')) return String(val);
+      return `${Math.round(val * 100) / 100}px`;
+    }
+    if (v.type === 'STRING' && typeof val === 'string') return JSON.stringify(val);
+    return null;
+  };
+  const modes = new Map(); // режим → строки
+  const byHex = new Map();
+  for (const { coll, v, css } of list) {
+    (coll.modes || []).forEach((m, i) => {
+      const val = valueOf(v, v.values?.[m]);
+      if (val == null) return;
+      const key = i === 0 ? ':root' : `[data-mode="${String(m).toLowerCase().replace(/[^a-z0-9]+/g, '-')}"]`;
+      if (!modes.has(key)) modes.set(key, []);
+      modes.get(key).push(`  ${css}: ${val};`);
+    });
+  }
+  // цвет без привязки к переменной — ищем переменную с тем же значением: смысловые (со scopes) важнее палитры
+  const resolve = (name, seen = new Set()) => {
+    const it = list.find((x) => x.v.name === name);
+    if (!it || seen.has(name)) return null;
+    seen.add(name);
+    const val = it.v.values?.[it.coll.modes?.[0]];
+    if (val && typeof val === 'object' && 'alias' in val) return resolve(val.alias, seen);
+    return it.v.type === 'COLOR' && val ? normHex(hexOf(val)) : null;
+  };
+  const ranked = list.filter((x) => x.v.type === 'COLOR').sort((a, b) => (b.v.scopes?.length ? 1 : 0) - (a.v.scopes?.length ? 1 : 0));
+  for (const x of ranked) { const h = resolve(x.v.name); if (h && !byHex.has(h)) byHex.set(h, x.css); }
+  return { list, cssName, modes, byHex };
+}
+
+/** Стили эффектов Figma (styles.json) → --shadow-…: те же тени, что в макете. */
+function effectTokens(styles) {
+  const map = new Map(), lines = [];
+  const used = new Set();
+  const r = (v) => `${Math.round((v || 0) * 100) / 100}px`;
+  for (const st of styles?.effect || []) {
+    const sh = (st.effects || []).filter((e) => e.type === 'DROP_SHADOW' || e.type === 'INNER_SHADOW')
+      .map((e) => `${e.type === 'INNER_SHADOW' ? 'inset ' : ''}${r(e.x)} ${r(e.y)} ${r(e.blur)} ${r(e.spread)} ${hexOf(e.color)}`);
+    if (!sh.length) continue;
+    let n = slugVar(/shadow|тень/i.test(st.name) ? st.name : `shadow ${st.name}`);
+    while (used.has(n)) n += '-2';
+    used.add(n); map.set(st.name, n); lines.push(`  ${n}: ${sh.join(', ')};`);
+  }
+  return { map, lines };
+}
+
+export function loadTokens(json, variables = null, styles = null) {
+  const fv = variables && variables.some((c) => (c.variables || []).length) ? variablesToTokens(variables) : null;
+  const fx = effectTokens(styles);
+  const base = fv ? null : loadTokensJson(json);
+  const modes = fv ? new Map(fv.modes) : new Map();
+  if (fx.lines.length) modes.set(':root', [...(modes.get(':root') || []), ...fx.lines]);
+  const figmaCss = [...modes].map(([sel, lines]) => `${sel} {\n${lines.join('\n')}\n}\n`).join('\n');
+  return {
+    count: fv ? fv.list.length : base.count,
+    fromFigma: !!fv,
+    colorVar: (hex) => (fv ? fv.byHex.get(normHex(hex)) || null : base.colorVar(hex)),
+    varRef: (name) => (fv ? fv.cssName.get(name) || null : null),
+    effectVar: (name) => fx.map.get(name) || null,
+    css: () => (fv ? figmaCss : base.css() + (fx.lines.length ? `:root {\n${fx.lines.join('\n')}\n}\n` : '')),
+  };
+}
+
+function loadTokensJson(json) {
   const list = [];
   if (json) walk(json, [], list);
   const byHex = new Map();
@@ -35,6 +128,7 @@ export function loadTokens(json) {
   return {
     count: vars.length,
     colorVar: (hex) => byHex.get(normHex(hex)) || null,
+    varRef: () => null,
     css: () => (vars.length ? `:root {\n${vars.map(([n, v]) => `  ${n}: ${v};`).join('\n')}\n}\n` : ''),
   };
 }

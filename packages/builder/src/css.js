@@ -13,8 +13,11 @@ export function colorHex(c, opacity = 1) {
 }
 
 /** Контекст токенов: hex → имя CSS-переменной. Подставляем var(--x, #fallback). */
-export function colorValue(c, opacity, ctx) {
+export function colorValue(c, opacity, ctx, variable = null) {
   const hex = colorHex(c, opacity);
+  // цвет привязан к переменной Figma — её имя (при прозрачности слоя значение уже другое — ищем по цвету)
+  const bound = variable && (opacity ?? 1) >= 1 ? ctx?.tokens?.varRef?.(variable) : null;
+  if (bound) return `var(${bound}, ${hex})`;
   const v = ctx?.tokens?.colorVar(hex);
   return v ? `var(${v}, ${hex})` : hex;
 }
@@ -24,7 +27,7 @@ const visible = (p) => p && p.visible !== false && (p.opacity ?? 1) > 0;
 function paintLayer(p, ctx) {
   const op = p.opacity ?? 1;
   if (p.type === 'SOLID') {
-    const c = colorValue(p.color, op, ctx);
+    const c = colorValue(p.color, op, ctx, p.variable);
     return { image: `linear-gradient(${c}, ${c})`, solid: c };
   }
   if (p.type && p.type.startsWith('GRADIENT') && p.css) {
@@ -59,14 +62,14 @@ export function fillsToCss(fills, ctx) {
 /** Первый видимый сплошной цвет (для текста). */
 export function solidColor(fills, ctx) {
   const p = (fills || []).filter(visible).reverse().find((f) => f.type === 'SOLID');
-  return p ? colorValue(p.color, p.opacity ?? 1, ctx) : null;
+  return p ? colorValue(p.color, p.opacity ?? 1, ctx, p.variable) : null;
 }
 
 /** Обводка через outline: не влияет на раскладку и повторяет border-radius. */
 export function strokesToCss(node, ctx) {
   const p = (node.strokes || []).filter(visible).reverse().find((s) => s.type === 'SOLID');
   if (!p) return {};
-  const color = colorValue(p.color, p.opacity ?? 1, ctx);
+  const color = colorValue(p.color, p.opacity ?? 1, ctx, p.variable);
   const w = node.strokeWeight;
   if (Array.isArray(w)) {
     // разные стороны: inset box-shadow по сторонам (только INSIDE — самый частый случай)
@@ -110,19 +113,27 @@ export function effectsToCss(node, ctx) {
       out['backdrop-filter'] = `blur(${px(e.radius / 2)})`;
     }
   }
-  if (shadows.length) out._shadows = shadows;
+  // стиль эффекта из Figma — его токен (значение из макета — запасное)
+  const ref = shadows.length && node.effectStyle ? ctx?.tokens?.effectVar?.(node.effectStyle) : null;
+  if (shadows.length) out._shadows = ref ? [`var(${ref}, ${shadows.join(', ')})`] : shadows;
   return out;
 }
 
-export function radiusToCss(node) {
+export function radiusToCss(node, ctx) {
   if (node.type === 'ELLIPSE') return { 'border-radius': '50%' };
   const r = node.radius;
   if (!r) return {};
   const arr = Array.isArray(r) ? r : [r, r, r, r];
   if (arr.every((v) => !v)) return {};
   const maxR = Math.min(node.w, node.h) / 2;
-  const c = arr.map((v) => px(Math.min(v, maxR)));
+  const c = arr.map((v, i) => withVar(ctx, node.vars?.radius?.[i], px(Math.min(v, maxR))));
   return { 'border-radius': c.every((v) => v === c[0]) ? c[0] : c.join(' ') };
+}
+
+/** Значение, привязанное к переменной Figma: var(--space-lg, 24px). */
+export function withVar(ctx, figmaName, value) {
+  const ref = figmaName && ctx?.tokens?.varRef?.(figmaName);
+  return ref ? `var(${ref}, ${value})` : value;
 }
 
 const WEIGHTS = [

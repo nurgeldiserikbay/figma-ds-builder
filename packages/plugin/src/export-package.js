@@ -50,7 +50,11 @@ function paints(list, ctx) {
   for (var i = 0; i < list.length; i++) {
     var p = list[i];
     var base = { type: p.type, opacity: num(p.opacity, 1), visible: p.visible !== false };
-    if (p.type === 'SOLID') base.color = colorOf(p.color);
+    if (p.type === 'SOLID') {
+      base.color = colorOf(p.color);
+      var bound = p.boundVariables && p.boundVariables.color;
+      if (bound && ctx.names && ctx.names.vars[bound.id]) base.variable = ctx.names.vars[bound.id];
+    }
     else if (p.type.indexOf('GRADIENT') === 0) base.css = gradientCss(p);
     else if (p.type === 'IMAGE' && p.imageHash) {
       base.src = 'images/' + p.imageHash + '.png';
@@ -94,11 +98,38 @@ function autoLayout(node) {
     counterAlign: node.counterAxisAlignItems,
     wrap: node.layoutWrap === 'WRAP',
     counterGap: node.counterAxisSpacing || 0,
+    // обводка внутри занимает место в раскладке: дети сдвинуты на её толщину
+    strokesIncluded: !!node.strokesIncludedInLayout,
   };
 }
 
+/** Переменные, привязанные к отступам и радиусам слоя: { gap, counterGap, padding: [t,r,b,l], radius: [tl,tr,br,bl] } — имена. */
+function boundVars(node, ctx) {
+  var bv = node.boundVariables;
+  if (!bv || !ctx.names) return undefined;
+  var nm = function (k) { var a = bv[k]; return a && !Array.isArray(a) && ctx.names.vars[a.id] ? ctx.names.vars[a.id] : null; };
+  var out = {}, any = false;
+  var put = function (key, val) { if (val) { out[key] = val; any = true; } };
+  put('gap', nm('itemSpacing'));
+  put('counterGap', nm('counterAxisSpacing'));
+  var pad = ['paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft'].map(nm);
+  if (pad.some(Boolean)) put('padding', pad);
+  var rad = ['topLeftRadius', 'topRightRadius', 'bottomRightRadius', 'bottomLeftRadius'].map(nm);
+  if (rad.some(Boolean)) put('radius', rad);
+  return any ? out : undefined;
+}
+
+/** Имена локальных переменных и стилей по id — чтобы в дереве были ссылки на дизайн-систему, а не только значения. */
+async function designNames() {
+  var names = { vars: {}, text: {}, effect: {} };
+  try { (await figma.variables.getLocalVariablesAsync()).forEach(function (v) { names.vars[v.id] = v.name; }); } catch (e) { /* нет доступа — без имён */ }
+  try { (await figma.getLocalTextStylesAsync()).forEach(function (st) { names.text[st.id] = st.name; }); } catch (e) { /* без стилей */ }
+  try { (await figma.getLocalEffectStylesAsync()).forEach(function (st) { names.effect[st.id] = st.name; }); } catch (e) { /* без стилей */ }
+  return names;
+}
+
 function textData(node, ctx) {
-  var segs = node.getStyledTextSegments(['fontName', 'fontSize', 'fontWeight', 'lineHeight', 'letterSpacing', 'fills', 'textDecoration', 'textCase']);
+  var segs = node.getStyledTextSegments(['fontName', 'fontSize', 'fontWeight', 'lineHeight', 'letterSpacing', 'fills', 'textDecoration', 'textCase', 'textStyleId']);
   segs.forEach(function (s) {
     var k = s.fontName.family + '|' + s.fontName.style;
     var f = ctx.fonts[k] || (ctx.fonts[k] = { family: s.fontName.family, style: s.fontName.style, weight: s.fontWeight, sizes: {}, uses: 0 });
@@ -129,6 +160,7 @@ function textData(node, ctx) {
         letterSpacing: { unit: s.letterSpacing.unit, value: s.letterSpacing.value },
         textDecoration: s.textDecoration, textCase: s.textCase,
         fills: paints(s.fills, ctx),
+        textStyle: s.textStyleId && ctx.names ? ctx.names.text[s.textStyleId] : undefined,
       };
     }),
   };
@@ -191,6 +223,9 @@ function serialize(node, ox, oy, ctx) {
   }
   o.radius = radius(node);
   o.effects = effects(node);
+  var vars = boundVars(node, ctx);
+  if (vars) o.vars = vars;
+  if (ctx.names && node.effectStyleId && typeof node.effectStyleId === 'string' && ctx.names.effect[node.effectStyleId]) o.effectStyle = ctx.names.effect[node.effectStyleId];
   var L = autoLayout(node);
   if (L) o.layout = L;
   if ('layoutPositioning' in node) o.layoutPositioning = node.layoutPositioning;
@@ -244,12 +279,13 @@ async function buildLayoutPackage(frames, opts) {
   var progress = opts.onProgress || function () {};
   var shouldStop = opts.shouldStop || function () { return false; };
 
+  var names = await designNames();
   for (var i = 0; i < frames.length; i++) {
     if (shouldStop()) return { stopped: true, files: [], warnings: warnings };
     var f = frames[i];
     progress(L('Фрейм {i} из {n}: {name}', { i: i + 1, n: frames.length, name: f.name }), i);
     var t = f.absoluteTransform;
-    var ctx = { images: images, vectors: [], instances: [], count: 0, fonts: fonts, errors: [] };
+    var ctx = { images: images, vectors: [], instances: [], count: 0, fonts: fonts, errors: [], names: names };
     var tree;
     try { tree = serialize(f, t[0][2], t[1][2], ctx); } catch (e) {
       warnings.push(L('Фрейм «{name}» пропущен: {err}', { name: f.name, err: e && e.message ? e.message : String(e) }));
@@ -339,7 +375,7 @@ async function exportVariables() {
           if (val && val.type === 'VARIABLE_ALIAS') val = { alias: byId[val.id] ? byId[val.id].name : val.id };
           values[m.name] = val;
         });
-        return { name: v.name, type: v.resolvedType, values: values, scopes: v.scopes };
+        return { name: v.name, type: v.resolvedType, values: values, scopes: v.scopes, codeSyntax: v.codeSyntax || undefined };
       }),
     };
   });

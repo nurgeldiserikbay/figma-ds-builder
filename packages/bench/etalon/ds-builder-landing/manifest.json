@@ -1,0 +1,82 @@
+{
+  "format": "ds-package",
+  "version": 1,
+  "file": "DS Builder — эталонный макет для теста",
+  "createdAt": "2026-11-23T08:01:02.425Z",
+  "scale": 1,
+  "fonts": "fonts.json",
+  "variables": "variables.json",
+  "styles": "styles.json",
+  "frames": [
+    {
+      "id": "2:18",
+      "name": "Button",
+      "page": "Components",
+      "width": 960,
+      "height": 192,
+      "tree": "frames/2_18.json",
+      "png": "frames/2_18.png",
+      "layers": 17
+    },
+    {
+      "id": "2:25",
+      "name": "Nav Link",
+      "page": "Components",
+      "width": 960,
+      "height": 100,
+      "tree": "frames/2_25.json",
+      "png": "frames/2_25.png",
+      "layers": 7
+    },
+    {
+      "id": "2:39",
+      "name": "Input",
+      "page": "Components",
+      "width": 1440,
+      "height": 138,
+      "tree": "frames/2_39.json",
+      "png": "frames/2_39.png",
+      "layers": 14
+    },
+    {
+      "id": "2:40",
+      "name": "Badge",
+      "page": "Components",
+      "width": 152,
+      "height": 24,
+      "tree": "frames/2_40.json",
+      "png": "frames/2_40.png",
+      "layers": 2
+    },
+    {
+      "id": "2:42",
+      "name": "Feature Card",
+      "page": "Components",
+      "width": 384,
+      "height": 246,
+      "tree": "frames/2_42.json",
+      "png": "frames/2_42.png",
+      "layers": 5
+    },
+    {
+      "id": "4:3",
+      "name": "Главная — Desktop",
+      "page": "Landing",
+      "width": 1440,
+      "height": 2530,
+      "tree": "frames/4_3.json",
+      "png": "frames/4_3.png",
+      "layers": 113
+    },
+    {
+      "id": "5:36",
+      "name": "Главная — Mobile",
+      "page": "Landing",
+      "width": 390,
+      "height": 4070,
+      "tree": "frames/5_36.json",
+      "png": "frames/5_36.png",
+      "layers": 106
+    }
+  ]
+}

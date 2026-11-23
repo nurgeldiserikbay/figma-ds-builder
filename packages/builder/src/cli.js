@@ -19,7 +19,7 @@ import { suggestNames, aiProviders } from './ai.js';
 import { analyzeSemantics } from './semantic.js';
 import { analyzeDesignSystem } from './ds/analyze.js';
 import { exportFiles, toTokens } from './ds/export.js';
-import { familiesOf, ensureFonts, buildFontsCss, defaultCacheDir } from './fonts.js';
+import { familiesOf, facesOf, ensureFonts, buildFontsCss, defaultCacheDir } from './fonts.js';
 import { findComponents } from './components.js';
 import { preparePages, exportReact, exportVue, renderReact, renderVue, checkPageHtml, shippedCheckPage, projectAssetPrefix } from './frameworks.js';
 import { groupFrames, writeResponsive, textsOf } from './responsive.js';
@@ -235,7 +235,9 @@ async function build(args) {
     if (!tokenJson) tokenJson = toTokens(ds);
     console.log(`Дизайн-система: ${ds.colors.tokens.length} цветов, ${ds.typography.styles.length} стилей текста, аудит ${ds.audit.score}/100 → design-system/`);
   }
-  const tokens = loadTokens(tokenJson);
+  const pkgJson = (rel) => { const f = rel && path.join(pkg.dir, rel); return f && fs.existsSync(f) ? JSON.parse(fs.readFileSync(f, 'utf8')) : null; };
+  // переменные и стили эффектов из Figma — главнее угаданных по пикселям токенов
+  const tokens = loadTokens(tokenJson, pkgJson(pkg.manifest.variables || 'variables.json'), pkgJson(pkg.manifest.styles || 'styles.json'));
   copyAssets(pkg, out);
   fs.writeFileSync(path.join(out, 'tokens.css'), tokens.css() || '/* токенов нет */\n');
   // шрифты макета: бесплатные — из npm, остальные должны быть установлены в системе
@@ -244,7 +246,7 @@ async function build(args) {
   if (args.fonts !== 'none') {
     const fams = familiesOf(pkg);
     const res = ensureFonts(fams, defaultCacheDir(), { log: (m) => console.log(m) });
-    const css = buildFontsCss(res.dir, res.found);
+    const css = buildFontsCss(res.dir, res.found, facesOf(pkg));
     if (css) { fs.writeFileSync(path.join(out, 'fonts.css'), css); fontFiles.push('fonts.css'); }
     console.log(`Шрифты: ${res.found.length ? res.found.join(', ') + ' — подключены' : 'из npm не нужны'}` +
       (res.missing.length ? `; не найдены в npm (установите в систему): ${res.missing.join(', ')}` : ''));
@@ -518,7 +520,10 @@ async function build(args) {
         const writeFluid = (v) => {
           const fg = generateFrame(v.tree, { ...v.gen, fluid: true, fluidSkip: v.skip, svgText, inlineSvg: args.inlineSvg, tokens, assetUrl: (rel) => `../assets/${rel}`, extraCss, semantic: args.semantic });
           fs.writeFileSync(path.join(out, v.dir, 'fluid.html'), fg.html);
-          fs.writeFileSync(path.join(out, v.dir, 'fluid.css'), fg.css);
+          // поправки после сверки (межбуквенные и т. п.) — те же, что у фиксированной вёрстки этого макета
+          const fixed = fs.existsSync(path.join(out, v.dir, 'styles.css')) ? fs.readFileSync(path.join(out, v.dir, 'styles.css'), 'utf8') : '';
+          const mark = fixed.indexOf('/* Поправки после сверки');
+          fs.writeFileSync(path.join(out, v.dir, 'fluid.css'), fg.css + (mark >= 0 ? '\n' + fixed.slice(mark) : ''));
         };
         for (const v of variants) {
           if (v.gen.mode === 'absolute') continue; // полностью абсолютная вёрстка не растягивается
@@ -572,7 +577,9 @@ async function build(args) {
               const r = await renderPage(browser, page(), { width: v.width, height: v.height, scale: pkg.scale, out: png });
               const d = comparePng(path.join(out, v.dir, 'render.png'), png, path.join(out, dir, `diff-${Math.round(v.width)}.png`));
               const geo = checkGeometry(v.tree, r.boxes.filter((b) => b.w > 0 || b.h > 0));
-              const same = d.mismatched === 0 && geo.failed === 0;
+              // та же вёрстка в общей странице растрируется чуть иначе (сглаживание отдельных букв) —
+              // допускаем несколько сотен пикселей, но не сдвиг ни одного слоя
+              const same = geo.failed === 0 && d.percent <= 0.02;
               entry.exact.push({ width: Math.round(v.width), same, percent: d.percent });
               // не совпало на ширине макета: отключаем растяжение только у родителей несошедшихся слоёв (до 3 раз)
               if (!same && v.fluid && geo.failed && (v.tries = (v.tries || 0) + 1) <= 3) {

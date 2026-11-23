@@ -1,0 +1,45 @@
+[
+  {
+    "family": "Inter",
+    "style": "Semi Bold",
+    "weight": 600,
+    "uses": 51,
+    "sizes": [
+      16,
+      20
+    ]
+  },
+  {
+    "family": "Inter",
+    "style": "Regular",
+    "weight": 400,
+    "uses": 42,
+    "sizes": [
+      14,
+      16,
+      20
+    ]
+  },
+  {
+    "family": "Inter",
+    "style": "Medium",
+    "weight": 500,
+    "uses": 13,
+    "sizes": [
+      12,
+      14
+    ]
+  },
+  {
+    "family": "Inter",
+    "style": "Bold",
+    "weight": 700,
+    "uses": 8,
+    "sizes": [
+      28,
+      36,
+      40,
+      60
+    ]
+  }
+]

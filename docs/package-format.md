@@ -88,8 +88,15 @@ ID узлов Figma содержат `:` и `;` — в именах файлов
     "primaryAlign": "CENTER", // MIN | CENTER | MAX | SPACE_BETWEEN
     "counterAlign": "CENTER", // MIN | CENTER | MAX | BASELINE
     "wrap": false,
-    "counterGap": 0
+    "counterGap": 0,
+    "strokesIncluded": true   // обводка занимает место в раскладке (strokesIncludedInLayout): дети сдвинуты на её толщину.
+                              // Нет поля (старые пакеты) — программа понимает это по положению детей
   },
+  // переменные Figma, привязанные к отступам и радиусам (имена переменных)
+  "vars": { "gap": "space/md", "counterGap": "space/md",
+            "padding": ["space/sm", "space/lg", "space/sm", "space/lg"],   // null — сторона без переменной
+            "radius": ["radius/md", "radius/md", "radius/md", "radius/md"] },
+  "effectStyle": "Shadow/Card", // стиль эффекта Figma, если подключён
   // как узел ведёт себя внутри Auto Layout родителя
   "layoutPositioning": "AUTO",          // AUTO | ABSOLUTE
   "sizing": { "h": "FIXED", "v": "HUG" }, // FIXED | HUG | FILL
@@ -109,7 +116,8 @@ ID узлов Figma содержат `:` и `;` — в именах файлов
         "lineHeight": { "unit": "PIXELS", "value": 24 },   // PIXELS | PERCENT | AUTO
         "letterSpacing": { "unit": "PIXELS", "value": 0 }, // PIXELS | PERCENT
         "textDecoration": "NONE", "textCase": "ORIGINAL",
-        "fills": [ /* Paint */ ] }
+        "fills": [ /* Paint */ ],
+        "textStyle": "Body/Medium" }  // текстовый стиль Figma, если подключён
     ]
   },
 
@@ -124,12 +132,15 @@ ID узлов Figma содержат `:` и `;` — в именах файлов
 ### Paint
 
 ```jsonc
-{ "type": "SOLID", "color": { "r": 0.23, "g": 0.51, "b": 0.96, "a": 1 }, "opacity": 1, "visible": true }
+{ "type": "SOLID", "color": { "r": 0.23, "g": 0.51, "b": 0.96, "a": 1 }, "opacity": 1, "visible": true,
+  "variable": "color/bg/accent" }  // имя локальной переменной, если цвет к ней привязан
 { "type": "GRADIENT_LINEAR", "css": "linear-gradient(90deg, #3B82F6 0%, #8B5CF6 100%)", "opacity": 1 }
 { "type": "IMAGE", "src": "images/ab12cd.png", "scaleMode": "FILL", "opacity": 1 }  // FILL | FIT | CROP | TILE
 ```
 
-Цвета — в диапазоне 0..1, как в Figma API. Градиенты плагин сразу переводит в CSS
+Цвета — в диапазоне 0..1, как в Figma API. В `variables.json` у переменной есть `codeSyntax`
+(Code syntax из Figma, например `{ "WEB": "var(--bg-accent)" }`) — по нему программа называет CSS-переменные.
+Переменные из подключённых библиотек (не локальные) плагин пока не называет — для них остаётся значение. Градиенты плагин сразу переводит в CSS
 (в анализаторе это уже есть).
 
 ## Что программа делает с пакетом

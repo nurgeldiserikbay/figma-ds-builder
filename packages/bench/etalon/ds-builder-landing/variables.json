@@ -1,0 +1,649 @@
+[
+  {
+    "name": "Primitives",
+    "modes": [
+      "Value"
+    ],
+    "variables": [
+      {
+        "name": "white",
+        "type": "COLOR",
+        "values": {
+          "Value": {
+            "r": 1,
+            "g": 1,
+            "b": 1,
+            "a": 1
+          }
+        },
+        "scopes": []
+      },
+      {
+        "name": "ink/950",
+        "type": "COLOR",
+        "values": {
+          "Value": {
+            "r": 0.06666667014360428,
+            "g": 0.07450980693101883,
+            "b": 0.0941176488995552,
+            "a": 1
+          }
+        },
+        "scopes": []
+      },
+      {
+        "name": "ink/900",
+        "type": "COLOR",
+        "values": {
+          "Value": {
+            "r": 0.10588235408067703,
+            "g": 0.11764705926179886,
+            "b": 0.14509804546833038,
+            "a": 1
+          }
+        },
+        "scopes": []
+      },
+      {
+        "name": "ink/700",
+        "type": "COLOR",
+        "values": {
+          "Value": {
+            "r": 0.22745098173618317,
+            "g": 0.24705882370471954,
+            "b": 0.29411765933036804,
+            "a": 1
+          }
+        },
+        "scopes": []
+      },
+      {
+        "name": "ink/500",
+        "type": "COLOR",
+        "values": {
+          "Value": {
+            "r": 0.3921568691730499,
+            "g": 0.41960784792900085,
+            "b": 0.47843137383461,
+            "a": 1
+          }
+        },
+        "scopes": []
+      },
+      {
+        "name": "ink/300",
+        "type": "COLOR",
+        "values": {
+          "Value": {
+            "r": 0.7058823704719543,
+            "g": 0.7254902124404907,
+            "b": 0.7686274647712708,
+            "a": 1
+          }
+        },
+        "scopes": []
+      },
+      {
+        "name": "ink/200",
+        "type": "COLOR",
+        "values": {
+          "Value": {
+            "r": 0.8509804010391235,
+            "g": 0.8627451062202454,
+            "b": 0.886274516582489,
+            "a": 1
+          }
+        },
+        "scopes": []
+      },
+      {
+        "name": "ink/100",
+        "type": "COLOR",
+        "values": {
+          "Value": {
+            "r": 0.929411768913269,
+            "g": 0.9372549057006836,
+            "b": 0.9490196108818054,
+            "a": 1
+          }
+        },
+        "scopes": []
+      },
+      {
+        "name": "ink/50",
+        "type": "COLOR",
+        "values": {
+          "Value": {
+            "r": 0.9647058844566345,
+            "g": 0.9686274528503418,
+            "b": 0.9764705896377563,
+            "a": 1
+          }
+        },
+        "scopes": []
+      },
+      {
+        "name": "indigo/700",
+        "type": "COLOR",
+        "values": {
+          "Value": {
+            "r": 0.21568627655506134,
+            "g": 0.1882352977991104,
+            "b": 0.6392157077789307,
+            "a": 1
+          }
+        },
+        "scopes": []
+      },
+      {
+        "name": "indigo/600",
+        "type": "COLOR",
+        "values": {
+          "Value": {
+            "r": 0.26274511218070984,
+            "g": 0.21960784494876862,
+            "b": 0.7921568751335144,
+            "a": 1
+          }
+        },
+        "scopes": []
+      },
+      {
+        "name": "indigo/500",
+        "type": "COLOR",
+        "values": {
+          "Value": {
+            "r": 0.35686275362968445,
+            "g": 0.3294117748737335,
+            "b": 0.8784313797950745,
+            "a": 1
+          }
+        },
+        "scopes": []
+      },
+      {
+        "name": "indigo/300",
+        "type": "COLOR",
+        "values": {
+          "Value": {
+            "r": 0.6470588445663452,
+            "g": 0.6313725709915161,
+            "b": 0.9490196108818054,
+            "a": 1
+          }
+        },
+        "scopes": []
+      },
+      {
+        "name": "indigo/100",
+        "type": "COLOR",
+        "values": {
+          "Value": {
+            "r": 0.9019607901573181,
+            "g": 0.8980392217636108,
+            "b": 0.9882352948188782,
+            "a": 1
+          }
+        },
+        "scopes": []
+      },
+      {
+        "name": "lime/400",
+        "type": "COLOR",
+        "values": {
+          "Value": {
+            "r": 0.7215686440467834,
+            "g": 0.8784313797950745,
+            "b": 0.29019609093666077,
+            "a": 1
+          }
+        },
+        "scopes": []
+      },
+      {
+        "name": "lime/100",
+        "type": "COLOR",
+        "values": {
+          "Value": {
+            "r": 0.9450980424880981,
+            "g": 0.9764705896377563,
+            "b": 0.8549019694328308,
+            "a": 1
+          }
+        },
+        "scopes": []
+      },
+      {
+        "name": "red/600",
+        "type": "COLOR",
+        "values": {
+          "Value": {
+            "r": 0.7843137383460999,
+            "g": 0.19607843458652496,
+            "b": 0.23137255012989044,
+            "a": 1
+          }
+        },
+        "scopes": []
+      },
+      {
+        "name": "red/100",
+        "type": "COLOR",
+        "values": {
+          "Value": {
+            "r": 0.9843137264251709,
+            "g": 0.8941176533699036,
+            "b": 0.8980392217636108,
+            "a": 1
+          }
+        },
+        "scopes": []
+      }
+    ]
+  },
+  {
+    "name": "Color",
+    "modes": [
+      "Light"
+    ],
+    "variables": [
+      {
+        "name": "color/bg/page",
+        "type": "COLOR",
+        "values": {
+          "Light": {
+            "alias": "white"
+          }
+        },
+        "scopes": [
+          "FRAME_FILL",
+          "SHAPE_FILL"
+        ]
+      },
+      {
+        "name": "color/bg/subtle",
+        "type": "COLOR",
+        "values": {
+          "Light": {
+            "alias": "ink/50"
+          }
+        },
+        "scopes": [
+          "FRAME_FILL",
+          "SHAPE_FILL"
+        ]
+      },
+      {
+        "name": "color/bg/inverse",
+        "type": "COLOR",
+        "values": {
+          "Light": {
+            "alias": "ink/950"
+          }
+        },
+        "scopes": [
+          "FRAME_FILL",
+          "SHAPE_FILL"
+        ]
+      },
+      {
+        "name": "color/bg/accent",
+        "type": "COLOR",
+        "values": {
+          "Light": {
+            "alias": "indigo/600"
+          }
+        },
+        "scopes": [
+          "FRAME_FILL",
+          "SHAPE_FILL"
+        ]
+      },
+      {
+        "name": "color/bg/accent-hover",
+        "type": "COLOR",
+        "values": {
+          "Light": {
+            "alias": "indigo/700"
+          }
+        },
+        "scopes": [
+          "FRAME_FILL",
+          "SHAPE_FILL"
+        ]
+      },
+      {
+        "name": "color/bg/accent-subtle",
+        "type": "COLOR",
+        "values": {
+          "Light": {
+            "alias": "indigo/100"
+          }
+        },
+        "scopes": [
+          "FRAME_FILL",
+          "SHAPE_FILL"
+        ]
+      },
+      {
+        "name": "color/bg/highlight",
+        "type": "COLOR",
+        "values": {
+          "Light": {
+            "alias": "lime/400"
+          }
+        },
+        "scopes": [
+          "FRAME_FILL",
+          "SHAPE_FILL"
+        ]
+      },
+      {
+        "name": "color/bg/disabled",
+        "type": "COLOR",
+        "values": {
+          "Light": {
+            "alias": "ink/100"
+          }
+        },
+        "scopes": [
+          "FRAME_FILL",
+          "SHAPE_FILL"
+        ]
+      },
+      {
+        "name": "color/bg/danger-subtle",
+        "type": "COLOR",
+        "values": {
+          "Light": {
+            "alias": "red/100"
+          }
+        },
+        "scopes": [
+          "FRAME_FILL",
+          "SHAPE_FILL"
+        ]
+      },
+      {
+        "name": "color/text/primary",
+        "type": "COLOR",
+        "values": {
+          "Light": {
+            "alias": "ink/950"
+          }
+        },
+        "scopes": [
+          "TEXT_FILL"
+        ]
+      },
+      {
+        "name": "color/text/secondary",
+        "type": "COLOR",
+        "values": {
+          "Light": {
+            "alias": "ink/700"
+          }
+        },
+        "scopes": [
+          "TEXT_FILL"
+        ]
+      },
+      {
+        "name": "color/text/muted",
+        "type": "COLOR",
+        "values": {
+          "Light": {
+            "alias": "ink/500"
+          }
+        },
+        "scopes": [
+          "TEXT_FILL"
+        ]
+      },
+      {
+        "name": "color/text/inverse",
+        "type": "COLOR",
+        "values": {
+          "Light": {
+            "alias": "white"
+          }
+        },
+        "scopes": [
+          "TEXT_FILL"
+        ]
+      },
+      {
+        "name": "color/text/accent",
+        "type": "COLOR",
+        "values": {
+          "Light": {
+            "alias": "indigo/600"
+          }
+        },
+        "scopes": [
+          "TEXT_FILL"
+        ]
+      },
+      {
+        "name": "color/text/disabled",
+        "type": "COLOR",
+        "values": {
+          "Light": {
+            "alias": "ink/300"
+          }
+        },
+        "scopes": [
+          "TEXT_FILL"
+        ]
+      },
+      {
+        "name": "color/text/danger",
+        "type": "COLOR",
+        "values": {
+          "Light": {
+            "alias": "red/600"
+          }
+        },
+        "scopes": [
+          "TEXT_FILL"
+        ]
+      },
+      {
+        "name": "color/border/default",
+        "type": "COLOR",
+        "values": {
+          "Light": {
+            "alias": "ink/200"
+          }
+        },
+        "scopes": [
+          "STROKE_COLOR"
+        ]
+      },
+      {
+        "name": "color/border/strong",
+        "type": "COLOR",
+        "values": {
+          "Light": {
+            "alias": "ink/500"
+          }
+        },
+        "scopes": [
+          "STROKE_COLOR"
+        ]
+      },
+      {
+        "name": "color/border/focus",
+        "type": "COLOR",
+        "values": {
+          "Light": {
+            "alias": "indigo/500"
+          }
+        },
+        "scopes": [
+          "STROKE_COLOR"
+        ]
+      },
+      {
+        "name": "color/border/danger",
+        "type": "COLOR",
+        "values": {
+          "Light": {
+            "alias": "red/600"
+          }
+        },
+        "scopes": [
+          "STROKE_COLOR"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "Spacing",
+    "modes": [
+      "Value"
+    ],
+    "variables": [
+      {
+        "name": "space/2xs",
+        "type": "FLOAT",
+        "values": {
+          "Value": 4
+        },
+        "scopes": [
+          "GAP"
+        ]
+      },
+      {
+        "name": "space/xs",
+        "type": "FLOAT",
+        "values": {
+          "Value": 8
+        },
+        "scopes": [
+          "GAP"
+        ]
+      },
+      {
+        "name": "space/sm",
+        "type": "FLOAT",
+        "values": {
+          "Value": 12
+        },
+        "scopes": [
+          "GAP"
+        ]
+      },
+      {
+        "name": "space/md",
+        "type": "FLOAT",
+        "values": {
+          "Value": 16
+        },
+        "scopes": [
+          "GAP"
+        ]
+      },
+      {
+        "name": "space/lg",
+        "type": "FLOAT",
+        "values": {
+          "Value": 24
+        },
+        "scopes": [
+          "GAP"
+        ]
+      },
+      {
+        "name": "space/xl",
+        "type": "FLOAT",
+        "values": {
+          "Value": 32
+        },
+        "scopes": [
+          "GAP"
+        ]
+      },
+      {
+        "name": "space/2xl",
+        "type": "FLOAT",
+        "values": {
+          "Value": 48
+        },
+        "scopes": [
+          "GAP"
+        ]
+      },
+      {
+        "name": "space/3xl",
+        "type": "FLOAT",
+        "values": {
+          "Value": 64
+        },
+        "scopes": [
+          "GAP"
+        ]
+      },
+      {
+        "name": "space/4xl",
+        "type": "FLOAT",
+        "values": {
+          "Value": 96
+        },
+        "scopes": [
+          "GAP"
+        ]
+      },
+      {
+        "name": "radius/sm",
+        "type": "FLOAT",
+        "values": {
+          "Value": 6
+        },
+        "scopes": [
+          "CORNER_RADIUS"
+        ]
+      },
+      {
+        "name": "radius/md",
+        "type": "FLOAT",
+        "values": {
+          "Value": 10
+        },
+        "scopes": [
+          "CORNER_RADIUS"
+        ]
+      },
+      {
+        "name": "radius/lg",
+        "type": "FLOAT",
+        "values": {
+          "Value": 16
+        },
+        "scopes": [
+          "CORNER_RADIUS"
+        ]
+      },
+      {
+        "name": "radius/xl",
+        "type": "FLOAT",
+        "values": {
+          "Value": 24
+        },
+        "scopes": [
+          "CORNER_RADIUS"
+        ]
+      },
+      {
+        "name": "radius/full",
+        "type": "FLOAT",
+        "values": {
+          "Value": 999
+        },
+        "scopes": [
+          "CORNER_RADIUS"
+        ]
+      }
+    ]
+  }
+]

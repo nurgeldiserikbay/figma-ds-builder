@@ -2,7 +2,7 @@
 import { buildBox, placements, isTransformed } from './layout.js';
 import { analyzeSemantics, className, SEMANTIC_RESET } from './semantic.js';
 import {
-  px, r2, fillsToCss, strokesToCss, effectsToCss, radiusToCss, segmentCss, declarations, mergeShadows, colorValue,
+  px, r2, withVar, fillsToCss, strokesToCss, effectsToCss, radiusToCss, segmentCss, declarations, mergeShadows, colorValue,
 } from './css.js';
 
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -33,7 +33,7 @@ class StyleRegistry {
   }
 }
 
-function flowCss(box) {
+function flowCss(box, ctx) {
   const { flow, node } = box;
   if (flow === 'abs') return {};
   if (flow === 'col') return { display: 'flex', 'flex-direction': 'column', 'align-items': 'flex-start' };
@@ -45,13 +45,16 @@ function flowCss(box) {
   const align = { MIN: 'flex-start', CENTER: 'center', MAX: 'flex-end', BASELINE: 'baseline' }[L.counterAlign] || 'flex-start';
   o['justify-content'] = justify;
   o['align-items'] = align;
-  if (L.gap && L.gap !== 'auto' && L.primaryAlign !== 'SPACE_BETWEEN') o.gap = px(L.gap);
+  const V = node.vars || {};
+  if (L.gap && L.gap !== 'auto' && L.primaryAlign !== 'SPACE_BETWEEN') o.gap = withVar(ctx, V.gap, px(L.gap));
   if (L.wrap) {
     o['flex-wrap'] = 'wrap';
-    if (L.counterGap) o['row-gap'] = px(L.counterGap);
+    if (L.counterGap) o['row-gap'] = withVar(ctx, V.counterGap, px(L.counterGap));
   }
   const p = L.padding || [0, 0, 0, 0];
-  if (p.some(Boolean)) o.padding = p.map(px).join(' ');
+  // к отступу прибавлена обводка (strokesApplied) — переменная уже не равна значению, оставляем число
+  const dp = L.designPadding || p;
+  if (p.some(Boolean)) o.padding = p.map((x, i) => (x === dp[i] ? withVar(ctx, V.padding?.[i], px(x)) : px(x))).join(' ');
   return o;
 }
 
@@ -85,7 +88,7 @@ function nodeVisualCss(node, ctx) {
     'flex-shrink': '0',
   };
   if (!node.svg && node.type !== 'TEXT') Object.assign(o, fillsToCss(node.fills, ctx));
-  Object.assign(o, radiusToCss(node));
+  Object.assign(o, radiusToCss(node, ctx));
   if (node.clipsContent) o.overflow = 'hidden';
   if (node.opacity !== undefined && node.opacity < 1) o.opacity = String(r2(node.opacity));
   if (node.blendMode && !['NORMAL', 'PASS_THROUGH'].includes(node.blendMode)) {
@@ -104,7 +107,7 @@ function outerCss(rect) {
 function maskCss(m, ctx) {
   const o = { ...outerCss(m), overflow: 'hidden' };
   if (m.type === 'ELLIPSE') o['border-radius'] = '50%';
-  else Object.assign(o, radiusToCss(m));
+  else Object.assign(o, radiusToCss(m, ctx));
   if (m.svg) {
     const url = `url("${ctx.assetUrl(m.svg)}")`;
     Object.assign(o, { overflow: 'visible', 'mask-image': url, '-webkit-mask-image': url, 'mask-size': '100% 100%', '-webkit-mask-size': '100% 100%', 'mask-repeat': 'no-repeat', '-webkit-mask-repeat': 'no-repeat' });
@@ -182,6 +185,8 @@ function textEl(node, ctx) {
   const segs = t.segments?.length ? t.segments : [{ start: 0, end: chars.length, ...(t.style || {}) }];
   // имя класса текста — размер и насыщенность шрифта (t-14-500-…): читается без открытия CSS
   const tName = (s) => {
+    // текстовый стиль Figma — его имя (Body/Medium → type-body-medium)
+    if (s.textStyle) return 'type-' + String(s.textStyle).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
     const size = Math.round(Number(s.fontSize)), w = Number(s.fontWeight);
     return Number.isFinite(size) && size > 0 ? `t-${size}${Number.isFinite(w) && w ? `-${w}` : ''}` : 't';
   };
@@ -315,13 +320,13 @@ function buildEl(box, place, ctx, inPhrasing = false, grow = false) {
   if (box.bg) {
     // фон, вобранный из нижнего прямоугольника
     const bg = box.bg;
-    baseDecl = mergeShadows(baseDecl, fillsToCss(bg.fills, ctx), radiusToCss(bg), strokesToCss(bg, ctx), effectsToCss(bg, ctx));
+    baseDecl = mergeShadows(baseDecl, fillsToCss(bg.fills, ctx), radiusToCss(bg, ctx), strokesToCss(bg, ctx), effectsToCss(bg, ctx));
     if (bg.type === 'ELLIPSE') baseDecl['border-radius'] = '50%';
   }
 
   const children = box.children || [];
   const places = box.flow === 'figma' ? children.map(() => null) : placements(box);
-  const flow = flowCss(box);
+  const flow = flowCss(box, ctx);
   const gap = collapseGap(box.flow, places);
   if (gap) flow.gap = px(gap);
 

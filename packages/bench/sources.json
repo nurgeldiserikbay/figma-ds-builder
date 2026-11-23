@@ -2,6 +2,11 @@
   "comment": "Открытые макеты с GitHub для проверки генератора. reference — PNG, выгруженные авторами из Figma (настоящие эталоны).",
   "sources": [
     {
+      "id": "ds-builder-landing",
+      "package": "etalon/ds-builder-landing",
+      "comment": "Эталонный макет DS Builder: всё на Auto Layout, переменных и стилях (выгрузка плагином v0.3.10). На нём вёрстка должна идти потоком без координат."
+    },
+    {
       "id": "hackrpi-thankyou",
       "repo": "hack-rpi/Figma-Designs-2023",
       "fig": "website/PostEvent-ThankYouPage/HackRPI_PostEvent_ThankYouPage.fig",

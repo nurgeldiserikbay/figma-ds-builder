@@ -65,7 +65,26 @@ export function ensureFonts(families, cacheDir, { log = () => {} } = {}) {
 }
 
 /** fonts.css из установленных @fontsource-пакетов (только нужные семейства, если указаны). */
-export function buildFontsCss(fontsDir, families = null) {
+/** Начертания из fonts.json пакета: Map(slug семейства → Set('400', '700-italic')). */
+export function facesOf(pkg) {
+  const f = path.join(pkg.dir, pkg.manifest.fonts || 'fonts.json');
+  if (!fs.existsSync(f)) return null;
+  const out = new Map();
+  for (const x of JSON.parse(fs.readFileSync(f, 'utf8'))) {
+    const w = Number(x.weight) || 400;
+    const key = `${Math.round(w / 100) * 100}${/italic|oblique/i.test(x.style || '') ? '-italic' : ''}`;
+    const slug = slugOf(x.family);
+    if (!out.has(slug)) out.set(slug, new Set());
+    out.get(slug).add(key);
+  }
+  return out;
+}
+
+/**
+ * faces — только начертания из макета (иначе в вёрстку попадают все насыщенности и курсивы — сотни файлов);
+ * формат — только woff2: его понимают все браузеры, woff-запасной лишь удваивает число файлов.
+ */
+export function buildFontsCss(fontsDir, families = null, faces = null) {
   const root = path.join(fontsDir, 'node_modules', '@fontsource');
   if (!fs.existsSync(root)) return '';
   const want = families ? new Set(families.map(slugOf)) : null;
@@ -73,8 +92,11 @@ export function buildFontsCss(fontsDir, families = null) {
   for (const pkg of fs.readdirSync(root)) {
     if (want && !want.has(pkg)) continue;
     const dir = path.join(root, pkg);
+    const wantFaces = faces?.get(pkg);
     for (const f of fs.readdirSync(dir).filter((n) => /^\d{3}(-italic)?\.css$/.test(n))) {
+      if (wantFaces && !wantFaces.has(f.replace(/\.css$/, ''))) continue;
       out.push(fs.readFileSync(path.join(dir, f), 'utf8')
+        .replace(/,\s*url\([^)]+\.woff\)\s*format\(['"]woff['"]\)/g, '')
         .replace(/url\(\.\/files\/([^)]+)\)/g, (_, file) => `url(${pathToFileURL(path.join(dir, 'files', file)).href})`));
     }
   }

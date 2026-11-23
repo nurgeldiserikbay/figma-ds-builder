@@ -39,10 +39,17 @@ const dsChecks = [];
 const sources = cfg.sources.filter((s) => !only || s.id === only);
 
 for (const src of sources) {
-  const fig = fetchFile(src.repo, src.fig);
-  const refs = Object.entries(src.reference || {}).flatMap(([name, file]) => ['--reference', `${name}=${fetchFile(src.repo, file)}`]);
-  const pkg = path.join(work, 'packages', src.id);
-  console.log(sh('node', [path.join(here, 'fig2package.js'), fig, '--out', pkg, ...refs]).trim());
+  let pkg;
+  if (src.package) {
+    // готовый пакет из плагина (лежит в репозитории): эталоны PNG — из самой Figma
+    pkg = path.resolve(benchDir, src.package);
+    console.log(`${src.id}: пакет плагина ${src.package}`);
+  } else {
+    const fig = fetchFile(src.repo, src.fig);
+    const refs = Object.entries(src.reference || {}).flatMap(([name, file]) => ['--reference', `${name}=${fetchFile(src.repo, file)}`]);
+    pkg = path.join(work, 'packages', src.id);
+    console.log(sh('node', [path.join(here, 'fig2package.js'), fig, '--out', pkg, ...refs]).trim());
+  }
 
   const fingerprints = [];
   for (let r = 1; r <= runs; r++) {

@@ -175,7 +175,7 @@ function collectSpacing(n, C) {
   if (L && (L.mode === 'HORIZONTAL' || L.mode === 'VERTICAL')) {
     // Auto Layout — точные значения, вес ×3
     if (typeof L.gap === 'number' && L.gap > 0 && kids.length > 1) C.spacing.push({ v: L.gap, w: 3, exact: true });
-    for (const p of L.padding || []) if (p > 0) C.spacing.push({ v: p, w: 3, exact: true });
+    for (const p of L.designPadding || L.padding || []) if (p > 0) C.spacing.push({ v: p, w: 3, exact: true });
     return;
   }
   // без Auto Layout: расстояния между соседями по геометрии

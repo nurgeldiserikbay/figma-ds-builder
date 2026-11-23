@@ -1,0 +1,232 @@
+{
+  "paint": [],
+  "text": [
+    {
+      "name": "Caption",
+      "fontFamily": "Inter",
+      "fontStyle": "Medium",
+      "fontSize": 12,
+      "lineHeight": {
+        "unit": "PIXELS",
+        "value": 16
+      },
+      "letterSpacing": {
+        "unit": "PERCENT",
+        "value": 0.5
+      },
+      "textCase": "ORIGINAL",
+      "textDecoration": "NONE"
+    },
+    {
+      "name": "Display/Desktop",
+      "fontFamily": "Inter",
+      "fontStyle": "Bold",
+      "fontSize": 60,
+      "lineHeight": {
+        "unit": "PIXELS",
+        "value": 68
+      },
+      "letterSpacing": {
+        "unit": "PERCENT",
+        "value": -2
+      },
+      "textCase": "ORIGINAL",
+      "textDecoration": "NONE"
+    },
+    {
+      "name": "Display/Mobile",
+      "fontFamily": "Inter",
+      "fontStyle": "Bold",
+      "fontSize": 36,
+      "lineHeight": {
+        "unit": "PIXELS",
+        "value": 44
+      },
+      "letterSpacing": {
+        "unit": "PERCENT",
+        "value": -1.5
+      },
+      "textCase": "ORIGINAL",
+      "textDecoration": "NONE"
+    },
+    {
+      "name": "Heading/H2 Desktop",
+      "fontFamily": "Inter",
+      "fontStyle": "Bold",
+      "fontSize": 40,
+      "lineHeight": {
+        "unit": "PIXELS",
+        "value": 48
+      },
+      "letterSpacing": {
+        "unit": "PERCENT",
+        "value": -1.5
+      },
+      "textCase": "ORIGINAL",
+      "textDecoration": "NONE"
+    },
+    {
+      "name": "Heading/H2 Mobile",
+      "fontFamily": "Inter",
+      "fontStyle": "Bold",
+      "fontSize": 28,
+      "lineHeight": {
+        "unit": "PIXELS",
+        "value": 36
+      },
+      "letterSpacing": {
+        "unit": "PERCENT",
+        "value": -1
+      },
+      "textCase": "ORIGINAL",
+      "textDecoration": "NONE"
+    },
+    {
+      "name": "Heading/H3",
+      "fontFamily": "Inter",
+      "fontStyle": "Semi Bold",
+      "fontSize": 20,
+      "lineHeight": {
+        "unit": "PIXELS",
+        "value": 28
+      },
+      "letterSpacing": {
+        "unit": "PERCENT",
+        "value": -0.5
+      },
+      "textCase": "ORIGINAL",
+      "textDecoration": "NONE"
+    },
+    {
+      "name": "Body/Large",
+      "fontFamily": "Inter",
+      "fontStyle": "Regular",
+      "fontSize": 20,
+      "lineHeight": {
+        "unit": "PIXELS",
+        "value": 32
+      },
+      "letterSpacing": {
+        "unit": "PERCENT",
+        "value": 0
+      },
+      "textCase": "ORIGINAL",
+      "textDecoration": "NONE"
+    },
+    {
+      "name": "Body/Medium",
+      "fontFamily": "Inter",
+      "fontStyle": "Regular",
+      "fontSize": 16,
+      "lineHeight": {
+        "unit": "PIXELS",
+        "value": 24
+      },
+      "letterSpacing": {
+        "unit": "PERCENT",
+        "value": 0
+      },
+      "textCase": "ORIGINAL",
+      "textDecoration": "NONE"
+    },
+    {
+      "name": "Body/Small",
+      "fontFamily": "Inter",
+      "fontStyle": "Regular",
+      "fontSize": 14,
+      "lineHeight": {
+        "unit": "PIXELS",
+        "value": 20
+      },
+      "letterSpacing": {
+        "unit": "PERCENT",
+        "value": 0
+      },
+      "textCase": "ORIGINAL",
+      "textDecoration": "NONE"
+    },
+    {
+      "name": "Label/Medium",
+      "fontFamily": "Inter",
+      "fontStyle": "Semi Bold",
+      "fontSize": 16,
+      "lineHeight": {
+        "unit": "PIXELS",
+        "value": 24
+      },
+      "letterSpacing": {
+        "unit": "PERCENT",
+        "value": 0
+      },
+      "textCase": "ORIGINAL",
+      "textDecoration": "NONE"
+    },
+    {
+      "name": "Label/Small",
+      "fontFamily": "Inter",
+      "fontStyle": "Medium",
+      "fontSize": 14,
+      "lineHeight": {
+        "unit": "PIXELS",
+        "value": 20
+      },
+      "letterSpacing": {
+        "unit": "PERCENT",
+        "value": 0
+      },
+      "textCase": "ORIGINAL",
+      "textDecoration": "NONE"
+    }
+  ],
+  "effect": [
+    {
+      "name": "Shadow/Card",
+      "effects": [
+        {
+          "type": "DROP_SHADOW",
+          "x": 0,
+          "y": 1,
+          "blur": 2,
+          "spread": 0,
+          "color": {
+            "r": 0.07000000029802322,
+            "g": 0.07500000298023224,
+            "b": 0.09399999678134918,
+            "a": 0.05999999865889549
+          }
+        },
+        {
+          "type": "DROP_SHADOW",
+          "x": 0,
+          "y": 4,
+          "blur": 12,
+          "spread": 0,
+          "color": {
+            "r": 0.07000000029802322,
+            "g": 0.07500000298023224,
+            "b": 0.09399999678134918,
+            "a": 0.05999999865889549
+          }
+        }
+      ]
+    },
+    {
+      "name": "Shadow/Raised",
+      "effects": [
+        {
+          "type": "DROP_SHADOW",
+          "x": 0,
+          "y": 8,
+          "blur": 24,
+          "spread": 0,
+          "color": {
+            "r": 0.07000000029802322,
+            "g": 0.07500000298023224,
+            "b": 0.09399999678134918,
+            "a": 0.11999999731779099
+          }
+        }
+      ]
+    }
+  ]
+}
