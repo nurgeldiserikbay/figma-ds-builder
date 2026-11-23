@@ -12,6 +12,7 @@ package/
 ├── fonts.json             — шрифты, используемые в выгруженных фреймах (семейство, начертание, кегли)
 ├── variables.json         — локальные переменные: коллекции, режимы, значения, алиасы
 ├── styles.json            — локальные стили: цвета, текст, эффекты
+├── components.json        — описания компонентов (Description), если есть: [{ "name": "Button", "description": "…" }]
 ├── frames/
 │   ├── <id>.json          — дерево слоёв фрейма
 │   └── <id>.png           — эталонный рендер фрейма из Figma (exportAsync PNG)
@@ -34,6 +35,7 @@ ID узлов Figma содержат `:` и `;` — в именах файлов
   "createdAt": "2026-11-17T10:00:00Z",
   "scale": 1,
   "tokens": "tokens.json",
+  "components": "components.json",
   "frames": [
     { "id": "12:34", "name": "Home / Desktop", "page": "Landing",
       "width": 1440, "height": 3200,
@@ -106,9 +108,13 @@ ID узлов Figma содержат `:` и `;` — в именах файлов
   //   { "type": "url", "url": "https://…", "newTab": true } — Open link
   //   { "type": "frame", "id": "4:3" }  — Navigate to (верхний фрейм)
   //   { "type": "scroll", "id": "7:12" } — Scroll to (слой на той же странице)
+  //   { "type": "overlay", "id": "8:1" } — Open overlay (окно — верхний фрейм)
   //   { "type": "back" }                 — Back
-  // программа делает из слоя ссылку <a href>; наведение, Change to и всплывающие окна не берутся
+  //   { "type": "close" }                — Close overlay
+  // программа делает из слоя ссылку <a href>; наведение и Change to не берутся
   "link": { "type": "frame", "id": "4:3" },
+  // аннотации Dev Mode на слое: текст и отмеченные свойства (если есть)
+  "notes": [{ "text": "Поле обязательное" }, { "text": "", "properties": ["width"] }],
   // как узел ведёт себя внутри Auto Layout родителя
   "layoutPositioning": "AUTO",          // AUTO | ABSOLUTE
   "sizing": { "h": "FIXED", "v": "HUG" }, // FIXED | HUG | FILL

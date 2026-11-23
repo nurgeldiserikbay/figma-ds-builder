@@ -130,7 +130,11 @@ async function resolvePending(ctx) {
       if (kind === 'main') {
         var inst = await figma.getNodeByIdAsync(id);
         var mc = inst && inst.getMainComponentAsync ? await inst.getMainComponentAsync() : null;
-        ctx.names.main[id] = mc ? (mc.parent && mc.parent.type === 'COMPONENT_SET' ? mc.parent.name : mc.name) : ctx.names.mainFallback[id];
+        var owner = mc ? (mc.parent && mc.parent.type === 'COMPONENT_SET' ? mc.parent : mc) : null;
+        ctx.names.main[id] = owner ? owner.name : ctx.names.mainFallback[id];
+        // описание компонента (Description в Figma) — правила, которых не видно на картинке
+        var desc = owner && typeof owner.description === 'string' ? owner.description.trim() : '';
+        if (desc && !ctx.names.desc[owner.name]) ctx.names.desc[owner.name] = desc;
       } else if (kind === 'vars') {
         var v = await figma.variables.getVariableByIdAsync(id);
         if (v) { ctx.names.vars[id] = v.name; ctx.names.remoteVars[id] = v; }
@@ -206,7 +210,7 @@ function explicitModes(node, ctx) {
 
 /** Имена локальных переменных и стилей по id — чтобы в дереве были ссылки на дизайн-систему, а не только значения. */
 async function designNames() {
-  var names = { vars: {}, text: {}, effect: {}, paint: {}, modes: {}, main: {}, mainFallback: {}, remoteVars: {}, remoteStyles: {}, missing: {} };
+  var names = { vars: {}, text: {}, effect: {}, paint: {}, modes: {}, main: {}, mainFallback: {}, remoteVars: {}, remoteStyles: {}, missing: {}, desc: {} };
   try { (await figma.variables.getLocalVariablesAsync()).forEach(function (v) { names.vars[v.id] = v.name; }); } catch (e) { /* нет доступа — без имён */ }
   try {
     (await figma.variables.getLocalVariableCollectionsAsync()).forEach(function (c) {
@@ -310,6 +314,21 @@ function serializeSafe(node, ox, oy, ctx) {
   }
 }
 
+/** Аннотации Dev Mode: текст (label) и отмеченные свойства. */
+function annotationsOf(node) {
+  var list;
+  try { list = node.annotations; } catch (e) { return undefined; }
+  if (!list || !list.length) return undefined;
+  var out = [];
+  for (var i = 0; i < list.length; i++) {
+    var a = list[i] || {};
+    var text = String(a.label || a.labelMarkdown || '').trim();
+    var props = (a.properties || []).map(function (p) { return p && p.type; }).filter(Boolean);
+    if (text || props.length) out.push(props.length ? { text: text, properties: props } : { text: text });
+  }
+  return out.length ? out : undefined;
+}
+
 /** Ссылка в тексте (Link в Figma): адрес или слой, к которому ведёт. */
 function textLink(h) {
   if (!h || isMixed(h) || !h.value) return undefined;
@@ -317,8 +336,8 @@ function textLink(h) {
 }
 
 /**
- * Переход из прототипа по нажатию: адрес (Open link), другой фрейм (Navigate to) или прокрутка к слою (Scroll to).
- * Наведение, смена варианта (Change to) и всплывающие окна — не ссылки, их не берём.
+ * Переход из прототипа по нажатию: адрес (Open link), другой фрейм (Navigate to), прокрутка к слою (Scroll to),
+ * всплывающее окно (Open overlay), назад и закрыть окно. Наведение и смена варианта (Change to) — не ссылки.
  */
 function protoLink(node) {
   var list;
@@ -336,8 +355,10 @@ function protoLink(node) {
       if (a.type === 'NODE' && a.destinationId) {
         if (a.navigation === 'NAVIGATE') return { type: 'frame', id: a.destinationId };
         if (a.navigation === 'SCROLL_TO') return { type: 'scroll', id: a.destinationId };
+        if (a.navigation === 'OVERLAY') return { type: 'overlay', id: a.destinationId };
       }
       if (a.type === 'BACK') return { type: 'back' };
+      if (a.type === 'CLOSE') return { type: 'close' };
     }
   }
   return undefined;
@@ -377,6 +398,9 @@ function serialize(node, ox, oy, ctx) {
   if (modes) o.modes = modes;
   var link = protoLink(node);
   if (link) o.link = link;
+  // аннотации Dev Mode: «поле обязательное», «сортируется по клику» — для ИИ-агента
+  var notes = annotationsOf(node);
+  if (notes) o.notes = notes;
   var L = autoLayout(node);
   if (L) o.layout = L;
   if ('layoutPositioning' in node) o.layoutPositioning = node.layoutPositioning;
@@ -495,6 +519,8 @@ async function buildLayoutPackage(frames, opts) {
     files.push({ path: 'variables.json', data: JSON.stringify(await exportVariables(names), null, 2) });
     files.push({ path: 'styles.json', data: JSON.stringify(await exportStyles(names), null, 2) });
   } catch (e) { progress(L('Переменные/стили не выгружены: {err}', { err: e.message })); }
+  var compNames = Object.keys(names.desc);
+  if (compNames.length) files.push({ path: 'components.json', data: JSON.stringify(compNames.sort().map(function (n) { return { name: n, description: names.desc[n] }; }), null, 2) });
   if (opts.tokens) files.push({ path: 'tokens.json', data: JSON.stringify(opts.tokens, null, 2) });
   if (opts.analysis) files.push({ path: 'analysis.json', data: JSON.stringify(opts.analysis) });
 
@@ -505,6 +531,7 @@ async function buildLayoutPackage(frames, opts) {
     scale: scale,
     tokens: opts.tokens ? 'tokens.json' : undefined,
     fonts: 'fonts.json', variables: 'variables.json', styles: 'styles.json',
+    components: compNames.length ? 'components.json' : undefined,
     frames: manifestFrames,
     part: opts.part, // { id, index, total } — выгрузка частями: программа собирает части в один пакет
     warnings: warnings.length ? warnings.map(function (w) { return w.text; }) : undefined,

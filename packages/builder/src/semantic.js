@@ -263,7 +263,7 @@ function anchorName(node, used) {
 }
 
 /**
- * Переходы прототипа (link в пакете) → <a href>. Адрес и «Back» — сразу; «Navigate to» — метка
+ * Переходы прототипа (link в пакете) → <a href>. Адрес и «Back» — сразу; «Navigate to» и «Open overlay» — метка
  * figma-frame:<id>, генератор заменяет её путём к странице; «Scroll to» — #якорь на слое-цели.
  * Ссылка в ссылке или кнопке (их браузер разрывает) и ссылка на поле ввода не делаются.
  */
@@ -275,7 +275,8 @@ function applyLinks(tree, out, set, inInput) {
   const byId = new Map(all.map((n) => [n.id, n]));
   const hrefOf = (link) => {
     if (link.type === 'url') return link.url;
-    if (link.type === 'back') return 'javascript:history.back()';
+    // «Close overlay»: всплывающее окно открыто как отдельная страница — закрыть = вернуться
+    if (link.type === 'back' || link.type === 'close') return 'javascript:history.back()';
     const target = byId.get(link.id);
     if (link.type === 'scroll' || (link.type === 'node' && target && target !== tree)) {
       if (!target) return '#';
@@ -302,6 +303,8 @@ function applyLinks(tree, out, set, inInput) {
       const hasInput = (function f(x) { return inInput.has(x.id) || (x.children || []).some(f); })(n);
       if (!hasInput && (!e || LINKABLE.has(e.tag))) {
         const attrs = { href: n.link ? hrefOf(n.link) : '#' };
+        // «Open overlay»: пока ссылка на страницу окна; aria-haspopup — что это окно (в AGENTS.md — сделать <dialog>)
+        if (n.link?.type === 'overlay') attrs['aria-haspopup'] = 'dialog';
         if (n.link?.type === 'url' && n.link.newTab !== false && /^https?:/i.test(n.link.url)) Object.assign(attrs, { target: '_blank', rel: 'noopener' });
         set(n, 'a', e?.name && e.tag !== 'div' && e.tag !== 'span' ? e.name : isGenericName(n.name) ? 'link' : null, attrs);
         block = true;

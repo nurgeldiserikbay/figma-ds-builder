@@ -23,7 +23,10 @@ export function mergePackages(dirs, outDir) {
   const frames = [];
   const seen = new Set();
   const fonts = new Map();
+  const comps = new Map(); // описания компонентов — объединение частей
   for (const { d, m } of order) {
+    const cp = m.components && path.join(d, m.components);
+    if (cp && fs.existsSync(cp)) for (const c of JSON.parse(fs.readFileSync(cp, 'utf8'))) if (!comps.has(c.name)) comps.set(c.name, c);
     for (const sub of ['frames', 'vectors', 'images']) {
       const from = path.join(d, sub);
       if (fs.existsSync(from)) fs.cpSync(from, path.join(outDir, sub), { recursive: true, force: false, errorOnExist: false });
@@ -51,7 +54,8 @@ export function mergePackages(dirs, outDir) {
   }
   // список шрифтов — только если он был хотя бы в одной части (иначе программа берёт шрифты из дерева слоёв)
   if (fonts.size) fs.writeFileSync(path.join(outDir, 'fonts.json'), JSON.stringify([...fonts.values()].sort((a, b) => b.uses - a.uses), null, 2));
-  const manifest = { ...first.m, frames, part: undefined, fonts: fonts.size ? 'fonts.json' : undefined,
+  if (comps.size) fs.writeFileSync(path.join(outDir, 'components.json'), JSON.stringify([...comps.values()], null, 2));
+  const manifest = { ...first.m, frames, part: undefined, fonts: fonts.size ? 'fonts.json' : undefined, components: comps.size ? 'components.json' : undefined,
     warnings: order.flatMap(({ m }) => m.warnings || []), parts: order.length };
   if (!manifest.warnings.length) delete manifest.warnings;
   fs.writeFileSync(path.join(outDir, 'manifest.json'), JSON.stringify(manifest, null, 2));

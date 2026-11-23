@@ -65,6 +65,8 @@ const card = base('Card', 'FRAME', 0, {
     { trigger: { type: 'ON_CLICK' }, actions: [{ type: 'NODE', destinationId: '4:3', navigation: 'NAVIGATE' }] }],
   children: [],
 });
+const modalBtn = base('Open', 'RECTANGLE', 40, { reactions: [{ trigger: { type: 'ON_CLICK' }, actions: [{ type: 'NODE', destinationId: '8:1', navigation: 'OVERLAY' }] }] });
+const closeBtn = base('Close', 'RECTANGLE', 40, { annotations: [{ label: 'Закрывает окно без сохранения' }, { labelMarkdown: '', properties: [{ type: 'width' }] }], reactions: [{ trigger: { type: 'ON_CLICK' }, actions: [{ type: 'CLOSE' }] }] });
 const oldStyle = base('Old', 'RECTANGLE', 120, { fills: paintStyle.paints, fillStyleId: 'S:p1',
   reactions: [{ trigger: { type: 'ON_CLICK' }, action: { type: 'URL', url: 'https://example.com' } }] });
 const grad = base('Grad', 'RECTANGLE', 240, { fills: [{ type: 'GRADIENT_LINEAR', visible: true, opacity: 1, gradientTransform: [[1, 0, 0], [0, 1, 0]],
@@ -79,16 +81,16 @@ const text = base('Text', 'TEXT', 360, {
     throw new Error('ждали поля boundVariables');
   },
 });
-const btnSet = { type: 'COMPONENT_SET', name: 'Button' };
+const btnSet = { type: 'COMPONENT_SET', name: 'Button', description: '  Главное действие на экране. Одна на экран.  ' };
 const btnMain = { type: 'COMPONENT', name: 'Variant=Primary', parent: btnSet };
 const renamed = base('Button Override', 'INSTANCE', 400, { variantProperties: { Variant: 'Primary' }, children: [], getMainComponentAsync: async () => btnMain });
-const frame = base('Screen', 'FRAME', 0, { width: 500, height: 100, children: [card, oldStyle, grad, text, renamed], explicitVariableModes: { 'VC:1': 'm2' }, async exportAsync() { return new Uint8Array([1]); } });
+const frame = base('Screen', 'FRAME', 0, { width: 500, height: 100, children: [card, oldStyle, grad, text, renamed, modalBtn, closeBtn], explicitVariableModes: { 'VC:1': 'm2' }, async exportAsync() { return new Uint8Array([1]); } });
 frame.parent = { type: 'PAGE', name: 'Стр' };
 
 const pkg = await ctx.buildLayoutPackage([frame], {});
 const file = (p) => JSON.parse(pkg.files.find((f) => f.path === p || (p === 'tree' && /^frames\/.*\.json$/.test(f.path))).data);
 const tree = file('tree');
-const [c, o, g, t, r] = tree.children;
+const [c, o, g, t, r, mo, cl] = tree.children;
 assert.deepEqual(r.component, { name: 'Button', variant: { Variant: 'Primary' } }, 'переименованная копия — имя набора компонента');
 assert.deepEqual(tree.modes, { Color: 'Dark' }, 'режим на фрейме');
 assert.equal(c.fills[0].variable, 'bg/brand', 'библиотечная переменная на заливке — по имени');
@@ -105,6 +107,11 @@ assert.ok(!JSON.stringify(tree).includes('\\u0000'), 'в дереве не ос�
 assert.deepEqual(c.link, { type: 'frame', id: '4:3' }, 'переход Navigate to по нажатию (наведение и Change to — не ссылки)');
 assert.deepEqual(o.link, { type: 'url', url: 'https://example.com', newTab: true }, 'Open link (старое поле action)');
 assert.equal(g.link, undefined);
+assert.deepEqual(mo.link, { type: 'overlay', id: '8:1' }, 'Open overlay');
+assert.deepEqual(cl.link, { type: 'close' }, 'Close overlay');
+assert.deepEqual(cl.notes, [{ text: 'Закрывает окно без сохранения' }, { text: '', properties: ['width'] }], 'аннотации Dev Mode');
+assert.deepEqual(file('components.json'), [{ name: 'Button', description: 'Главное действие на экране. Одна на экран.' }], 'описание компонента');
+assert.equal(pkg.manifest.components, 'components.json');
 assert.deepEqual(t.text.segments[1].link, { type: 'url', url: 'https://example.com/w' }, 'ссылка в тексте');
 assert.equal(t.text.segments[0].link, undefined);
 

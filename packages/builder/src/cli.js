@@ -744,7 +744,7 @@ async function build(args) {
   fs.writeFileSync(path.join(out, 'report.html'), buildReport({ file: pkg.manifest.file, threshold: args.threshold, textThreshold: args.textThreshold, textAreaThreshold: args.textAreaThreshold, results, responsive: responsive.map(({ components, ...r }) => r) }));
   fs.writeFileSync(path.join(out, 'report.json'), JSON.stringify({ file: pkg.manifest.file, threshold: args.threshold,
     results: results.map(({ stats, ...r }) => ({ ...r, stats })) }, null, 2));
-  writeRootAgents(out, { file: pkg.manifest.file, results, codeOf, responsive, frames: pkg.frames, frameworks: args.frameworks, threshold: args.threshold });
+  writeRootAgents(out, { file: pkg.manifest.file, results, codeOf, responsive, frames: pkg.frames, frameworks: args.frameworks, threshold: args.threshold, notes: designNotes(pkg) });
   console.log(`Отчёт: ${path.join(out, 'report.html')}`);
   if (args.open) openFile(path.join(out, 'report.html'));
   const failed = results.filter((r) => r.pass === false).length;
@@ -755,7 +755,7 @@ async function build(args) {
  * Корень папки сборки: AGENTS.md (что здесь код, что эталон, что служебное) и screens/ — PNG макетов
  * с понятными именами: по ним агент видит все экраны и состояния, не открывая папки проверки.
  */
-function writeRootAgents(out, { file, results, codeOf, responsive, frames, frameworks, threshold }) {
+function writeRootAgents(out, { file, results, codeOf, responsive, frames, frameworks, threshold, notes = { components: [], layers: [] } }) {
   const scr = path.join(out, 'screens');
   fs.rmSync(scr, { recursive: true, force: true });
   const rows = [];
@@ -802,9 +802,63 @@ function writeRootAgents(out, { file, results, codeOf, responsive, frames, frame
     L.push('', '## Адаптивные страницы', '');
     for (const r of responsive) L.push(`- ${r.name}: ${r.widths.join(' / ')}px — одна страница, перестраивается между этими ширинами`);
   }
+  // пояснения дизайнера: описания компонентов и аннотации Dev Mode — правила, которых не видно на картинке
+  if (notes.components.length || notes.layers.length) {
+    L.push('', '## Пояснения дизайнера', '', 'Из Figma: описания компонентов (Description) и аннотации Dev Mode. Это требования к поведению — учитывай их в коде.', '');
+    for (const c of notes.components) L.push(`- Компонент «${c.name}»: ${c.description.replace(/\s*\n\s*/g, ' ')}`);
+    for (const n of notes.layers) L.push(`- ${n.where}: ${n.text}`);
+  }
+  // всплывающие окна из прототипа (Open overlay): в вёрстке — ссылка на страницу окна, агенту — сделать <dialog>
+  const overlays = overlayLinks(frames);
+  if (overlays.length) {
+    L.push('', '## Всплывающие окна (Open overlay в прототипе)', '',
+      'В макете эти кнопки открывают окно поверх экрана. В вёрстке сейчас это ссылка на страницу окна (`aria-haspopup="dialog"`), ' +
+      'кнопка «закрыть» в окне — возврат назад. Сделай окно `<dialog>` на странице кнопки (содержимое и стили — со страницы окна), ' +
+      'открытие — `showModal()`, закрытие — `close()`, по Esc и по клику на фон.', '');
+    for (const o of overlays) L.push(`- ${o.frame}: «${o.trigger}» → окно «${o.target}»`);
+  }
   L.push('', '«Расходится» — вёрстка отличается от макета больше допуска; где именно — в report.html. ' +
     'При расхождении прав макет из screens/: правь код под него, а не наоборот.', '');
   fs.writeFileSync(path.join(out, 'AGENTS.md'), L.join('\n'));
+}
+
+/** Описания компонентов (components.json) и аннотации слоёв (notes) из пакета. */
+function designNotes(pkg) {
+  const p = pkg.manifest.components && path.join(pkg.dir, pkg.manifest.components);
+  const components = p && fs.existsSync(p) ? JSON.parse(fs.readFileSync(p, 'utf8')).filter((c) => c?.name && c.description) : [];
+  const layers = [];
+  for (const f of pkg.frames) {
+    const tree = f.tree?.();
+    if (!tree) continue;
+    (function walk(n, trail) {
+      if (n.visible === false) return;
+      for (const a of n.notes || []) {
+        const text = [a.text, a.properties?.length ? `(свойства: ${a.properties.join(', ')})` : ''].filter(Boolean).join(' ');
+        if (text) layers.push({ where: trail.join(' / '), text: text.replace(/\s*\n\s*/g, ' ') });
+      }
+      (n.children || []).forEach((c) => walk(c, [...trail, c.name]));
+    })(tree, [f.name]);
+  }
+  return { components, layers: layers.slice(0, 200) };
+}
+
+/** Кнопки «Open overlay» во всех фреймах: где, какая (текст или имя слоя), какое окно. */
+function overlayLinks(frames) {
+  const names = new Map(frames.map((f) => [f.id, f.name]));
+  const out = [];
+  for (const f of frames) {
+    const tree = f.tree?.();
+    if (!tree) continue;
+    (function walk(n) {
+      if (n.visible === false) return;
+      if (n.link?.type === 'overlay') {
+        const text = (function t(x) { return x.type === 'TEXT' ? x.text?.characters : (x.children || []).map(t).find(Boolean); })(n);
+        out.push({ frame: f.name, trigger: (text || n.name || '').trim().slice(0, 60), target: names.get(n.link.id) || `слой ${n.link.id} (не выгружен)` });
+      }
+      (n.children || []).forEach(walk);
+    })(tree);
+  }
+  return out;
 }
 
 /** Итог сверки для AGENTS.md: только фреймы с эталоном. */

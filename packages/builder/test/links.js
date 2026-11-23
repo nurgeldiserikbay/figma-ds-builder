@@ -76,3 +76,14 @@ console.log('React/Vue: переход на страницу → #маршрут
   assert.notEqual(s.get('j2').tag, 'li');
   console.log('ссылка и список по имени слоя — OK');
 }
+
+// Open overlay: ссылка на страницу окна с aria-haspopup; Close — назад
+{
+  const t2 = { id: 'r2', name: 'Экран', type: 'FRAME', x: 0, y: 0, w: 800, h: 400, visible: true, fills: fill(1, 1, 1), children: [
+    btn('open', 'Купить', 0, 0, { type: 'overlay', id: '9:1' }), btn('close', 'Закрыть', 200, 0, { type: 'close' })] };
+  const { html: h2 } = generateFrame(t2, { mode: 'flow', assetUrl: (r) => r, title: 'M', frameHref });
+  const op = (id) => h2.match(new RegExp(`<([a-z0-9]+) [^>]*data-figma-id="${id}"[^>]*>`))?.[0] || '';
+  assert.match(op('open'), /^<a [^>]*href="\.\.\/Tarify-9_1\/index\.html" aria-haspopup="dialog"/, 'Open overlay → ссылка на окно');
+  assert.match(op('close'), /href="javascript:history\.back\(\)"/, 'Close overlay → назад');
+  console.log('Open overlay → ссылка с aria-haspopup, Close → назад — OK');
+}
