@@ -87,7 +87,10 @@ const LANDMARKS = [
   [/^(header|шапка|хедер)$/, 'header'], [/^(footer|подвал|футер)$/, 'footer'],
   [/^(nav|navigation|navbar|menu|навигация|меню)$/, 'nav'], [/^(main|основное|контент)$/, 'main'],
   [/^(section|секция|раздел|блок)$/, 'section'], [/^(aside|sidebar|сайдбар|боковая)$/, 'aside'], [/^(form|форма)$/, 'form'],
+  [/^(list|список)$/, 'ul'],
 ];
+/** «link / Подробнее», «Ссылка» — ссылка по имени слоя (первое слово). */
+export const linkByName = (name) => /^(link|ссылка)$/.test(String(name || '').trim().toLowerCase().split(/[\s/]+/)[0]?.replace(/[-_]?\d+$/, '') || '');
 /** Первое слово имени слоя («section / Тарифы», «Header», «nav-main») → тег, если это смысловой блок. */
 export function landmarkByName(name) {
   // слова — через пробел и «/»; «form-control», «navbar-brand» — это имена классов, а не смысловые блоки
@@ -125,9 +128,11 @@ export function analyzeSemantics(tree) {
     for (const c of (n.children || []).filter(visible)) {
       let tag = c.type !== 'TEXT' && c.children?.length ? landmarkByName(c.name) : null;
       if (tag && (inside.has(tag) || (tag === 'main' && mainUsed) || (tag === 'form' && inside.has('form')))) tag = null;
+      if (tag === 'ul' && (c.children || []).filter(visible).some((k) => k.type === 'TEXT')) tag = null; // список из блоков, а не из голого текста
       if (tag) {
         if (tag === 'main') mainUsed = true;
         set(c, tag, null);
+        if (tag === 'ul') (c.children || []).filter(visible).forEach((k) => set(k, 'li', isGenericName(k.name) ? 'item' : null));
       }
       byName(c, tag ? new Set([...inside, tag]) : inside);
     }
@@ -280,15 +285,24 @@ function applyLinks(tree, out, set, inInput) {
     }
     return `figma-frame:${link.id}`;
   };
+  const parentOf = new Map();
+  for (const n of all) for (const c of n.children || []) parentOf.set(c.id, n);
   (function walk(n, blocked) {
     if (!visible(n)) return;
     let block = blocked;
-    if (n !== tree && n.link && !blocked && !inInput.has(n.id)) {
+    const byName = !n.link && n.type !== 'TEXT' && linkByName(n.name);
+    if (n !== tree && (n.link || byName) && !blocked && !inInput.has(n.id)) {
+      // пункт списка со ссылкой: <a> не может стоять прямо в <ul> — список становится обычными блоками
+      if (out.get(n.id)?.tag === 'li') {
+        const p = parentOf.get(n.id);
+        if (p && out.get(p.id)?.tag === 'ul') out.set(p.id, { ...out.get(p.id), tag: 'div' });
+        for (const k of p?.children || []) if (out.get(k.id)?.tag === 'li') out.set(k.id, { ...out.get(k.id), tag: 'div' });
+      }
       const e = out.get(n.id);
       const hasInput = (function f(x) { return inInput.has(x.id) || (x.children || []).some(f); })(n);
       if (!hasInput && (!e || LINKABLE.has(e.tag))) {
-        const attrs = { href: hrefOf(n.link) };
-        if (n.link.type === 'url' && n.link.newTab !== false && /^https?:/i.test(n.link.url)) Object.assign(attrs, { target: '_blank', rel: 'noopener' });
+        const attrs = { href: n.link ? hrefOf(n.link) : '#' };
+        if (n.link?.type === 'url' && n.link.newTab !== false && /^https?:/i.test(n.link.url)) Object.assign(attrs, { target: '_blank', rel: 'noopener' });
         set(n, 'a', e?.name && e.tag !== 'div' && e.tag !== 'span' ? e.name : isGenericName(n.name) ? 'link' : null, attrs);
         block = true;
       }

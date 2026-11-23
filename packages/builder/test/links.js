@@ -55,3 +55,24 @@ const find = (el, id) => (el.id === id ? el : (el.children || []).reduce((f, c) 
 assert.equal(find(root, 'go').attrs.find(([k]) => k === 'href')[1], '#tarify');
 assert.equal(find(root, 'down').attrs.find(([k]) => k === 'href')[1], '#faq');
 console.log('React/Vue: переход на страницу → #маршрут — OK');
+
+// ссылка и список по имени слоя; ссылка в пункте списка — список становится блоками
+{
+  const { analyzeSemantics } = await import('../src/semantic.js');
+  const fr = (id, name, children = [], extra = {}) => ({ id, name, type: 'FRAME', x: 0, y: 0, w: 200, h: 40, visible: true, fills: [], children, ...extra });
+  const tx = (id) => ({ id, name: 't', type: 'TEXT', x: 0, y: 0, w: 50, h: 20, visible: true, text: { characters: 'Пункт', segments: [{ start: 0, end: 5, fontSize: 14 }] } });
+  const t = fr('root', 'Экран', [
+    fr('l', 'link / Подробнее', [tx('lt')]),
+    fr('ul', 'list / Тарифы', [fr('i1', 'Тариф', [tx('a')]), fr('i2', 'Тариф', [tx('b')])]),
+    fr('ul2', 'Список', [fr('j1', 'Тариф', [tx('c')], { link: { type: 'url', url: 'https://x.y' } }), fr('j2', 'Тариф', [tx('d')])]),
+  ], { w: 1000, h: 1000 });
+  const s = analyzeSemantics(t);
+  assert.equal(s.get('l').tag, 'a');
+  assert.equal(s.get('l').attrs.href, '#');
+  assert.equal(s.get('ul').tag, 'ul');
+  assert.equal(s.get('i1').tag, 'li');
+  assert.equal(s.get('j1').tag, 'a', 'пункт со ссылкой — ссылка');
+  assert.notEqual(s.get('ul2').tag, 'ul', 'в <ul> не может быть <a> — список стал блоком');
+  assert.notEqual(s.get('j2').tag, 'li');
+  console.log('ссылка и список по имени слоя — OK');
+}

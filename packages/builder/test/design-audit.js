@@ -30,3 +30,17 @@ for (const s of a.sections) assert.ok(anchors.has(s.guide), `раздел пам
 const html = auditHtml(a, { guideHref: (id) => `designer-guide.html#${id}` });
 assert.ok(!/undefined|NaN/.test(html), 'без undefined/NaN в отчёте');
 console.log(`анализ макета: ${a.score}/100, ${a.sections.length} разделов, ссылки на памятку — OK`);
+
+// ряды, которые не поместятся на планшете (нет макета между телефоном и компьютером)
+{
+  const { squeezedRows } = await import('../src/design-audit.js');
+  const card = (id) => ({ id, name: 'Card', type: 'FRAME', w: 360, h: 200, visible: true, sizing: { h: 'FIXED', v: 'HUG' }, children: [] });
+  const row = { id: 'row', name: 'Cards', type: 'FRAME', w: 1200, h: 200, visible: true, layout: { mode: 'HORIZONTAL', gap: 24, padding: [0, 0, 0, 0] }, children: [card('a'), card('b'), card('c')] };
+  const wrapRow = { ...row, id: 'w', name: 'Wrap', layout: { ...row.layout, wrap: true } };
+  const fillRow = { ...row, id: 'f', name: 'Fill', children: row.children.map((c) => ({ ...c, sizing: { h: 'FILL', v: 'HUG' } })) };
+  const page = { id: 'p', name: 'Desktop', type: 'FRAME', w: 1440, h: 900, visible: true, children: [row, wrapRow, fillRow] };
+  const r = squeezedRows(page, 1440, 768);
+  assert.deepEqual(r.map((x) => x.where), ['Desktop / Cards'], 'три карточки 360px в ряд на 768 не влезут; с переносом и Fill — влезут');
+  assert.equal(r[0].need, 1128);
+  console.log('планшет: ряды без переноса, которые не поместятся на 768px — OK');
+}

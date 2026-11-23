@@ -38,6 +38,33 @@ function signature(n, depth = 0) {
 }
 
 /**
+ * Ряды Auto Layout без переноса, которые не поместятся на более узком экране (targetW): ширина детей, которые
+ * не тянутся (Fixed/Hug), плюс промежутки и отступы — больше места, которое останется у ряда. Ряд считаем
+ * «резиновым»: он теряет столько же, сколько страница (frameW − targetW), или сжимается пропорционально.
+ */
+export function squeezedRows(tree, frameW, targetW) {
+  const out = [];
+  const lose = frameW - targetW;
+  if (lose <= 0) return out;
+  (function go(n, trail) {
+    if (!visible(n)) return;
+    const k = kids(n).filter((c) => c.layoutPositioning !== 'ABSOLUTE');
+    if (n.layout?.mode === 'HORIZONTAL' && !n.layout.wrap && k.length >= 2 && n !== tree) {
+      const pad = n.layout.padding || [0, 0, 0, 0];
+      const gap = typeof n.layout.gap === 'number' ? n.layout.gap : 0;
+      const need = pad[1] + pad[3] + gap * (k.length - 1) + k.reduce((s, c) => s + (c.sizing?.h === 'FILL' ? 0 : c.w), 0);
+      // ряд теряет столько же, сколько страница, или сжимается пропорционально (блок по центру) — что больше
+      const room = Math.max(n.w - lose, (n.w * targetW) / frameW);
+      if (need > room + 1 && k.some((c) => c.w >= 120)) out.push({ where: where(trail), area: area(n), need: Math.round(need), room: Math.max(0, Math.round(room)) });
+      return; // вложенные ряды сожмутся вместе с этим — достаточно внешнего
+    }
+    if (n.type === 'INSTANCE') return;
+    for (const c of n.children || []) go(c, [...trail, c.name]);
+  })(tree, [tree.name]);
+  return out.sort((a, b) => b.area - a.area);
+}
+
+/**
  * @param pkg пакет (loadPackage)
  * @param ds  результат analyzeDesignSystem — для цветов, шрифтов, отступов, контраста
  */
@@ -205,12 +232,23 @@ export function auditDesign(pkg, ds, extra = {}) {
   const groups = groupFrames(frames.map((f) => ({ name: f.name, page: f.page, width: f.width, texts: textsOf(f.tree) })));
   const multi = groups.filter((g) => new Set(g.members.map((i) => Math.round(frames[i].width))).size >= 2);
   const widths = [...new Set(frames.map((f) => Math.round(f.width)))].sort((x, y) => y - x);
+  // между телефоном и компьютером нет планшетного макета: какие ряды на ~768px сожмутся или вылезут
+  const TABLET = 768;
+  const tablet = multi.map((g) => {
+    const ws = g.members.map((i) => frames[i].width);
+    if (ws.some((w) => w >= 600 && w <= 1024) || Math.min(...ws) >= 600 || Math.max(...ws) <= 1024) return null;
+    const wide = frames[g.members.reduce((a, i) => (frames[i].width > frames[a].width ? i : a), g.members[0])];
+    return { name: g.name, rows: squeezedRows(wide.tree, wide.width, TABLET) };
+  }).filter(Boolean);
   sec('responsive', 'Адаптивность', '7-адаптивность', multi.length ? 'ok' : widths.length > 1 ? 'warn' : 'info',
     multi.length ? `Экранов, нарисованных в нескольких ширинах: ${multi.length} (${multi.slice(0, 4).map((g) => g.name).join(', ')}${multi.length > 4 ? '…' : ''}).`
       : `Ширины экранов: ${widths.join(', ')}px. Пар «один экран — разные ширины» не найдено.`,
     [
       !multi.length && widths.length > 1 && { text: 'Если экран нужен на нескольких ширинах, у версий должны совпадать тексты и порядок блоков — так программа поймёт, что это одна страница.' },
       !multi.length && widths.length === 1 && { text: 'Все экраны одной ширины. Если сайт должен работать на телефоне, нужны и мобильные макеты — или хотя бы ключевые экраны.' },
+      tablet.length && { text: `Нет макета для планшета (около ${TABLET}px) у ${tablet.map((t) => `«${t.name}»`).join(', ')}. Между телефоном и компьютером страница тянется по правилам Auto Layout; как перестроить блоки, программа не придумывает.` },
+      tablet.some((t) => t.rows.length) && { text: `На ${TABLET}px не поместятся ряды без переноса — их стоит нарисовать в планшетном макете или включить перенос (Wrap). В скобках — сколько ряду нужно и сколько останется:`,
+        examples: tablet.flatMap((t) => t.rows).sort((a, b) => b.area - a.area).slice(0, 5).map((r) => `${r.where} (${r.need} → ${r.room}px)`) },
     ].filter(Boolean));
 
   // 8. Тексты, картинки, эффекты
