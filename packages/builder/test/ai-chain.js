@@ -81,6 +81,14 @@ assert.ok(r3.error && r3.names.size === 0);
   namer.close();
 }
 
+// очередь «сначала облако»: Ollama — после бесплатных облачных, свой сервер — всё равно первым
+{
+  const env = { GROQ_API_KEY: 'g', GEMINI_API_KEY: 'm', DS_AI_URL: 'http://x/v1' };
+  assert.deepEqual(aiProviders(env).map((p) => p.name), ['свой сервер', 'Ollama', 'Groq', 'Gemini']);
+  assert.deepEqual(aiProviders({ ...env, DS_AI_ORDER: 'cloud' }).map((p) => p.name), ['свой сервер', 'Groq', 'Gemini', 'Ollama']);
+  assert.deepEqual(aiProviders({ GROQ_API_KEY: 'g', DS_AI_ORDER: 'cloud', DS_NO_OLLAMA: '1' }).map((p) => p.name), ['Groq']);
+}
+
 // Ollama: поиск без PATH терминала (программа из окна), список моделей любого совместимого сервера
 assert.equal(ollamaFind({ PATH: '', HOME: '/Users/a' }, 'darwin', (f) => f === '/Applications/Ollama.app'), '/Applications/Ollama.app');
 assert.equal(ollamaFind({ PATH: '/x', HOME: '/h' }, 'linux', (f) => f === '/usr/local/bin/ollama'), '/usr/local/bin/ollama');

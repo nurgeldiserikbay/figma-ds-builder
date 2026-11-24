@@ -156,8 +156,13 @@
   .aiprov h3 { margin: 0 0 2px; font-size: 15px; display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
   .aiprov h3 small { font-weight: 400; color: var(--muted); font-size: 13px; }
   .aiprov p { margin: 2px 0 8px; color: var(--muted); font-size: 13px; }
-  .aiprov .howto { margin: 4px 0 10px; padding-left: 20px; font-size: 13px; color: var(--ink); }
-  .aiprov .howto li { margin: 2px 0; }
+  .aistart { background: var(--canvas); border: 1px solid var(--rule); border-radius: 10px; padding: 14px 16px; margin: 0 0 14px; }
+  .aistart h3 { margin: 0 0 4px; font-size: 15px; }
+  .aistart p { margin: 0 0 6px; font-size: 13px; color: var(--muted); }
+  .aistart .howto, .aiprov .howto { margin: 4px 0 10px; padding-left: 20px; font-size: 13px; color: var(--ink); }
+  .aistart .howto li, .aiprov .howto li { margin: 2px 0; }
+  .aistart .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: end; }
+  header .aibtn.off::after { content: ""; display: inline-block; width: 7px; height: 7px; margin-left: 6px; border-radius: 50%; background: var(--redline); vertical-align: middle; }
   .aiprov .row + .row { margin-top: 8px; }
   .aiprov details.more { margin: 6px 0; font-size: 13px; }
   .aiprov details.more summary { cursor: pointer; color: var(--muted); }
@@ -190,6 +195,19 @@
     <div class="in">
       <h2 id="aiTitle">ИИ для имён и структуры</h2>
       <p>ИИ даёт понятные имена классам, блокам и экранам. Вёрстку он не меняет: всё, что он предлагает, проверяется. Подключите хотя бы один вариант — программа пробует их по порядку и переходит к следующему, если лимит кончился.</p>
+      <div class="aistart" id="aiStart" hidden>
+        <h3>ИИ ещё не подключён</h3>
+        <p>Без ИИ программа работает полностью, он только даёт понятные имена. Самое простое — бесплатный ключ Groq, это пара минут:</p>
+        <ol class="howto">
+          <li>Откройте <a href="https://console.groq.com/keys" target="_blank" rel="noopener">console.groq.com/keys</a> и войдите через Google или почту.</li>
+          <li>Нажмите «Create API Key» и скопируйте ключ.</li>
+          <li>Вставьте его сюда и нажмите «Проверить».</li>
+        </ol>
+        <div class="row">
+          <label>Ключ Groq<input type="password" id="aiQuickKey" autocomplete="off"></label>
+          <button type="button" class="btn primary" id="aiQuickTest">Проверить</button>
+        </div>
+      </div>
       <div class="aiprov">
         <h3>Ollama <small>на вашем компьютере, бесплатно, макеты никуда не уходят</small></h3>
         <p class="st" id="ollamaSt">проверяю…</p>
@@ -215,6 +233,13 @@
           <p>На том компьютере запустите Ollama с OLLAMA_HOST=0.0.0.0 и укажите здесь его адрес.</p>
         </details>
         <label class="opt"><input type="checkbox" name="ollama.enabled"><span>Использовать Ollama</span></label>
+        <div class="row">
+          <label>Очередь<select name="ollama.order">
+            <option value="local">Ollama первой — макеты не уходят в интернет</option>
+            <option value="cloud">Сначала облако, Ollama — когда кончится бесплатный лимит</option>
+          </select></label>
+        </div>
+        <p>На слабом компьютере Ollama отвечает медленно — тогда удобнее «сначала облако».</p>
       </div>
       <div class="aiprov">
         <h3>Google Gemini <small>бесплатный план, видит и картинки</small></h3>
@@ -611,6 +636,9 @@ async function aiLoad() {
     if (el.type === 'checkbox') el.checked = !!val; else el.value = val;
   }
   aiPresetHint();
+  const on = aiConnected(r);
+  $('aiStart').hidden = on;
+  $('aiOpen').classList.toggle('off', !on);
   const st = $('ollamaSt');
   const model = aiField('ollama.model').value;
   const o = r.ollama;
@@ -625,6 +653,15 @@ async function aiLoad() {
   else if (!o.models.some((m) => m === model || m === `${model}:latest`)) { st.className = 'st'; st.textContent = tf('Ollama работает. Модели {model} ещё нет — нажмите «Скачать модель» (несколько гигабайт).', { model }); }
   else { st.className = 'st ok'; st.textContent = tf('Ollama работает, модель {model} готова.', { model }); }
 }
+// подключён ли хоть один ИИ: ключ, свой адрес или Ollama с моделью
+function aiConnected(r) {
+  const s = r.settings, o = r.ollama, m = s.ollama.model;
+  return !!(s.gemini.key || s.groq.key || s.openrouter.key || s.custom.url
+    || (s.ollama.enabled && o.running && o.models.some((x) => x === m || x === `${m}:latest`)));
+}
+$('aiQuickKey').addEventListener('input', (e) => { aiField('groq.key').value = e.target.value.trim(); });
+$('aiQuickTest').addEventListener('click', () => { $('aiTest').click(); $('aiRes').scrollIntoView({ block: 'nearest' }); });
+fetch('/api/ai').then((x) => x.json()).then((r) => $('aiOpen').classList.toggle('off', !aiConnected(r))).catch(() => {});
 const OLLAMA_DL = { darwin: 'https://ollama.com/download/mac', win32: 'https://ollama.com/download/windows', linux: 'https://ollama.com/download/linux' };
 // готовые сервисы: адрес и где взять ключ; модель — из списка, который отдаёт сам сервис
 const AI_PRESETS = {
@@ -691,6 +728,7 @@ $('aiTest').addEventListener('click', async () => {
     ? `<li class="ok">✓ ${esc(x.name)} (${esc(x.model)}) — ${tf('отвечает, {s} с', { s: (x.ms / 1000).toFixed(1) })}</li>`
     : `<li class="bad">✗ ${esc(x.name)} — ${esc(t(x.error || ''))}</li>`).join('')
     : `<li class="bad">${t('Ни один ИИ не подключён.')}</li>`;
+  aiLoad();
 });
 $('ollamaPull').addEventListener('click', async () => {
   await aiSave();

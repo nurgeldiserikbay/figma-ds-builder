@@ -35,6 +35,8 @@ export function aiProviders(env = process.env, { paid = false } = {}) {
     env.OPENROUTER_API_KEY && { name: 'OpenRouter', url: 'https://openrouter.ai/api/v1', model: env.OPENROUTER_MODEL || 'openrouter/free', key: env.OPENROUTER_API_KEY, free: true },
     paid && env.DS_AI_PAID_URL && env.DS_AI_PAID_MODEL && { name: 'платный', url: trim(env.DS_AI_PAID_URL), model: env.DS_AI_PAID_MODEL, key: env.DS_AI_PAID_KEY || '', paid: true },
   ];
+  // DS_AI_ORDER=cloud — сначала бесплатное облако (быстрее на слабом компьютере), Ollama — когда кончится лимит
+  if (env.DS_AI_ORDER === 'cloud') { const [o] = list.splice(1, 1); list.splice(list.length - 1, 0, o); }
   return list.filter(Boolean);
 }
 
@@ -209,7 +211,7 @@ export async function suggestScreenNames(items, { providers = aiProviders(), cac
 // Настройки ИИ из окна программы: ключи и модели хранятся на компьютере (<папка сборок>/.ai.json)
 // ---------------------------------------------------------------------------------------------
 
-export const AI_DEFAULTS = { ollama: { enabled: true, url: 'http://localhost:11434', model: 'qwen2.5-coder:7b' }, gemini: { key: '', model: '' }, groq: { key: '', model: '' }, openrouter: { key: '', model: '' }, custom: { preset: '', url: '', model: '', key: '' } };
+export const AI_DEFAULTS = { ollama: { enabled: true, url: 'http://localhost:11434', model: 'qwen2.5-coder:7b', order: 'local' }, gemini: { key: '', model: '' }, groq: { key: '', model: '' }, openrouter: { key: '', model: '' }, custom: { preset: '', url: '', model: '', key: '' } };
 
 export function readAiSettings(file) {
   let s = {};
@@ -229,7 +231,7 @@ export function aiEnv(s) {
   const e = {};
   const ou = trim(s.ollama.url || AI_DEFAULTS.ollama.url).replace(/\/v1$/, '');
   if (s.ollama.enabled === false) e.DS_NO_OLLAMA = '1';
-  else { e.OLLAMA_URL = `${ou}/v1`; if (s.ollama.model) e.OLLAMA_MODEL = s.ollama.model; }
+  else { e.OLLAMA_URL = `${ou}/v1`; if (s.ollama.model) e.OLLAMA_MODEL = s.ollama.model; if (s.ollama.order === 'cloud') e.DS_AI_ORDER = 'cloud'; }
   if (s.gemini.key) { e.GEMINI_API_KEY = s.gemini.key; if (s.gemini.model) e.GEMINI_MODEL = s.gemini.model; }
   if (s.groq.key) { e.GROQ_API_KEY = s.groq.key; if (s.groq.model) e.GROQ_MODEL = s.groq.model; }
   if (s.openrouter.key) { e.OPENROUTER_API_KEY = s.openrouter.key; if (s.openrouter.model) e.OPENROUTER_MODEL = s.openrouter.model; }

@@ -183,5 +183,15 @@
  "Где взять ключ": "Where to get a key",
  "Загружаю список…": "Loading the list…",
  "Запускаю Ollama…": "Starting Ollama…",
- "Моделей: {n}. Выберите в поле «Модель».": "Models: {n}. Pick one in the “Model” field."
+ "Моделей: {n}. Выберите в поле «Модель».": "Models: {n}. Pick one in the “Model” field.",
+ "ИИ ещё не подключён": "AI is not connected yet",
+ "Без ИИ программа работает полностью, он только даёт понятные имена. Самое простое — бесплатный ключ Groq, это пара минут:": "The app works fully without AI — it only adds clear names. The easiest way is a free Groq key, it takes a couple of minutes:",
+ "Откройте <a href=\"https://console.groq.com/keys\" target=\"_blank\" rel=\"noopener\">console.groq.com/keys</a> и войдите через Google или почту.": "Open <a href=\"https://console.groq.com/keys\" target=\"_blank\" rel=\"noopener\">console.groq.com/keys</a> and sign in with Google or email.",
+ "Нажмите «Create API Key» и скопируйте ключ.": "Click “Create API Key” and copy the key.",
+ "Вставьте его сюда и нажмите «Проверить».": "Paste it here and click “Test”.",
+ "Ключ Groq": "Groq key",
+ "Очередь": "Order",
+ "Ollama первой — макеты не уходят в интернет": "Ollama first — designs never go online",
+ "Сначала облако, Ollama — когда кончится бесплатный лимит": "Cloud first, Ollama when the free limit runs out",
+ "На слабом компьютере Ollama отвечает медленно — тогда удобнее «сначала облако».": "On a weak computer Ollama answers slowly — then “cloud first” is more convenient."
 }

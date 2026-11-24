@@ -183,5 +183,15 @@
  "Где взять ключ": "Où obtenir une clé",
  "Загружаю список…": "Chargement de la liste…",
  "Запускаю Ollama…": "Lancement d’Ollama…",
- "Моделей: {n}. Выберите в поле «Модель».": "Modèles : {n}. Choisissez-en un dans le champ « Modèle »."
+ "Моделей: {n}. Выберите в поле «Модель».": "Modèles : {n}. Choisissez-en un dans le champ « Modèle ».",
+ "ИИ ещё не подключён": "Aucune IA connectée pour l’instant",
+ "Без ИИ программа работает полностью, он только даёт понятные имена. Самое простое — бесплатный ключ Groq, это пара минут:": "Sans IA, le programme fonctionne entièrement ; elle ne fait que donner des noms clairs. Le plus simple est une clé Groq gratuite, cela prend quelques minutes :",
+ "Откройте <a href=\"https://console.groq.com/keys\" target=\"_blank\" rel=\"noopener\">console.groq.com/keys</a> и войдите через Google или почту.": "Ouvrez <a href=\"https://console.groq.com/keys\" target=\"_blank\" rel=\"noopener\">console.groq.com/keys</a> et connectez-vous avec Google ou par e-mail.",
+ "Нажмите «Create API Key» и скопируйте ключ.": "Cliquez sur « Create API Key » et copiez la clé.",
+ "Вставьте его сюда и нажмите «Проверить».": "Collez-la ici et cliquez sur « Tester ».",
+ "Ключ Groq": "Clé Groq",
+ "Очередь": "Ordre",
+ "Ollama первой — макеты не уходят в интернет": "Ollama d’abord : les maquettes ne partent pas sur internet",
+ "Сначала облако, Ollama — когда кончится бесплатный лимит": "D’abord le cloud, Ollama quand la limite gratuite est atteinte",
+ "На слабом компьютере Ollama отвечает медленно — тогда удобнее «сначала облако».": "Sur un ordinateur modeste, Ollama répond lentement : « d’abord le cloud » est alors plus pratique."
 }
