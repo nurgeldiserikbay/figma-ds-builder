@@ -84,13 +84,21 @@ const text = base('Text', 'TEXT', 360, {
 const btnSet = { type: 'COMPONENT_SET', name: 'Button', description: '  Главное действие на экране. Одна на экран.  ' };
 const btnMain = { type: 'COMPONENT', name: 'Variant=Primary', parent: btnSet };
 const renamed = base('Button Override', 'INSTANCE', 400, { variantProperties: { Variant: 'Primary' }, children: [], getMainComponentAsync: async () => btnMain });
-const frame = base('Screen', 'FRAME', 0, { width: 500, height: 100, children: [card, oldStyle, grad, text, renamed, modalBtn, closeBtn], explicitVariableModes: { 'VC:1': 'm2' }, async exportAsync() { return new Uint8Array([1]); } });
+// векторы: две одинаковые иконки и одна другая — из Figma экспортируются два раза, файлов три
+let svgExports = 0;
+const vec = (name, d) => base(name, 'VECTOR', 10, { width: 24, height: 24, relativeTransform: [[1, 0, 10], [0, 1, 0]], fillGeometry: [{ data: d, windingRule: 'NONZERO' }], strokeGeometry: [],
+  fills: [{ type: 'SOLID', visible: true, opacity: 1, color: { r: 0, g: 0, b: 0 } }], strokes: [], effects: [], opacity: 1, blendMode: 'NORMAL',
+  async exportAsync() { svgExports++; return new TextEncoder().encode(`<svg>${d}</svg>`); } });
+const icons = [vec('Icon A', 'M0 0L24 24'), vec('Icon A copy', 'M0 0L24 24'), vec('Icon B', 'M0 24L24 0')];
+const frame = base('Screen', 'FRAME', 0, { width: 500, height: 100, children: [card, oldStyle, grad, text, renamed, modalBtn, closeBtn, ...icons], explicitVariableModes: { 'VC:1': 'm2' }, async exportAsync() { return new Uint8Array([1]); } });
 frame.parent = { type: 'PAGE', name: 'Стр' };
 
 const pkg = await ctx.buildLayoutPackage([frame], {});
 const file = (p) => JSON.parse(pkg.files.find((f) => f.path === p || (p === 'tree' && /^frames\/.*\.json$/.test(f.path))).data);
 const tree = file('tree');
 const [c, o, g, t, r, mo, cl] = tree.children;
+assert.equal(svgExports, 2, 'одинаковые векторы — один экспорт');
+assert.equal(pkg.files.filter((f) => f.path.startsWith('vectors/')).length, 3, 'файл у каждого вектора');
 assert.deepEqual(r.component, { name: 'Button', variant: { Variant: 'Primary' } }, 'переименованная копия — имя набора компонента');
 assert.deepEqual(tree.modes, { Color: 'Dark' }, 'режим на фрейме');
 assert.equal(c.fills[0].variable, 'bg/brand', 'библиотечная переменная на заливке — по имени');

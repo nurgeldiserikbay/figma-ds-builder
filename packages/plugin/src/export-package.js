@@ -11,6 +11,24 @@
 var EXPORT_VECTOR_TYPES = { VECTOR: 1, BOOLEAN_OPERATION: 1, STAR: 1, POLYGON: 1, LINE: 1 };
 
 /**
+ * Ключ вектора: всё, от чего зависит его SVG (геометрия, заливки, обводки, эффекты, поворот, размер).
+ * Одинаковые иконки в копиях компонента и на разных экранах выгружаются из Figma один раз — экспорт SVG
+ * самая долгая часть выгрузки. null — ключ не собрать (тогда выгружаем как обычно).
+ */
+function vectorKey(node) {
+  try {
+    var t = node.relativeTransform;
+    return JSON.stringify([node.type, num(node.width), num(node.height),
+      [num(t[0][0]), num(t[0][1]), num(t[1][0]), num(t[1][1])],
+      node.fillGeometry, node.strokeGeometry, node.fills, node.strokes, node.strokeWeight, node.strokeAlign,
+      node.strokeCap, node.strokeJoin, node.dashPattern, node.effects, node.opacity, node.blendMode]);
+  } catch (e) { return null; }
+}
+var SVG_BATCH = 6; // экспортов SVG одновременно
+// кэш SVG на весь сеанс плагина: выгрузка частями не начинает иконки заново
+var svgCache = {}, svgCacheSize = 0;
+
+/**
  * Сообщение для окна плагина: шаблон и значения — окно переводит шаблон на язык пользователя.
  * text — то же по-русски (журнал, figma.notify). Значение может быть вложенным сообщением.
  */
@@ -123,35 +141,41 @@ function refName(ctx, kind, id) {
 /** Дозапрос имён библиотечных переменных и стилей, найденных в дереве. */
 async function resolvePending(ctx) {
   var keys = Object.keys(ctx.pending);
-  for (var i = 0; i < keys.length; i++) {
-    var sep = keys[i].indexOf('|'), kind = keys[i].slice(0, sep), id = keys[i].slice(sep + 1);
-    if (ctx.names[kind][id] || ctx.names.missing[keys[i]]) continue;
-    try {
-      if (kind === 'main') {
-        var inst = await figma.getNodeByIdAsync(id);
-        var mc = inst && inst.getMainComponentAsync ? await inst.getMainComponentAsync() : null;
-        var owner = mc ? (mc.parent && mc.parent.type === 'COMPONENT_SET' ? mc.parent : mc) : null;
-        ctx.names.main[id] = owner ? owner.name : ctx.names.mainFallback[id];
-        // описание компонента (Description в Figma) — правила, которых не видно на картинке
-        var desc = owner && typeof owner.description === 'string' ? owner.description.trim() : '';
-        if (desc && !ctx.names.desc[owner.name]) ctx.names.desc[owner.name] = desc;
-      } else if (kind === 'vars') {
-        var v = await figma.variables.getVariableByIdAsync(id);
-        if (v) { ctx.names.vars[id] = v.name; ctx.names.remoteVars[id] = v; }
-      } else if (kind === 'modes') {
-        var parts = id.split(':'), cid = parts.slice(0, -1).join(':'), mid = parts[parts.length - 1];
-        var c = await figma.variables.getVariableCollectionByIdAsync(cid);
-        var m = c && c.modes.filter(function (x) { return x.modeId === mid; })[0];
-        if (m) ctx.names.modes[id] = c.name + '\u0001' + m.name;
-      } else {
-        var st = await figma.getStyleByIdAsync(id);
-        if (st) { ctx.names[kind][id] = st.name; ctx.names.remoteStyles[id] = st; }
-      }
-    } catch (e) { /* нет доступа к библиотеке — останется значение без имени */ }
-    if (kind === 'main' && !ctx.names.main[id]) ctx.names.main[id] = ctx.names.mainFallback[id];
-    if (!ctx.names[kind][id]) ctx.names.missing[keys[i]] = true;
+  // запросы к Figma независимы — по 40 одновременно (по одному на тысячах копий компонентов это минуты)
+  for (var i = 0; i < keys.length; i += 40) {
+    await Promise.all(keys.slice(i, i + 40).map(function (key) { return resolveOne(ctx, key); }));
   }
   ctx.pending = {};
+  ctx.names.nodes = {};
+}
+
+async function resolveOne(ctx, key) {
+  var sep = key.indexOf('|'), kind = key.slice(0, sep), id = key.slice(sep + 1);
+  if (ctx.names[kind][id] || ctx.names.missing[key]) return;
+  try {
+    if (kind === 'main') {
+      var inst = ctx.names.nodes[id] || await figma.getNodeByIdAsync(id);
+      var mc = inst && inst.getMainComponentAsync ? await inst.getMainComponentAsync() : null;
+      var owner = mc ? (mc.parent && mc.parent.type === 'COMPONENT_SET' ? mc.parent : mc) : null;
+      ctx.names.main[id] = owner ? owner.name : ctx.names.mainFallback[id];
+      // описание компонента (Description в Figma) — правила, которых не видно на картинке
+      var desc = owner && typeof owner.description === 'string' ? owner.description.trim() : '';
+      if (desc && !ctx.names.desc[owner.name]) ctx.names.desc[owner.name] = desc;
+    } else if (kind === 'vars') {
+      var v = await figma.variables.getVariableByIdAsync(id);
+      if (v) { ctx.names.vars[id] = v.name; ctx.names.remoteVars[id] = v; }
+    } else if (kind === 'modes') {
+      var parts = id.split(':'), cid = parts.slice(0, -1).join(':'), mid = parts[parts.length - 1];
+      var c = await figma.variables.getVariableCollectionByIdAsync(cid);
+      var m = c && c.modes.filter(function (x) { return x.modeId === mid; })[0];
+      if (m) ctx.names.modes[id] = c.name + '\u0001' + m.name;
+    } else {
+      var st = await figma.getStyleByIdAsync(id);
+      if (st) { ctx.names[kind][id] = st.name; ctx.names.remoteStyles[id] = st; }
+    }
+  } catch (e) { /* нет доступа к библиотеке — останется значение без имени */ }
+  if (kind === 'main' && !ctx.names.main[id]) ctx.names.main[id] = ctx.names.mainFallback[id];
+  if (!ctx.names[kind][id]) ctx.names.missing[key] = true;
 }
 
 /** JSON дерева: метки заменяются именами; не найденные имена убираются (значение остаётся). */
@@ -210,7 +234,7 @@ function explicitModes(node, ctx) {
 
 /** Имена локальных переменных и стилей по id — чтобы в дереве были ссылки на дизайн-систему, а не только значения. */
 async function designNames() {
-  var names = { vars: {}, text: {}, effect: {}, paint: {}, modes: {}, main: {}, mainFallback: {}, remoteVars: {}, remoteStyles: {}, missing: {}, desc: {} };
+  var names = { vars: {}, text: {}, effect: {}, paint: {}, modes: {}, main: {}, mainFallback: {}, remoteVars: {}, remoteStyles: {}, missing: {}, desc: {}, nodes: {} };
   try { (await figma.variables.getLocalVariablesAsync()).forEach(function (v) { names.vars[v.id] = v.name; }); } catch (e) { /* нет доступа — без имён */ }
   try {
     (await figma.variables.getLocalVariableCollectionsAsync()).forEach(function (c) {
@@ -414,6 +438,7 @@ function serialize(node, ox, oy, ctx) {
     // имя главного компонента (набора вариантов), а не слоя: копию могли переименовать («Button Override»)
     ctx.pending['main|' + node.id] = true;
     ctx.names.mainFallback[node.id] = node.name;
+    ctx.names.nodes[node.id] = node; // для поиска главного компонента без getNodeByIdAsync
     o.component = { name: '\u0000main|' + node.id, variant: variant };
     ctx.instances.push(node);
   }
@@ -486,11 +511,17 @@ async function buildLayoutPackage(frames, opts) {
       warnings.push(L('Нет PNG для «{name}» ({w}×{h}): {err}', { name: f.name, w: Math.round(f.width), h: Math.round(f.height), err: e && e.message ? e.message : String(e) }));
     }
 
-    for (var v = 0; v < ctx.vectors.length; v++) {
-      try {
-        var svg = await ctx.vectors[v].exportAsync({ format: 'SVG' });
-        files.push({ path: 'vectors/' + fileId(ctx.vectors[v].id) + '.svg', data: svg });
-      } catch (e) { /* пустой вектор — пропускаем */ }
+    // векторы: одинаковые — один экспорт (кэш на всю выгрузку), остальные — несколько одновременно
+    for (var v = 0; v < ctx.vectors.length; v += SVG_BATCH) {
+      var batch = ctx.vectors.slice(v, v + SVG_BATCH);
+      var got = await Promise.all(batch.map(function (node) {
+        var key = vectorKey(node);
+        if (key !== null && svgCache[key]) return svgCache[key];
+        var job = node.exportAsync({ format: 'SVG' }).catch(function () { return null; }); // пустой вектор — пропускаем
+        if (key !== null && svgCacheSize < 20000) { svgCache[key] = job; svgCacheSize++; }
+        return job;
+      }));
+      for (var b = 0; b < batch.length; b++) if (got[b]) files.push({ path: 'vectors/' + fileId(batch[b].id) + '.svg', data: got[b] });
     }
     manifestFrames.push({
       id: f.id, name: f.name, page: f.parent && f.parent.type === 'PAGE' ? f.parent.name : (figma.currentPage.name),
