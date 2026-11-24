@@ -38,7 +38,9 @@ const tree = { id: '0:1', name: 'Page', type: 'FRAME', x: 0, y: 0, w: 400, h: 40
 const env = { GROQ_API_KEY: 'g', OPENROUTER_API_KEY: 'o', DS_AI_PAID_URL: 'https://x', DS_AI_PAID_MODEL: 'm' };
 assert.deepEqual(aiProviders(env).map((p) => p.name), ['Ollama', 'Groq', 'OpenRouter']);
 assert.deepEqual(aiProviders(env, { paid: true }).map((p) => p.name), ['Ollama', 'Groq', 'OpenRouter', 'платный']);
-assert.deepEqual(aiProviders({ DS_AI_URL: 'http://a/v1/' }).map((p) => p.url), ['http://a/v1']);
+assert.deepEqual(aiProviders({ DS_AI_URL: 'http://a/v1/' }).map((p) => p.url), ['http://a/v1', 'http://localhost:11434/v1'], 'свой — первым, дальше цепочка');
+assert.deepEqual(aiProviders({ DS_AI_URL: 'http://a/v1/', DS_AI_ONLY: '1' }).map((p) => p.url), ['http://a/v1'], 'только свой');
+assert.deepEqual(aiProviders({ DS_NO_OLLAMA: '1', GROQ_API_KEY: 'g' }).map((p) => p.name), ['Groq'], 'Ollama выключена в окне «ИИ»');
 
 const cacheDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ds-ai-'));
 const providers = [

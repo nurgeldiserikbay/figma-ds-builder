@@ -150,6 +150,26 @@ assert.ok(!fs.readdirSync(path.join(home, '.uploads')).length, 'загружен
   assert.equal(d5.summary.frames, 2, 'тот же фрейм из новой выгрузки — заменяет, а не дублирует');
 }
 
+// окно «ИИ»: ключи хранятся на компьютере, наружу — только последние 4 символа
+{
+  const save = await req('/api/ai', { method: 'POST', headers: { ...H, 'content-type': 'application/json' }, body: JSON.stringify({ gemini: { key: 'AIzaTEST1234' }, custom: { url: 'http://127.0.0.1:9/v1', model: 'm' }, ollama: { enabled: false } }) });
+  assert.equal(save.status, 200, save.text);
+  const got = JSON.parse((await req('/api/ai', { headers: H })).text);
+  assert.equal(got.settings.gemini.key, '••••1234', 'ключ не показывается целиком');
+  assert.equal(got.settings.ollama.enabled, false);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(home, '.ai.json'), 'utf8')).gemini.key, 'AIzaTEST1234', 'ключ сохранён');
+  // сохранение с маской — ключ не затирается
+  await req('/api/ai', { method: 'POST', headers: { ...H, 'content-type': 'application/json' }, body: JSON.stringify({ gemini: { key: '••••1234' } }) });
+  assert.equal(JSON.parse(fs.readFileSync(path.join(home, '.ai.json'), 'utf8')).gemini.key, 'AIzaTEST1234');
+  assert.equal((await req('/api/ai', { method: 'POST', body: '{}' })).status, 403, 'без ключа доступа — нельзя');
+  const test = JSON.parse((await req('/api/ai/test', { method: 'POST', headers: H })).text);
+  assert.equal(test.results[0].name, 'свой сервер', 'свой ИИ — первым');
+  assert.equal(test.results[0].ok, false, 'недоступный сервер — ошибка, а не зависание');
+  assert.ok(test.results.some((r) => r.name === 'Gemini'));
+  assert.ok(!test.results.some((r) => r.name === 'Ollama'), 'выключенная Ollama не проверяется');
+  assert.equal((await req('/api/ai/pull?model=' + encodeURIComponent('a; rm -rf'), { method: 'POST', headers: H })).status, 400);
+}
+
 // удаление сборки: только папка сборки внутри home
 const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'ds-ui-outside-'));
 fs.writeFileSync(path.join(outside, 'report.json'), '[]');

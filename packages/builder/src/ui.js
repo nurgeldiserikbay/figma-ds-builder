@@ -4,6 +4,7 @@
 //
 // Защита: слушает только 127.0.0.1; одноразовый ключ в адресе → cookie SameSite=Strict
 // (чужие сайты не могут дергать API); проверка Host против DNS rebinding; пути не выходят из папки сборок.
+import { aiProviders, readAiSettings, writeAiSettings, aiEnv, maskAi, mergeAi, ollamaStatus, ollamaPull, testProviders } from './ai.js';
 import http from 'node:http';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -97,6 +98,7 @@ export function buildArgs(zips, out, o = {}) {
 
 export async function startUi({ port = 0, open = true, home = defaultHome(), log = console.log, pluginDir = null } = {}) {
   fs.mkdirSync(path.join(home, '.uploads'), { recursive: true });
+  const aiFile = path.join(home, '.ai.json');
   const token = crypto.randomBytes(18).toString('base64url');
   const jobs = new Map();
   const uploads = new Map(); // session → [{ zip, file }]
@@ -136,6 +138,43 @@ export async function startUi({ port = 0, open = true, home = defaultHome(), log
         if (!pluginDir) return send(404, { error: 'плагин не входит в эту установку' });
         openPath(pluginDir);
         return send(200, { ok: true });
+      }
+      // ИИ: настройки (ключи — только на этом компьютере), проверка, Ollama
+      if (u.pathname === '/api/ai' && req.method === 'GET') {
+        const st = readAiSettings(aiFile);
+        return send(200, { settings: maskAi(st), ollama: await ollamaStatus(st.ollama.url) });
+      }
+      if (u.pathname === '/api/ai' && req.method === 'POST') {
+        let body = '';
+        for await (const c of req) { body += c; if (body.length > 20000) return send(413, { error: 'слишком большой запрос' }); }
+        let inc;
+        try { inc = JSON.parse(body); } catch { return send(400, { error: 'неверные данные' }); }
+        const st = mergeAi(readAiSettings(aiFile), inc);
+        writeAiSettings(aiFile, st);
+        return send(200, { settings: maskAi(st) });
+      }
+      if (u.pathname === '/api/ai/test' && req.method === 'POST') {
+        const env = aiEnv(readAiSettings(aiFile));
+        const list = aiProviders(env);
+        if (!list.length) return send(200, { results: [] });
+        return send(200, { results: await testProviders(list) });
+      }
+      if (u.pathname === '/api/ai/pull' && req.method === 'POST') {
+        const st = readAiSettings(aiFile);
+        const model = (u.searchParams.get('model') || st.ollama.model || '').trim();
+        if (!/^[\w.:/-]{1,100}$/.test(model)) return send(400, { error: 'неверное имя модели' });
+        res.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-store' });
+        let last = '';
+        try {
+          await ollamaPull(st.ollama.url, model, (p) => {
+            const line = JSON.stringify(p);
+            if (line !== last) { last = line; res.write(`data: ${line}\n\n`); }
+          });
+          res.write(`event: done\ndata: ${JSON.stringify({ ok: true, model })}\n\n`);
+        } catch (e) {
+          res.write(`event: done\ndata: ${JSON.stringify({ ok: false, error: e.cause?.code === 'ECONNREFUSED' ? 'Ollama не запущена' : e.message })}\n\n`);
+        }
+        return res.end();
       }
       if (req.method === 'GET' && u.pathname === '/api/builds') {
         const list = fs.readdirSync(home, { withFileTypes: true })
@@ -207,7 +246,9 @@ export async function startUi({ port = 0, open = true, home = defaultHome(), log
         // в установленной программе (Electron) тот же исполняемый файл работает как Node
         const inputs = [...(basePkg ? [basePkg] : []), ...parts.map((p) => p.zip)];
         const cliArgs = auditOnly ? ['audit', ...inputs, '--out', out] : buildArgs(inputs, out, opts);
-        const child = spawn(process.execPath, [CLI, ...cliArgs], { env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' }, windowsHide: true });
+        // ИИ из окна программы (если включён «--ai»): ключи и модели — переменными среды только для этой сборки
+        const aiVars = opts.ai ? aiEnv(readAiSettings(aiFile)) : {};
+        const child = spawn(process.execPath, [CLI, ...cliArgs], { env: { ...process.env, ...aiVars, ELECTRON_RUN_AS_NODE: '1' }, windowsHide: true });
         let buf = '';
         const onData = (d) => { buf += d; const lines = buf.split(/\r?\n/); buf = lines.pop(); lines.forEach(push); };
         child.stdout.setEncoding('utf8').on('data', onData);

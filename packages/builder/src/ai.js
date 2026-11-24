@@ -24,9 +24,12 @@ const trim = (u) => u.replace(/\/+$/, '');
 
 /** Провайдеры по порядку. Облачные — только при наличии ключа; платный — только с paid. */
 export function aiProviders(env = process.env, { paid = false } = {}) {
-  if (env.DS_AI_URL) return [{ name: 'свой сервер', url: trim(env.DS_AI_URL), model: env.DS_AI_MODEL || 'qwen2.5-coder:7b', key: env.DS_AI_KEY || '', local: true }];
+  // DS_AI_ONLY=1 — только свой сервер (как раньше); иначе свой — первым, дальше обычная цепочка
+  const own = env.DS_AI_URL && { name: 'свой сервер', url: trim(env.DS_AI_URL), model: env.DS_AI_MODEL || 'qwen2.5-coder:7b', key: env.DS_AI_KEY || '', local: !env.DS_AI_KEY };
+  if (own && env.DS_AI_ONLY === '1') return [own];
   const list = [
-    { name: 'Ollama', url: trim(env.OLLAMA_URL || 'http://localhost:11434/v1'), model: env.OLLAMA_MODEL || 'qwen2.5-coder:7b', key: '', local: true },
+    own,
+    env.DS_NO_OLLAMA !== '1' && { name: 'Ollama', url: trim(env.OLLAMA_URL || 'http://localhost:11434/v1'), model: env.OLLAMA_MODEL || 'qwen2.5-coder:7b', key: '', local: true },
     env.GROQ_API_KEY && { name: 'Groq', url: 'https://api.groq.com/openai/v1', model: env.GROQ_MODEL || 'openai/gpt-oss-120b', key: env.GROQ_API_KEY, free: true },
     env.GEMINI_API_KEY && { name: 'Gemini', url: 'https://generativelanguage.googleapis.com/v1beta/openai', model: env.GEMINI_MODEL || 'gemini-2.5-flash', key: env.GEMINI_API_KEY, free: true },
     env.OPENROUTER_API_KEY && { name: 'OpenRouter', url: 'https://openrouter.ai/api/v1', model: env.OPENROUTER_MODEL || 'openrouter/free', key: env.OPENROUTER_API_KEY, free: true },
@@ -66,7 +69,7 @@ function candidates(tree, sem) {
   return out;
 }
 
-async function chat(cfg, messages, { timeout = cfg.local ? 120000 : 60000 } = {}) {
+export async function chat(cfg, messages, { timeout = cfg.local ? 120000 : 60000 } = {}) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeout);
   try {
@@ -138,4 +141,108 @@ export async function suggestNames(tree, sem, { providers, cfg, cacheDir, batch 
   const error = names.size || Object.keys(by).length ? undefined : errors.join('; ') || 'нет доступных провайдеров';
   if (errors.length && !error) log(`  ИИ: часть провайдеров недоступна (${errors.join('; ')})`);
   return { names, asked: items.length, used: names.size, error, by };
+}
+
+// ---------------------------------------------------------------------------------------------
+// Настройки ИИ из окна программы: ключи и модели хранятся на компьютере (<папка сборок>/.ai.json)
+// ---------------------------------------------------------------------------------------------
+
+export const AI_DEFAULTS = { ollama: { enabled: true, url: 'http://localhost:11434', model: 'qwen2.5-coder:7b' }, gemini: { key: '', model: '' }, groq: { key: '', model: '' }, openrouter: { key: '', model: '' }, custom: { url: '', model: '', key: '' } };
+
+export function readAiSettings(file) {
+  let s = {};
+  try { s = JSON.parse(fs.readFileSync(file, 'utf8')); } catch { /* нет настроек — по умолчанию */ }
+  const out = {};
+  for (const [k, d] of Object.entries(AI_DEFAULTS)) out[k] = { ...d, ...(s[k] || {}) };
+  return out;
+}
+
+export function writeAiSettings(file, s) {
+  fs.writeFileSync(file, JSON.stringify(s, null, 2), { mode: 0o600 });
+  try { fs.chmodSync(file, 0o600); } catch { /* Windows */ }
+}
+
+/** Настройки → переменные среды, которые понимает aiProviders (для запуска сборки). */
+export function aiEnv(s) {
+  const e = {};
+  const ou = trim(s.ollama.url || AI_DEFAULTS.ollama.url).replace(/\/v1$/, '');
+  if (s.ollama.enabled === false) e.DS_NO_OLLAMA = '1';
+  else { e.OLLAMA_URL = `${ou}/v1`; if (s.ollama.model) e.OLLAMA_MODEL = s.ollama.model; }
+  if (s.gemini.key) { e.GEMINI_API_KEY = s.gemini.key; if (s.gemini.model) e.GEMINI_MODEL = s.gemini.model; }
+  if (s.groq.key) { e.GROQ_API_KEY = s.groq.key; if (s.groq.model) e.GROQ_MODEL = s.groq.model; }
+  if (s.openrouter.key) { e.OPENROUTER_API_KEY = s.openrouter.key; if (s.openrouter.model) e.OPENROUTER_MODEL = s.openrouter.model; }
+  if (s.custom.url) { e.DS_AI_URL = s.custom.url; if (s.custom.model) e.DS_AI_MODEL = s.custom.model; if (s.custom.key) e.DS_AI_KEY = s.custom.key; }
+  return e;
+}
+
+/** Ключи для показа в окне: только последние 4 символа. */
+export function maskAi(s) {
+  const m = JSON.parse(JSON.stringify(s));
+  for (const k of ['gemini', 'groq', 'openrouter', 'custom']) if (m[k].key) m[k].key = `••••${m[k].key.slice(-4)}`;
+  return m;
+}
+
+/** Сохранение из окна: «••••abcd» — ключ не меняли, остаётся прежний. */
+export function mergeAi(old, inc) {
+  const out = readAiSettingsFrom(old);
+  for (const [k, d] of Object.entries(AI_DEFAULTS)) {
+    for (const f of Object.keys(d)) {
+      if (!inc?.[k] || !(f in inc[k])) continue;
+      const v = inc[k][f];
+      if (f === 'key' && typeof v === 'string' && v.startsWith('••••')) continue;
+      out[k][f] = typeof d[f] === 'boolean' ? !!v : String(v ?? '').trim().slice(0, 500);
+    }
+  }
+  return out;
+}
+const readAiSettingsFrom = (s) => Object.fromEntries(Object.entries(AI_DEFAULTS).map(([k, d]) => [k, { ...d, ...(s?.[k] || {}) }]));
+
+/** Ollama на компьютере: запущена ли и какие модели скачаны. */
+export async function ollamaStatus(url = AI_DEFAULTS.ollama.url) {
+  const base = trim(url).replace(/\/v1$/, '');
+  try {
+    const res = await fetch(`${base}/api/tags`, { signal: AbortSignal.timeout(2500) });
+    if (!res.ok) return { running: false };
+    const data = await res.json();
+    return { running: true, models: (data.models || []).map((m) => m.name) };
+  } catch { return { running: false }; }
+}
+
+/** Скачать модель в Ollama; onProgress({ status, percent }). */
+export async function ollamaPull(url, model, onProgress = () => {}) {
+  const base = trim(url || AI_DEFAULTS.ollama.url).replace(/\/v1$/, '');
+  const res = await fetch(`${base}/api/pull`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ model, stream: true }) });
+  if (!res.ok || !res.body) throw new Error(`Ollama: HTTP ${res.status}`);
+  let buf = '';
+  const dec = new TextDecoder();
+  for await (const chunk of res.body) {
+    buf += dec.decode(chunk, { stream: true });
+    const lines = buf.split('\n');
+    buf = lines.pop();
+    for (const l of lines) {
+      if (!l.trim()) continue;
+      const j = JSON.parse(l);
+      if (j.error) throw new Error(`Ollama: ${j.error}`);
+      onProgress({ status: j.status, percent: j.total ? Math.round((j.completed || 0) / j.total * 100) : null });
+    }
+  }
+}
+
+/** Проверка: каждому подключённому ИИ — короткий запрос; ответ и время или ошибка. */
+export async function testProviders(providers) {
+  const out = [];
+  for (const p of providers) {
+    const t0 = Date.now();
+    try {
+      const txt = await chat(p, [{ role: 'system', content: 'Ответь только JSON.' }, { role: 'user', content: 'Верни {"ok": true}' }], { timeout: p.local ? 60000 : 20000 });
+      const ok = /"ok"\s*:\s*true/.test(txt);
+      out.push({ name: p.name, model: p.model, ok, ms: Date.now() - t0, error: ok ? undefined : `неожиданный ответ: ${txt.slice(0, 80)}` });
+    } catch (e) {
+      // понятнее для человека: без повтора имени и с объяснением частых ошибок
+      const m = e.message.replace(new RegExp(`^${p.name}: `), '');
+      const why = /ECONNREFUSED/.test(m) ? 'не запущен (нет ответа по адресу)' : /HTTP 401|HTTP 403/.test(m) ? 'ключ не подходит' : /HTTP 429/.test(m) ? 'лимит на сегодня исчерпан' : /HTTP 404/.test(m) ? 'нет такой модели или адреса' : /ENOTFOUND|EAI_AGAIN|ETIMEDOUT/.test(m) ? 'нет связи с сервером' : m;
+      out.push({ name: p.name, model: p.model, ok: false, error: why });
+    }
+  }
+  return out;
 }

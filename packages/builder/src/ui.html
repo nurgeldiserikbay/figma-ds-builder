@@ -143,6 +143,28 @@
   .links { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 14px; margin-top: 4px; }
   .linkbtn, .links button, .foot button { border: 0; background: none; padding: 0; color: #0A63C9; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; font-size: inherit; }
   .foot { margin-top: 28px; color: var(--muted); font-size: 13px; }
+  /* окно «ИИ» */
+  header .aibtn { align-self: center; min-height: 32px; padding: 0 12px; border: 1px solid var(--rule); border-radius: 6px; background: var(--canvas); cursor: pointer; font-size: 14px; }
+  header .lang { margin-left: 0; }
+  header .aibtn { margin-left: auto; }
+  dialog.ai { width: min(620px, calc(100vw - 32px)); max-height: calc(100vh - 48px); border: 1px solid var(--rule); border-radius: 12px; padding: 0; color: var(--ink); }
+  dialog.ai::backdrop { background: rgba(20, 24, 33, 0.35); }
+  dialog.ai .in { padding: 22px 24px; }
+  dialog.ai h2 { margin: 0 0 4px; font-size: 19px; }
+  dialog.ai > .in > p { margin: 0 0 14px; color: var(--muted); font-size: 14px; }
+  .aiprov { border-top: 1px solid var(--rule); padding: 14px 0; }
+  .aiprov h3 { margin: 0 0 2px; font-size: 15px; display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+  .aiprov h3 small { font-weight: 400; color: var(--muted); font-size: 13px; }
+  .aiprov p { margin: 2px 0 8px; color: var(--muted); font-size: 13px; }
+  .aiprov .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: end; }
+  .aiprov label { font-size: 13px; color: var(--muted); display: flex; flex-direction: column; gap: 4px; flex: 1 1 180px; }
+  .aiprov input[type=text], .aiprov input[type=password] { min-height: 34px; padding: 0 10px; border: 1px solid var(--rule); border-radius: 6px; font-size: 14px; color: var(--ink); }
+  .aiprov label.opt { flex-direction: row; align-items: center; color: var(--ink); font-size: 14px; margin-top: 6px; }
+  .aiprov .st { font-size: 13px; }
+  .aiprov .st.ok { color: #1E7B45; } .aiprov .st.bad { color: #B3261E; }
+  .aires { margin: 10px 0 0; padding: 0; list-style: none; font-size: 14px; }
+  .aires li { padding: 3px 0; } .aires .ok { color: #1E7B45; } .aires .bad { color: #B3261E; }
+  dialog.ai .actions { position: sticky; bottom: 0; background: var(--canvas); border-top: 1px solid var(--rule); padding: 14px 24px; display: flex; gap: 8px; flex-wrap: wrap; }
   @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 </style>
 </head>
@@ -150,11 +172,61 @@
 <header><div class="in">
   <h1>ds-build</h1>
   <p>вёрстка из макета Figma с проверкой пиксель в пиксель</p>
+  <button type="button" class="aibtn" id="aiOpen">ИИ</button>
   <label class="lang" data-i18n-skip><select id="lang" aria-label="Язык / Language">
     <option value="de">Deutsch</option><option value="en">English</option><option value="es">Español</option><option value="fr">Français</option>
     <option value="pt">Português</option><option value="kk">Қазақша</option><option value="ru">Русский</option><option value="zh">中文</option>
   </select></label>
 </div></header>
+
+<dialog class="ai" id="aiDlg" aria-labelledby="aiTitle">
+  <form method="dialog" id="aiForm">
+    <div class="in">
+      <h2 id="aiTitle">ИИ для имён и структуры</h2>
+      <p>ИИ даёт понятные имена классам, блокам и экранам. Вёрстку он не меняет: всё, что он предлагает, проверяется. Подключите хотя бы один вариант — программа пробует их по порядку и переходит к следующему, если лимит кончился.</p>
+      <div class="aiprov">
+        <h3>Ollama <small>на вашем компьютере, бесплатно, макеты никуда не уходят</small></h3>
+        <p class="st" id="ollamaSt">проверяю…</p>
+        <div class="row">
+          <label>Модель<input type="text" name="ollama.model" autocomplete="off"></label>
+          <button type="button" class="btn" id="ollamaPull">Скачать модель</button>
+        </div>
+        <label class="opt"><input type="checkbox" name="ollama.enabled"><span>Использовать Ollama</span></label>
+      </div>
+      <div class="aiprov">
+        <h3>Google Gemini <small>бесплатный план, видит и картинки</small></h3>
+        <p>Ключ — бесплатно на <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a>.</p>
+        <div class="row"><label>Ключ<input type="password" name="gemini.key" autocomplete="off"></label></div>
+      </div>
+      <div class="aiprov">
+        <h3>Groq <small>бесплатный план, очень быстрый</small></h3>
+        <p>Ключ — бесплатно на <a href="https://console.groq.com/keys" target="_blank" rel="noopener">console.groq.com/keys</a>.</p>
+        <div class="row"><label>Ключ<input type="password" name="groq.key" autocomplete="off"></label></div>
+      </div>
+      <div class="aiprov">
+        <h3>OpenRouter <small>бесплатные модели</small></h3>
+        <p>Ключ — на <a href="https://openrouter.ai/keys" target="_blank" rel="noopener">openrouter.ai/keys</a>.</p>
+        <div class="row"><label>Ключ<input type="password" name="openrouter.key" autocomplete="off"></label></div>
+      </div>
+      <div class="aiprov">
+        <h3>Свой ИИ <small>LM Studio, сервер компании, платный API — любой, совместимый с OpenAI</small></h3>
+        <p>Используется первым, если указан адрес.</p>
+        <div class="row">
+          <label>Адрес<input type="text" name="custom.url" placeholder="http://localhost:1234/v1" autocomplete="off"></label>
+          <label>Модель<input type="text" name="custom.model" autocomplete="off"></label>
+          <label>Ключ, если нужен<input type="password" name="custom.key" autocomplete="off"></label>
+        </div>
+      </div>
+      <p>Ключи хранятся только на этом компьютере. Облачным ИИ уходят имена слоёв и короткие фрагменты текста макета, бесплатные планы могут их сохранять.</p>
+      <ul class="aires" id="aiRes" aria-live="polite"></ul>
+    </div>
+    <div class="actions">
+      <button type="button" class="btn primary" id="aiSave">Сохранить</button>
+      <button type="button" class="btn" id="aiTest">Проверить</button>
+      <button type="submit" class="btn">Закрыть</button>
+    </div>
+  </form>
+</dialog>
 
 <main>
   <section class="card" id="start" aria-label="Новая сборка">
@@ -193,7 +265,7 @@
             <div class="body">
               <label class="opt"><input type="checkbox" name="responsive" checked><span>Объединять Desktop и Mobile одной страницы<small>в одну адаптивную страницу с брейкпоинтами</small></span></label>
               <label class="opt"><input type="checkbox" name="semantic" checked><span>Смысловые теги<small>header, nav, button, h1… вместо одних div</small></span></label>
-              <label class="opt"><input type="checkbox" name="ai"><span>Имена классов от ИИ<small>сначала локальная модель Ollama, затем бесплатные API, если заданы ключи</small></span></label>
+              <label class="opt"><input type="checkbox" name="ai"><span>Имена от ИИ<small>какой ИИ использовать — в окне «ИИ» вверху</small></span></label>
               <div class="row">
                 <label>Допуск, пиксели %<input name="threshold" type="number" step="0.05" min="0" value="0.1"></label>
                 <label>Допуск, текст %<input name="textThreshold" type="number" step="0.1" min="0" value="0.5"></label>
@@ -483,6 +555,70 @@ if ('__PLUGIN__' === '1') {
   document.querySelector('[data-mode="app"]').hidden = false;
   document.addEventListener('click', (ev) => { if (ev.target.closest('[data-plugin]')) { ev.preventDefault(); fetch('/api/plugin', { method: 'POST' }); } });
 }
+// окно «ИИ»: настройки, проверка, скачивание модели Ollama
+// ответы проверки (ai.js) — здесь, чтобы попали в переводы
+const AI_ERRORS = () => [t('не запущен (нет ответа по адресу)'), t('ключ не подходит'), t('лимит на сегодня исчерпан'), t('нет такой модели или адреса'), t('нет связи с сервером'), t('Ollama не запущена')];
+const aiForm = $('aiForm');
+const aiField = (n) => aiForm.elements[n];
+async function aiLoad() {
+  const r = await fetch('/api/ai').then((x) => x.json()).catch(() => null);
+  if (!r) return;
+  for (const [k, v] of Object.entries(r.settings)) for (const [f, val] of Object.entries(v)) {
+    const el = aiField(`${k}.${f}`);
+    if (!el) continue;
+    if (el.type === 'checkbox') el.checked = !!val; else el.value = val;
+  }
+  const st = $('ollamaSt');
+  const model = aiField('ollama.model').value;
+  if (!r.ollama.running) { st.className = 'st bad'; st.innerHTML = `${t('Ollama не найдена.')} <a href="https://ollama.com/download" target="_blank" rel="noopener">${t('Скачать Ollama')}</a> ${t('— установите и запустите, затем откройте это окно снова.')}`; }
+  else if (!r.ollama.models.some((m) => m === model || m === `${model}:latest`)) { st.className = 'st'; st.textContent = tf('Ollama работает. Модели {model} ещё нет — нажмите «Скачать модель» (несколько гигабайт).', { model }); }
+  else { st.className = 'st ok'; st.textContent = tf('Ollama работает, модель {model} готова.', { model }); }
+}
+function aiCollect() {
+  const o = {};
+  for (const el of aiForm.elements) {
+    if (!el.name || !el.name.includes('.')) continue;
+    const [k, f] = el.name.split('.');
+    (o[k] ||= {})[f] = el.type === 'checkbox' ? el.checked : el.value;
+  }
+  return o;
+}
+async function aiSave() {
+  await fetch('/api/ai', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(aiCollect()) });
+}
+$('aiOpen').addEventListener('click', () => { $('aiRes').innerHTML = ''; $('aiDlg').showModal(); aiLoad(); });
+$('aiSave').addEventListener('click', async () => { await aiSave(); $('aiRes').innerHTML = `<li class="ok">${t('Сохранено.')}</li>`; aiLoad(); });
+$('aiTest').addEventListener('click', async () => {
+  await aiSave();
+  $('aiRes').innerHTML = `<li>${t('Проверяю…')}</li>`;
+  const r = await fetch('/api/ai/test', { method: 'POST' }).then((x) => x.json()).catch(() => ({ results: [] }));
+  $('aiRes').innerHTML = r.results.length ? r.results.map((x) => x.ok
+    ? `<li class="ok">✓ ${esc(x.name)} (${esc(x.model)}) — ${tf('отвечает, {s} с', { s: (x.ms / 1000).toFixed(1) })}</li>`
+    : `<li class="bad">✗ ${esc(x.name)} — ${esc(t(x.error || ''))}</li>`).join('')
+    : `<li class="bad">${t('Ни один ИИ не подключён.')}</li>`;
+});
+$('ollamaPull').addEventListener('click', async () => {
+  await aiSave();
+  const btn = $('ollamaPull'), st = $('ollamaSt');
+  btn.disabled = true;
+  const res = await fetch(`/api/ai/pull?model=${encodeURIComponent(aiField('ollama.model').value)}`, { method: 'POST' });
+  if (!res.ok || !res.body) { st.className = 'st bad'; st.textContent = t('Не получилось скачать модель.'); btn.disabled = false; return; }
+  const reader = res.body.getReader(), dec = new TextDecoder();
+  let buf = '';
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, { stream: true });
+    const evs = buf.split('\n\n'); buf = evs.pop();
+    for (const e of evs) {
+      const data = JSON.parse(/data: (.*)/.exec(e)?.[1] || '{}');
+      if (/^event: done/m.test(e)) { st.className = data.ok ? 'st ok' : 'st bad'; st.textContent = data.ok ? tf('Модель {model} скачана.', { model: data.model }) : `${t('Не получилось скачать модель:')} ${data.error}`; }
+      else { st.className = 'st'; st.textContent = `${t('Скачиваю…')} ${data.percent != null ? `${data.percent}%` : esc(data.status || '')}`; }
+    }
+  }
+  btn.disabled = false;
+});
+
 updateRun();
 loadBuilds();
 </script>
