@@ -360,6 +360,7 @@ async function build(args) {
     tokens.css(), extraCss, fs.existsSync(path.join(out, 'fonts.css')) ? fs.readFileSync(path.join(out, 'fonts.css'), 'utf8').replace(/url\([^)]*\)/g, '') : '', pkg.scale,
   ])).digest('hex');
   const slots = [];
+  const failedFrames = [];
   let cached = 0, doneCount = 0;
   // переходы прототипа «Navigate to» → страница фрейма из этой сборки (папки фреймов лежат рядом)
   const frameDirs = new Map(frames.map((f) => [f.id, safe(`${f.name}-${f.id}`)]));
@@ -579,9 +580,19 @@ async function build(args) {
 
     // фреймы — параллельно, по args.jobs вкладок одного браузера
     const queue = frames.map((f, i) => [f, i]);
+    // один сломанный фрейм не останавливает сборку: он попадает в список «не собраны», остальные собираются.
+    // Если упал сам браузер — дальше собирать нечем, сборка останавливается (её можно продолжить — кэш).
     const worker = async () => {
       for (let item = queue.shift(); item; item = queue.shift()) {
-        await buildFrame(item[0], item[1]);
+        try {
+          await buildFrame(item[0], item[1]);
+        } catch (e) {
+          if (/browser has been closed|Target closed|Browser closed|has been disconnected/i.test(e.message) || (browser && !browser.isConnected())) throw e;
+          const msg = String(e.message).split('\n')[0].slice(0, 200);
+          failedFrames.push({ id: item[0].id, name: item[0].name, page: item[0].page, error: msg });
+          slots[item[1]] = undefined;
+          console.log(`  ⚠ ${item[0].name}: не собран — ${msg}`);
+        }
         doneCount++;
       }
     };
@@ -593,6 +604,10 @@ async function build(args) {
       results.push(sl.result);
     }
     if (cached) console.log(`Без изменений (из кэша): ${cached} из ${frames.length}`);
+    if (failedFrames.length) {
+      console.log(`⚠ Не собраны: ${failedFrames.length} из ${frames.length} — ${failedFrames.slice(0, 5).map((x) => `«${x.name}»`).join(', ')}${failedFrames.length > 5 ? '…' : ''}. Остальные собраны; причины — в failed-frames.json`);
+      fs.writeFileSync(path.join(out, 'failed-frames.json'), JSON.stringify(failedFrames, null, 2));
+    } else fs.rmSync(path.join(out, 'failed-frames.json'), { force: true });
     // адаптивные страницы: фреймы одной страницы под разные ширины
     if (args.responsive) {
       const groups = groupFrames(fwPages.map((p) => ({ name: p.title, page: p.page, width: p.width, texts: textsOf(p.tree) })), args.groups);
@@ -791,10 +806,10 @@ async function build(args) {
     await browser?.close();
   }
 
-  fs.writeFileSync(path.join(out, 'report.html'), buildReport({ file: pkg.manifest.file, threshold: args.threshold, textThreshold: args.textThreshold, textAreaThreshold: args.textAreaThreshold, results, responsive: responsive.map(({ components, ...r }) => r) }));
+  fs.writeFileSync(path.join(out, 'report.html'), buildReport({ file: pkg.manifest.file, threshold: args.threshold, textThreshold: args.textThreshold, textAreaThreshold: args.textAreaThreshold, results, responsive: responsive.map(({ components, ...r }) => r), failed: failedFrames }));
   fs.writeFileSync(path.join(out, 'report.json'), JSON.stringify({ file: pkg.manifest.file, threshold: args.threshold,
     results: results.map(({ stats, ...r }) => ({ ...r, stats })) }, null, 2));
-  writeRootAgents(out, { file: pkg.manifest.file, results, codeOf, responsive, frames: pkg.frames, frameworks: args.frameworks, threshold: args.threshold, notes: designNotes(pkg) });
+  writeRootAgents(out, { file: pkg.manifest.file, results, codeOf, responsive, frames: pkg.frames, frameworks: args.frameworks, threshold: args.threshold, notes: designNotes(pkg), failed: failedFrames });
   console.log(`Отчёт: ${path.join(out, 'report.html')}`);
   if (args.open) openFile(path.join(out, 'report.html'));
   const failed = results.filter((r) => r.pass === false).length;
@@ -805,7 +820,7 @@ async function build(args) {
  * Корень папки сборки: AGENTS.md (что здесь код, что эталон, что служебное) и screens/ — PNG макетов
  * с понятными именами: по ним агент видит все экраны и состояния, не открывая папки проверки.
  */
-function writeRootAgents(out, { file, results, codeOf, responsive, frames, frameworks, threshold, notes = { components: [], layers: [] } }) {
+function writeRootAgents(out, { file, results, codeOf, responsive, frames, frameworks, threshold, notes = { components: [], layers: [] }, failed = [] }) {
   const scr = path.join(out, 'screens');
   fs.rmSync(scr, { recursive: true, force: true });
   const rows = [];
@@ -858,6 +873,10 @@ function writeRootAgents(out, { file, results, codeOf, responsive, frames, frame
     L.push('', '## Пояснения дизайнера', '', 'Из Figma: описания компонентов (Description) и аннотации Dev Mode. Это требования к поведению — учитывай их в коде.', '');
     for (const c of notes.components) L.push(`- Компонент «${c.name}»: ${c.description.replace(/\s*\n\s*/g, ' ')}`);
     for (const n of notes.layers) L.push(`- ${n.where}: ${n.text}`);
+  }
+  if (failed.length) {
+    L.push('', '## Не собраны', '', 'Эти экраны не удалось сверстать (ошибка при сборке или проверке). Эталон — их PNG в пакете; сверстайте по нему или пересоберите.', '');
+    for (const f of failed) L.push(`- ${f.page ? `${f.page} / ${f.name}` : f.name} — ${f.error}`);
   }
   // всплывающие окна из прототипа (Open overlay): в вёрстке — ссылка на страницу окна, агенту — сделать <dialog>
   // карта экранов: переходы, состояния, общий каркас — из прототипа и текстов, без ИИ

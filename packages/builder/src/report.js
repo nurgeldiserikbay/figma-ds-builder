@@ -1,7 +1,7 @@
 // HTML-отчёт: эталон / вёрстка / разница + наложение с ползунком.
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
-export function buildReport({ file, threshold, textThreshold, textAreaThreshold = 4, results, responsive = [] }) {
+export function buildReport({ file, threshold, textThreshold, textAreaThreshold = 4, results, responsive = [], failed = [] }) {
   const passed = results.filter((r) => r.pass).length;
   const cards = results
     .map((r) => {
@@ -72,6 +72,7 @@ export function buildReport({ file, threshold, textThreshold, textAreaThreshold 
 <h1>Pixel diff: ${esc(file)}</h1>
 <p class="summary"><a href="design-system/design-system.md">Дизайн-система</a> · <a href="design-system/tokens.json">tokens.json</a> (импорт в Figma — кнопкой в плагине)</p>
 <p class="summary">Критерий: геометрия каждого элемента ±0.5px; несовпадающих пикселей вне текста не больше ${threshold}%, в тексте — не больше ${textThreshold}% экрана или ${textAreaThreshold}% площади текстов (сглаживание букв в Figma и браузере различается) · прошли ${passed} из ${results.length} фреймов</p>
+${failed.length ? `<div class="warn"><p><b>Не собраны: ${failed.length}.</b> Остальные экраны собраны; эти можно пересобрать кнопкой «Собрать снова».</p><ul>${failed.map((f) => `<li>${esc(f.page ? `${f.page} / ${f.name}` : f.name)} — ${esc(f.error)}</li>`).join('')}</ul></div>` : ''}
 ${results.length > 6 ? `<nav class="card toc">
   <label class="only"><input type="checkbox" id="onlyFailed"${results.some((r) => r.pass === false) ? '' : ' disabled'}> показывать только фреймы с расхождениями</label>
   ${results.some((r) => r.pass === false) ? `<p class="meta"><b>Не прошли (${results.filter((r) => r.pass === false).length}):</b> ${results.filter((r) => r.pass === false).map((r) => `<a href="#f-${esc(r.dir)}">${esc(r.name)}</a>`).join(' · ')}</p>` : '<p class="meta">Все фреймы прошли проверку.</p>'}

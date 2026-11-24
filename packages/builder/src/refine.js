@@ -10,6 +10,7 @@
 // Это место для будущих шагов, в том числе с ИИ: тот же цикл «предложить → проверить → оставить лучшее».
 import fs from 'node:fs';
 import { pathToFileURL } from 'node:url';
+import { screenshot } from './render.js';
 import { PNG } from 'pngjs';
 import pixelmatch from 'pixelmatch';
 import { flattenWhite } from './diff.js';
@@ -43,7 +44,7 @@ export async function refinePage(browser, htmlPath, { refPath, tree, sources, wi
     const refCrop = crop(ref, Math.round(x * scale), Math.round(y * scale), Math.round(w * scale), Math.round(h * scale));
 
     const score = async () => {
-      const buf = await page.screenshot({ clip: { x, y, width: w, height: h } });
+      const buf = await screenshot(page, { x, y, width: w, height: h });
       const img = PNG.sync.read(buf);
       if (img.width !== refCrop.width || img.height !== refCrop.height) return Infinity;
       return pixelmatch(refCrop.data, flattenWhite(img.data), null, img.width, img.height, { threshold: 0.1, includeAA: false });
@@ -105,7 +106,7 @@ export async function refinePage(browser, htmlPath, { refPath, tree, sources, wi
   // Сдвиг базовой линии зависит от кегля и интерлиньяжа, а не от слоя: если у текстов одного стиля
   // нашёлся один и тот же сдвиг, пробуем его для всех текстов этого стиля и оставляем, если вся страница ближе
   const fullScore = async () => {
-    const img = PNG.sync.read(await page.screenshot({ clip: { x: 0, y: 0, width: Math.ceil(width), height: Math.ceil(height) } }));
+    const img = PNG.sync.read(await screenshot(page, { x: 0, y: 0, width: Math.ceil(width), height: Math.ceil(height) }));
     if (img.width !== ref.width || img.height !== ref.height) return Infinity;
     return pixelmatch(ref.data, flattenWhite(img.data), null, img.width, img.height, { threshold: 0.1, includeAA: false });
   };

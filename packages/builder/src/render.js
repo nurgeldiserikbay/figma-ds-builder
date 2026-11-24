@@ -1,6 +1,8 @@
 // Рендер сгенерированной страницы в Chromium через Playwright.
 import { chromium } from 'playwright-core';
 import { pathToFileURL } from 'node:url';
+import fs from 'node:fs';
+import { PNG } from 'pngjs';
 
 /**
  * Браузер: системный Chrome (channel "chrome") или путь из CHROME_PATH.
@@ -51,7 +53,31 @@ export async function renderPage(browser, htmlPath, { width, height, scale = 1, 
     }),
   );
   const overflowX = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 0.5);
-  if (out) await page.screenshot({ path: out, clip: { x: 0, y: 0, width, height } });
+  if (out) fs.writeFileSync(out, await screenshot(page, { x: 0, y: 0, width, height }));
   await page.close();
   return { fonts, boxes, overflowX };
+}
+
+/**
+ * Снимок области страницы. Большой кадр (длинный экран в 2x) Chromium иногда снимает дольше таймаута или
+ * не снимает вовсе — тогда снимаем полосами и склеиваем. Результат тот же PNG, пиксель в пиксель.
+ */
+export async function screenshot(page, clip, { timeout = 60000, firstTimeout = timeout, band = 2048 } = {}) {
+  const opts = { animations: 'disabled', caret: 'hide' };
+  const scale = await page.evaluate(() => devicePixelRatio).catch(() => 1);
+  // очень большой кадр (больше ~16 тыс. пикселей по стороне) — сразу полосами
+  const huge = Math.max(clip.width, clip.height) * scale > 16000;
+  if (!huge) {
+    try { return await page.screenshot({ ...opts, clip, timeout: firstTimeout }); } catch (e) { if (!/Timeout|timed out/i.test(e.message)) throw e; }
+  }
+  const W = Math.round(clip.width * scale), H = Math.round(clip.height * scale);
+  const outPng = new PNG({ width: W, height: H });
+  for (let y = 0; y < clip.height; y += band) {
+    const h = Math.min(band, clip.height - y);
+    const part = PNG.sync.read(await page.screenshot({ ...opts, clip: { x: clip.x, y: clip.y + y, width: clip.width, height: h }, timeout }));
+    const dy = Math.round(y * scale);
+    const rows = Math.min(part.height, H - dy);
+    PNG.bitblt(part, outPng, 0, 0, Math.min(part.width, W), rows, 0, dy);
+  }
+  return PNG.sync.write(outPng);
 }
