@@ -418,6 +418,15 @@ function serialize(node, ox, oy, ctx) {
     opacity: 'opacity' in node ? num(node.opacity, 1) : 1,
     blendMode: 'blendMode' in node ? node.blendMode : 'NORMAL',
   };
+  // слой связан со свойством компонента Figma: текст (characters), показ (visible), замена (mainComponent);
+  // у скрытого слоя тоже — по нему программа понимает, что слой убран свойством «показать/скрыть»
+  var refs;
+  try { refs = node.componentPropertyReferences; } catch (e) { refs = null; }
+  if (refs) {
+    var pr = {};
+    Object.keys(refs).forEach(function (k) { if (refs[k]) pr[k] = propName(refs[k]); });
+    if (Object.keys(pr).length) o.propRefs = pr;
+  }
   if (!o.visible) return o; // скрытые слои не разворачиваем
   if ('clipsContent' in node) o.clipsContent = node.clipsContent;
   if ('isMask' in node && node.isMask) o.isMask = true;
@@ -440,14 +449,7 @@ function serialize(node, ox, oy, ctx) {
   if (modes) o.modes = modes;
   var link = protoLink(node);
   if (link) o.link = link;
-  // слой связан со свойством компонента Figma: текст (characters), показ (visible), замена (mainComponent)
-  var refs;
-  try { refs = node.componentPropertyReferences; } catch (e) { refs = null; }
-  if (refs) {
-    var pr = {};
-    Object.keys(refs).forEach(function (k) { if (refs[k]) pr[k] = propName(refs[k]); });
-    if (Object.keys(pr).length) o.propRefs = pr;
-  }
+
   // аннотации Dev Mode: «поле обязательное», «сортируется по клику» — для ИИ-агента
   var notes = annotationsOf(node);
   if (notes) o.notes = notes;

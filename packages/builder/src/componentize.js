@@ -354,7 +354,7 @@ export function componentizeTrees(pages, htmlOfEl) {
       // атрибуты доступности из вариантов (aria-selected, disabled…) — и в дерево для React/Vue
       if (el.attrs) for (const [k, v] of Object.entries(pe.attrs)) if (/^(aria-|disabled$|role$|tabindex$)/.test(k) && !el.attrs.some(([x]) => x === k)) el.attrs.push([k, v]);
       if (el.html !== undefined || el.text !== undefined) return;
-      const kids = el.children || [];
+      const kids = (el.children || []).filter((k) => k.kind !== 'opt'); // пустые места «показать/скрыть» в HTML не выводятся
       if (kids.length !== pe.children.length) return; // строение разошлось — дальше не трогаем
       kids.forEach((k, j) => assign(k, pe.children[j]));
     })(pages[i].root, parsed);

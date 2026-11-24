@@ -11,7 +11,7 @@ const SKIP_ATTRS = new Set(['data-figma-id', 'data-name', 'data-variant']);
 // атрибуты состояния из вариантов Figma (componentize) — у копий разные, это параметры, а не строение
 export const ARIA_PROPS = { 'aria-selected': 'selected', 'aria-checked': 'checked', 'aria-expanded': 'expanded', 'aria-pressed': 'pressed', 'aria-current': 'current', 'aria-disabled': 'disabled', disabled: 'disabled' };
 const YES = /^(true|yes|on|да|1)$/i, NO = /^(false|no|off|нет|0)$/i;
-const attrOf = (el, k) => (el.attrs || []).find(([x]) => x === k)?.[1];
+const attrOf = (el, k) => (el?.attrs || []).find(([x]) => x === k)?.[1];
 function parseVariant(v) {
   const o = {};
   for (const part of String(v || '').split(',')) {
@@ -64,7 +64,9 @@ export function variantSplit(instances) {
 }
 
 /** Структурная подпись: теги и вложенность, без текста, классов, стилей и картинок. */
-function shapeOf(el) {
+function shapeOf(el, deep = false) {
+  // слой со свойством «показать/скрыть»: у копий он есть или нет — строение одно (параметр showIcon)
+  if (!deep && el.figmaProps?.visible) return `?${el.figmaProps.visible}`;
   if (el.text !== undefined) return 'T';
   if (el.tag === 'img') return 'I';
   const attrs = (el.attrs || []).filter(([k]) => !SKIP_ATTRS.has(k) && !(k in ARIA_PROPS)).map(([k]) => k).join(',');
@@ -83,7 +85,21 @@ export const camel = (s) => {
   return p[0].toLowerCase() + p.slice(1);
 };
 
-const at = (el, path) => (path === '' ? el : path.split('.').reduce((e, i) => e.children[+i], el));
+const at = (el, path) => (path === '' ? el : path.split('.').reduce((e, i) => e?.children?.[+i], el));
+const shown = (e) => !!e && e.kind !== 'opt';
+
+/** Шаблон из копий: пустое место «показать/скрыть» заполняется видимым слоем другой копии. */
+function mergedTemplate(instances) {
+  const fill = (el, path) => {
+    if (el.kind === 'opt') {
+      const vis = instances.map((i) => at(i, path)).find(shown);
+      return vis ? fill(vis, path) : el;
+    }
+    if (!el.children) return el;
+    return { ...el, children: el.children.map((c, i) => fill(c, path === '' ? String(i) : `${path}.${i}`)) };
+  };
+  return fill(instances[0], '');
+}
 
 /** Все места шаблона: путь, подсказка для имени (имя ближайшего слоя), элемент. */
 function slots(el, p = [], hint = 'root', out = [], prop = null) {
@@ -97,12 +113,12 @@ function slots(el, p = [], hint = 'root', out = [], prop = null) {
 
 /** Различия между копиями → параметры. null, если копии слишком разные. */
 function diffProps(instances, maxShare) {
-  const tpl = instances[0];
+  const tpl = mergedTemplate(instances);
   const all = slots(tpl);
   const props = [];
   const names = new Set(['ids', 'style']);
   const add = (kind, path, hint, extra = {}, fixedName = null) => {
-    const suffix = { text: '', cls: 'Class', style: 'Style', src: 'Src', html: 'Svg', vprop: '', attr: '' }[kind];
+    const suffix = { text: '', cls: 'Class', style: 'Style', src: 'Src', html: 'Svg', vprop: '', attr: '', show: '' }[kind];
     let base = fixedName || camel(hint || 'part') + suffix;
     if (kind === 'text' && base === 'root') base = 'text';
     let n = base, k = 2;
@@ -120,24 +136,37 @@ function diffProps(instances, maxShare) {
     for (const k of vs.keys) add('vprop', '', null, { key: k.key, bool: k.bool, map: k.map, values: k.values, base: vs.base }, camel(k.key));
     if (vs.extra) add('cls', '', null, { extraOf: vs.base, owned: vs.keys.flatMap((k) => Object.values(k.map).flatMap((c) => c.split(' '))) }, 'className');
   }
+  // «показать/скрыть»: где у копий слой есть не везде — параметр showIcon; видимые слои должны быть одного строения
   for (const s of all) {
+    const opt = s.el.figmaProps?.visible;
+    if (!opt || s.path === '') continue;
+    const here = instances.map((i) => at(i, s.path));
+    const vis = here.filter(shown);
+    if (vis.length && vis.some((e) => shapeOf(e, true) !== shapeOf(vis[0], true))) return null;
+    if (vis.length === here.length || !vis.length) continue;
+    add('show', s.path, null, { prop: opt }, camel(/^(show|has|is|with)\b/i.test(opt) ? opt : `show ${opt}`));
+  }
+  for (const s of all) {
+    // внутри скрытого у части копий слоя сравниваются только копии, где он есть
+    const present = instances.filter((i) => shown(at(i, s.path)));
+    if (!present.length) continue;
     // атрибуты состояния (aria-selected, disabled…) — параметры; с тем же именем, что булево свойство варианта, — оно и есть
     // другие атрибуты, разные у копий (placeholder, type, href…) — тоже параметры, иначе у всех был бы атрибут шаблона
-    const keysHere = new Set(instances.flatMap((i) => (at(i, s.path).attrs || []).map(([k]) => k)));
+    const keysHere = new Set(present.flatMap((i) => (at(i, s.path)?.attrs || []).map(([k]) => k)));
     for (const a of keysHere) {
       if (a in ARIA_PROPS || a.startsWith('data-') || ['src', 'style', 'class'].includes(a)) continue;
-      const v = instances.map((i) => attrOf(at(i, s.path), a));
+      const v = present.map((i) => attrOf(at(i, s.path), a));
       if (v.every((x) => x === v[0])) continue;
       add('attr', s.path, null, { attr: a, plain: true }, camel(`${s.path === '' ? '' : s.hint}-${a}`));
     }
     for (const [a, pname] of Object.entries(ARIA_PROPS)) {
-      const v = instances.map((i) => attrOf(at(i, s.path), a));
+      const v = present.map((i) => attrOf(at(i, s.path), a));
       if (v.every((x) => x === v[0])) continue; // одинаковый у всех — остаётся в шаблоне
       const same = props.find((p) => p.kind === 'vprop' && p.path === s.path && p.bool && p.name === pname);
       if (same) { same.attrs = [...(same.attrs || []), a]; continue; }
       add('attr', s.path, null, { attr: a }, pname);
     }
-    const vals = (kind) => instances.map((i) => valueAt(i, s.path, kind));
+    const vals = (kind) => present.map((i) => valueAt(i, s.path, kind));
     const differs = (kind) => { const v = vals(kind); return v.some((x) => x !== v[0]); };
     if (s.el.text !== undefined) {
       if (differs('text')) add('text', s.path, s.hint, {}, s.prop ? camel(s.prop) : null);
@@ -150,13 +179,15 @@ function diffProps(instances, maxShare) {
     if (s.path !== '' && differs('style')) { add('style', s.path, s.hint); styleDiffs++; }
   }
   // текст — естественный параметр; различия в оформлении ограничиваем
-  const visual = props.filter((p) => !['text', 'vprop', 'attr'].includes(p.kind) && !p.extraOf).length;
+  const visual = props.filter((p) => !['text', 'vprop', 'attr', 'show'].includes(p.kind) && !p.extraOf).length;
   if (visual > Math.max(3, all.length * maxShare) || styleDiffs > 2) return null;
   return props;
 }
 
 function valueAt(el, path, kind, pr) {
   const e = at(el, path);
+  if (kind === 'show') return shown(e);
+  if (!shown(e)) return undefined; // слой скрыт свойством у этой копии
   if (kind === 'vprop') { const v = parseVariant(attrOf(e, 'data-variant'))[pr.key]; return v === undefined ? undefined : pr.bool ? YES.test(v) : className(v); }
   if (kind === 'attr' && pr.plain) return attrOf(e, pr.attr);
   if (kind === 'attr') { const v = attrOf(e, pr.attr); return v === undefined ? undefined : v === '' || v === 'true' || v === 'page' ? true : v === 'false' ? false : v; }
@@ -229,7 +260,7 @@ export function findComponents(pages, { minNodes = 2, minSize = 4, maxShare = 0.
     // параметры — по фактически выбранным копиям (могли отпасть вложенные)
     const props = diffProps(instances, maxShare);
     if (!props) continue;
-    const template = instances[0];
+    const template = mergedTemplate(instances);
     const fig = instances.find((e) => e.component?.name)?.component?.name || attrOf(template, 'data-component');
     let name = pascal(String(fig || template.name || 'Block').split(/[/=,]/)[0]);
     if (/^(Div|Span|Block|Group|Node|Layer|Shape|Part|Item)$/.test(name)) name = `${name}Block`;
@@ -243,7 +274,7 @@ export function findComponents(pages, { minNodes = 2, minSize = 4, maxShare = 0.
       instanceOf.set(inst, {
         comp,
         values: Object.fromEntries(props.map((p) => [p.name, valueAt(inst, p.path, p.kind, p)])),
-        ids: ids.map((pth) => at(inst, pth).id),
+        ids: ids.map((pth) => (shown(at(inst, pth)) ? at(inst, pth).id : null)),
       });
     }
   }

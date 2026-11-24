@@ -820,9 +820,9 @@ function writeRootAgents(out, { file, results, codeOf, responsive, frames, frame
   const overlays = overlayLinks(frames);
   if (overlays.length) {
     L.push('', '## Всплывающие окна (Open overlay в прототипе)', '',
-      'В макете эти кнопки открывают окно поверх экрана. В вёрстке сейчас это ссылка на страницу окна (`aria-haspopup="dialog"`), ' +
-      'кнопка «закрыть» в окне — возврат назад. Сделай окно `<dialog>` на странице кнопки (содержимое и стили — со страницы окна), ' +
-      'открытие — `showModal()`, закрытие — `close()`, по Esc и по клику на фон.', '');
+      'В макете эти кнопки открывают окно поверх экрана. В проектах React и Vue окно уже открывается в `<dialog>` поверх страницы ' +
+      '(src/overlay.js, App): «закрыть» в окне его закрывает, Esc и клик по фону — тоже. В html/ это пока ссылка на страницу окна ' +
+      '(`aria-haspopup="dialog"`) — если работаешь с html/, сделай `<dialog>` на странице кнопки.', '');
     for (const o of overlays) L.push(`- ${o.frame}: «${o.trigger}» → окно «${o.target}»`);
   }
   L.push('', '«Расходится» — вёрстка отличается от макета больше допуска; где именно — в report.html. ' +

@@ -477,10 +477,10 @@ export function htmlOf(el, depth = 1) {
   for (const [k, v] of el.attrs) attrs.push(`${k}="${esc(v)}"`);
   const open = `${pad}<${el.tag} ${attrs.join(' ')}>`;
   if (el.void) return open; // <input> без закрывающего тега
-  const kids = el.children || [];
+  const kids = (el.children || []).filter((k) => k.kind !== 'opt');
   if (!kids.length) return `${open}</${el.tag}>`;
   if (el.inlineChildren) return `${open}${kids.map(inlineHtml).join('')}</${el.tag}>`;
-  const lines = kids.map((k) => (k.inline || k.tag === 'img' ? `${pad}  ${inlineHtml(k)}` : htmlOf(k, depth + 1)));
+  const lines = kids.filter((k) => k.kind !== 'opt').map((k) => (k.inline || k.tag === 'img' ? `${pad}  ${inlineHtml(k)}` : htmlOf(k, depth + 1)));
   return `${open}\n${lines.join('\n')}\n${pad}</${el.tag}>`;
 }
 
@@ -582,5 +582,27 @@ ${body}
 </body>
 </html>
 `;
+  addOptionalSlots(rootEl, tree);
   return { html, css, stats, root: rootEl, rules: styles.rules };
+}
+
+/**
+ * Скрытый слой, связанный со свойством компонента «показать/скрыть» (propRefs.visible), — пустое место в дереве
+ * элементов (kind 'opt'): копии с иконкой и без неё остаются одного строения, и для React/Vue это параметр
+ * showIcon. В HTML пустое место не выводится. Только там, где дети элемента — ровно видимые дети слоя (Auto Layout).
+ */
+function addOptionalSlots(rootEl, tree) {
+  const nodes = new Map();
+  (function idx(n) { nodes.set(n.id, n); (n.children || []).forEach(idx); })(tree);
+  (function walk(el) {
+    const kids = el.children || [];
+    kids.forEach(walk);
+    const node = el.id && nodes.get(el.id);
+    if (!node || !node.children?.some((c) => c.visible === false && c.propRefs?.visible)) return;
+    const shown = node.children.filter((c) => c.visible !== false);
+    if (kids.length !== shown.length || kids.some((k, i) => k.id !== shown[i].id)) return;
+    el.children = node.children.filter((c) => c.visible !== false || c.propRefs?.visible).map((c) => (c.visible === false
+      ? { kind: 'opt', id: c.id, name: c.name, tag: '', cls: '', attrs: [], children: [], figmaProps: c.propRefs }
+      : kids[shown.indexOf(c)]));
+  })(rootEl);
 }

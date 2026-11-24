@@ -155,18 +155,89 @@ function htmlProp(v, c, hint) {
 /** Атрибут JSX: в строке "…" JSX не понимает экранирования — кавычки и \\ только через {"…"}. */
 const jsxAttr = (k, v) => (/["\\\n{}<>&]/.test(String(v)) ? `${k}={${jsStr(v)}}` : `${k}="${v}"`);
 
-function jsx(el, c, depth, p = []) {
+/**
+ * Действие ссылки из прототипа в React/Vue: окно (Open overlay → <dialog> поверх страницы), «Назад»/«Закрыть»
+ * (javascript:-ссылки React блокирует — вместо них обработчик нажатия). null — обычная ссылка.
+ */
+function linkAction(el) {
+  const href = (el.attrs || []).find(([k]) => k === 'href')?.[1];
+  if (!href) return null;
+  if (/^javascript:/i.test(href)) return { back: true };
+  if ((el.attrs || []).some(([k, v]) => k === 'aria-haspopup' && v === 'dialog') && /^#[\w-]+$/.test(href)) return { open: href.slice(1) };
+  return null;
+}
+const OVERLAY_JS = `// Окна из прототипа Figma (Open overlay): страница окна открывается в <dialog> поверх текущей (App).
+export function openOverlay(route) {
+  dispatchEvent(new CustomEvent('ds-overlay', { detail: route }));
+}
+
+// «Закрыть» и «Назад» из прототипа: внутри окна — закрыть его, иначе — шаг назад по истории.
+export function closeOrBack(e) {
+  const d = e.currentTarget.closest('dialog');
+  if (d) d.close();
+  else history.back();
+}
+`;
+const OVERLAY_CSS = `
+/* окна из прототипа (Open overlay) */
+.ds-overlay { padding: 0; border: 0; background: transparent; max-width: 100vw; max-height: 100vh; overflow: auto; }
+.ds-overlay::backdrop { background: rgba(0, 0, 0, 0.45); }
+`;
+/** Есть ли в страницах окна или «назад» — тогда в проект идёт overlay.js. */
+function usesOverlays(pages) {
+  let any = false;
+  const walk = (el) => { if (any || !el) return; if (linkAction(el)) any = true; (el.children || []).forEach(walk); };
+  pages.forEach((p) => walk(p.root));
+  return any;
+}
+
+/** Параметр выбора компонента (Selected=true/false или aria-selected): по нему вкладки переключаются нажатием. */
+const selectProp = (comp) => comp.props.find((p) => p.name === 'selected' && ((p.kind === 'vprop' && p.bool) || (p.kind === 'attr' && !p.plain)));
+
+/**
+ * Группы выбора на странице: соседние копии одного компонента с параметром selected, выбрана ровно одна
+ * (вкладки, сегменты, фильтры). Нажатие выбирает копию — состояние страницы, а не только картинка.
+ * @returns Map копия → { group: номер, index, prop }
+ */
+function selectGroups(root, instanceOf) {
+  const out = new Map();
+  let n = 0;
+  (function walk(el) {
+    const kids = el.children || [];
+    const insts = kids.filter((k) => instanceOf.has(k));
+    const comp = insts[0] && instanceOf.get(insts[0]).comp;
+    const sp = comp && selectProp(comp);
+    if (sp && insts.length >= 2 && insts.every((k) => instanceOf.get(k).comp === comp)
+      && insts.filter((k) => instanceOf.get(k).values[sp.name] === true).length === 1) {
+      n++;
+      insts.forEach((k, i) => out.set(k, { group: n, index: i, prop: sp.name, initial: insts.findIndex((x) => instanceOf.get(x).values[sp.name] === true) }));
+    }
+    kids.forEach(walk);
+  })(root);
+  return out;
+}
+
+/** Параметр «показать/скрыть» у места шаблона компонента. */
+const showAt = (c, pk) => (c.mode === 'comp' && c.comp ? c.comp.props.find((pr) => pr.kind === 'show' && pr.path === pk) : null);
+
+function jsx(el, c, depth, p = [], noShow = false) {
   const pad = '  '.repeat(depth);
   const pk = pathKey(p);
+  if (el.kind === 'opt') return null; // слой скрыт свойством компонента — не выводится
+  const sh = !noShow && showAt(c, pk);
+  if (sh) return `${pad}{${sh.name} && (\n${jsx(el, c, depth + 1, p, true)}\n${pad})}`;
   if (c.mode === 'page' && c.instanceOf.has(el)) {
     const inst = c.instanceOf.get(el);
     c.used.add(inst.comp.name);
-    const props = inst.comp.props.filter((pr) => !(['vprop', 'attr'].includes(pr.kind) || pr.extraOf !== undefined) || (inst.values[pr.name] !== undefined && inst.values[pr.name] !== '')).map((pr) => {
+    const sel = c.select?.get(el);
+    const props = inst.comp.props.filter((pr) => inst.values[pr.name] !== undefined && (!(['vprop', 'attr'].includes(pr.kind) || pr.extraOf !== undefined) || inst.values[pr.name] !== '')).map((pr) => {
+      if (sel && pr.name === sel.prop) return `${pr.name}={selected${sel.group} === ${sel.index}}`;
       if (pr.kind === 'src' && assetRel(inst.values[pr.name] || '')) c.usesAsset = true;
       if (pr.kind === 'html') return `${pr.name}={${htmlProp(inst.values[pr.name], c, pr.name)}}`;
       if (pr.kind === 'vprop' && !pr.bool) return `${pr.name}="${inst.values[pr.name]}"`;
       return `${pr.name}={${reactPropValue(pr.kind, inst.values[pr.name])}}`;
     });
+    if (sel) props.push(`onClick={() => setSelected${sel.group}(${sel.index})}`);
     const ids = idsFor(inst, c.keep);
     if (ids) props.push(`ids={${JSON.stringify(ids)}}`);
     if (el.style) props.push(`style={${styleObjJs(el.style)}}`);
@@ -204,18 +275,25 @@ function jsx(el, c, depth, p = []) {
   }
   const isRoot = p.length === 0;
   if (c.mode === 'comp' && isRoot) attrs.push('style={style}');
+  if (c.mode === 'comp' && isRoot && selectProp(c.comp)) attrs.push('onClick={onClick}'); // выбор во вкладках — нажатием
   else if (pp.style) attrs.push(`style={${pp.style}}`);
   else if (el.style) attrs.push(`style={${styleObjJs(el.style)}}`);
+  const act = linkAction(el);
   for (const [k, v] of el.attrs || []) {
     if (!keepAttr(k, v, pk, c) || va?.skip.has(k)) continue;
     if (k === 'data-figma-id' && c.mode === 'comp') attrs.push(`data-figma-id={ids?.[${c.idIndex.get(pk)}]}`);
+    else if (k === 'href' && act?.back) attrs.push('href="#"');
     else attrs.push(jsxAttr(k, v));
+  }
+  if (act) {
+    c.usesOverlay = true;
+    attrs.push(act.back ? 'onClick={(e) => { e.preventDefault(); closeOrBack(e); }}' : `onClick={(e) => { e.preventDefault(); openOverlay('${act.open}'); }}`);
   }
   const kids = el.children || [];
   if (!kids.length) return `${pad}<${el.tag} ${attrs.join(' ')} />`;
   const prevHint = c.hint;
   c.hint = dataName(el) || prevHint; // имя иконки — по слою Figma вокруг неё («icon/check» → iconCheck)
-  const inner = kids.map((k, i) => jsx(k, c, depth + 1, [...p, i])).join('\n');
+  const inner = kids.map((k, i) => jsx(k, c, depth + 1, [...p, i])).filter((x) => x !== null).join('\n');
   c.hint = prevHint;
   return `${pad}<${el.tag} ${attrs.join(' ')}>\n${inner}\n${pad}</${el.tag}>`;
 }
@@ -234,6 +312,9 @@ function propsJsDoc(comp, withIds) {
     } else if (p.kind === 'attr') {
       type = p.plain ? 'string' : 'boolean';
       what = `атрибут ${p.attr}`;
+    } else if (p.kind === 'show') {
+      type = 'boolean';
+      what = `показать слой (свойство Figma «${p.prop}»)`;
     } else if (p.kind === 'text') what = 'текст';
     else if (p.kind === 'html') what = 'иконка (SVG из icons.js)';
     else if (p.kind === 'src') what = 'картинка (путь)';
@@ -251,8 +332,8 @@ function reactComponent(comp, o = {}) {
   const c = { mode: 'comp', comp, propAt: propMap(comp), idIndex: new Map(comp.idPaths.map((p, i) => [p, i])), used: new Set(), keep: o.keep, keepIdx, icons: o.icons };
   const body = jsx(comp.template, c, 2);
   const withIds = keepIdx.size > 0;
-  const args = [...comp.props.map((p) => p.name), ...(withIds ? ['ids'] : []), 'style'].join(', ');
-  const imports = [c.usesAsset && "import { asset } from '../assets.js';", c.usesIcons && "import { icons } from '../icons.js';"].filter(Boolean);
+  const args = [...comp.props.map((p) => p.name), ...(withIds ? ['ids'] : []), 'style', ...(selectProp(comp) ? ['onClick'] : [])].join(', ');
+  const imports = [c.usesAsset && "import { asset } from '../assets.js';", c.usesIcons && "import { icons } from '../icons.js';", c.usesOverlay && "import { openOverlay, closeOrBack } from '../overlay.js';"].filter(Boolean);
   return `${imports.length ? imports.join('\n') + '\n\n' : ''}/**
  * ${comp.name} — компонент из макета: ${comp.instances.length} использований.
  * @param {object} props
@@ -267,13 +348,19 @@ ${body}
 }
 
 function reactPage(page, comps, o = {}) {
-  const c = { mode: 'page', instanceOf: comps.instanceOf, used: new Set(), keep: o.keep, icons: o.icons };
+  const select = selectGroups(page.root, comps.instanceOf);
+  const c = { mode: 'page', instanceOf: comps.instanceOf, used: new Set(), keep: o.keep, icons: o.icons, select };
   const body = jsx(page.root, c, 2);
+  // выбранная вкладка в каждой группе выбора — состояние страницы; сначала — как в макете
+  const groups = [...new Map([...select.values()].map((g) => [g.group, g.initial]))];
+  const state = groups.map(([g, init]) => `  const [selected${g}, setSelected${g}] = useState(${init});\n`).join('');
   const imports = [...c.used].sort().map((n) => `import ${n} from '../components/${n}.jsx';`);
   if (c.usesIcons) imports.unshift("import { icons } from '../icons.js';");
   if (c.usesAsset) imports.unshift("import { asset } from '../assets.js';");
+  if (c.usesOverlay) imports.unshift("import { openOverlay, closeOrBack } from '../overlay.js';");
+  if (groups.length) imports.unshift("import { useState } from 'react';");
   return `${imports.join('\n')}${imports.length ? '\n\n' : ''}export default function ${page.component}() {
-  return (
+${state}  return (
 ${body}
   );
 }
@@ -284,19 +371,25 @@ ${body}
 // Vue (SFC)
 // ---------------------------------------------------------------------------------------------
 
-function vueTpl(el, c, depth, p = []) {
+function vueTpl(el, c, depth, p = [], noShow = false) {
   const pad = '  '.repeat(depth);
   const pk = pathKey(p);
+  if (el.kind === 'opt') return null; // слой скрыт свойством компонента — не выводится
+  const sh = !noShow && showAt(c, pk);
+  if (sh) return vueTpl(el, c, depth, p, true).replace(/^(\s*<[\w-]+)/, `$1 v-if="${sh.name}"`);
   if (c.mode === 'page' && c.instanceOf.has(el)) {
     const inst = c.instanceOf.get(el);
     c.used.add(inst.comp.name);
-    const props = inst.comp.props.filter((pr) => !(['vprop', 'attr'].includes(pr.kind) || pr.extraOf !== undefined) || (inst.values[pr.name] !== undefined && inst.values[pr.name] !== '')).map((pr) => {
+    const sel = c.select?.get(el);
+    const props = inst.comp.props.filter((pr) => inst.values[pr.name] !== undefined && (!(['vprop', 'attr'].includes(pr.kind) || pr.extraOf !== undefined) || inst.values[pr.name] !== '')).map((pr) => {
+      if (sel && pr.name === sel.prop) return `:${pr.name}="selected${sel.group} === ${sel.index}"`;
       if (pr.kind === 'src' && assetRel(inst.values[pr.name] || '')) c.usesAsset = true;
       if (pr.kind === 'html') return `:${pr.name}="${htmlProp(inst.values[pr.name], c, pr.name)}"`;
       if (pr.kind === 'vprop' && !pr.bool) return `${pr.name}="${inst.values[pr.name]}"`;
       if (pr.kind === 'cls' && pr.extraOf !== undefined) return `class-name="${escAttr(inst.values[pr.name])}"`;
       return `:${pr.name}="${escAttr(vuePropValue(pr.kind, inst.values[pr.name]))}"`;
     });
+    if (sel) props.push(`@click="selected${sel.group} = ${sel.index}"`);
     const ids = idsFor(inst, c.keep);
     if (ids) props.push(`:ids="${escAttr(JSON.stringify(ids))}"`);
     if (el.style) props.push(`style="${escAttr(el.style)}"`);
@@ -334,16 +427,22 @@ function vueTpl(el, c, depth, p = []) {
   if (c.mode === 'comp' && isRoot) attrs.push(':style="style"');
   else if (pp.style) attrs.push(`:style="${pp.style}"`);
   else if (el.style) attrs.push(`style="${escAttr(el.style)}"`);
+  const act = linkAction(el);
   for (const [k, v] of el.attrs || []) {
     if (!keepAttr(k, v, pk, c) || va?.skip.has(k)) continue;
     if (k === 'data-figma-id' && c.mode === 'comp') attrs.push(`:data-figma-id="ids?.[${c.idIndex.get(pk)}]"`);
+    else if (k === 'href' && act?.back) attrs.push('href="#"');
     else attrs.push(`${k}="${escAttr(v)}"`);
+  }
+  if (act) {
+    c.usesOverlay = true;
+    attrs.push(act.back ? '@click.prevent="closeOrBack"' : `@click.prevent="openOverlay('${act.open}')"`);
   }
   const kids = el.children || [];
   if (!kids.length) return el.void ? `${pad}<${el.tag} ${attrs.join(' ')} />` : `${pad}<${el.tag} ${attrs.join(' ')}></${el.tag}>`;
   const prevHint = c.hint;
   c.hint = dataName(el) || prevHint;
-  const inner = kids.map((k, i) => vueTpl(k, c, depth + 1, [...p, i])).join('\n');
+  const inner = kids.map((k, i) => vueTpl(k, c, depth + 1, [...p, i])).filter((x) => x !== null).join('\n');
   c.hint = prevHint;
   return `${pad}<${el.tag} ${attrs.join(' ')}>\n${inner}\n${pad}</${el.tag}>`;
 }
@@ -353,14 +452,15 @@ function vueComponentParts(comp, o = {}) {
   const c = { mode: 'comp', comp, propAt: propMap(comp), idIndex: new Map(comp.idPaths.map((p, i) => [p, i])), used: new Set(), keep: o.keep, keepIdx, icons: o.icons };
   const template = vueTpl(comp.template, c, 1);
   const props = [...comp.props.map((p) => p.name), ...(keepIdx.size ? ['ids'] : []), 'style'];
-  return { template, props, usesAsset: c.usesAsset, usesIcons: c.usesIcons, withIds: keepIdx.size > 0 };
+  return { template, props, usesAsset: c.usesAsset, usesIcons: c.usesIcons, usesOverlay: c.usesOverlay, withIds: keepIdx.size > 0 };
 }
 
 function vueComponent(comp, o = {}) {
-  const { template, props, usesAsset, usesIcons, withIds } = vueComponentParts(comp, o);
+  const { template, props, usesAsset, usesIcons, usesOverlay, withIds } = vueComponentParts(comp, o);
   const kinds = Object.fromEntries(comp.props.map((p) => [p.name, p.kind]));
   const pr = Object.fromEntries(comp.props.map((p) => [p.name, p]));
   const defs = props.map((p) => (p === 'ids' ? 'ids: Array' : p === 'style' || kinds[p] === 'style' ? `${p}: [String, Object]`
+    : kinds[p] === 'show' ? `${p}: Boolean`
     : kinds[p] === 'attr' && pr[p].plain ? `${p}: String`
     : kinds[p] === 'attr' ? `${p}: { type: [Boolean, String], default: undefined }`
     : kinds[p] === 'vprop' && pr[p].bool ? `${p}: { type: Boolean, default: undefined }`
@@ -368,7 +468,7 @@ function vueComponent(comp, o = {}) {
     : kinds[p] === 'vprop' && vpropValues(pr[p]).length ? `${p}: { type: String, validator: (v) => ${JSON.stringify(vpropValues(pr[p])).replace(/"/g, "'")}.includes(v) }`
     : `${p}: String`)).join(', ');
   return `<script setup>
-${usesAsset ? "import { asset } from '../assets.js';\n" : ''}${usesIcons ? "import { icons } from '../icons.js';\n" : ''}// Компонент из макета: ${comp.instances.length} использований.${withIds ? ' ids — слои Figma, к которым привязаны поправки в CSS.' : ''}
+${usesAsset ? "import { asset } from '../assets.js';\n" : ''}${usesIcons ? "import { icons } from '../icons.js';\n" : ''}${usesOverlay ? "import { openOverlay, closeOrBack } from '../overlay.js';\n" : ''}// Компонент из макета: ${comp.instances.length} использований.${withIds ? ' ids — слои Figma, к которым привязаны поправки в CSS.' : ''}
 defineProps({ ${defs} });
 </script>
 
@@ -379,15 +479,17 @@ ${template}
 }
 
 function vuePageParts(page, comps, o = {}) {
-  const c = { mode: 'page', instanceOf: comps.instanceOf, used: new Set(), keep: o.keep, icons: o.icons };
+  const select = selectGroups(page.root, comps.instanceOf);
+  const c = { mode: 'page', instanceOf: comps.instanceOf, used: new Set(), keep: o.keep, icons: o.icons, select };
   const template = vueTpl(page.root, c, 1);
-  return { template, used: [...c.used].sort(), usesAsset: c.usesAsset, usesIcons: c.usesIcons };
+  const groups = [...new Map([...select.values()].map((g) => [g.group, g.initial]))];
+  return { template, used: [...c.used].sort(), usesAsset: c.usesAsset, usesIcons: c.usesIcons, usesOverlay: c.usesOverlay, groups };
 }
 
 function vuePage(page, comps, o = {}) {
-  const { template, used, usesAsset, usesIcons } = vuePageParts(page, comps, o);
+  const { template, used, usesAsset, usesIcons, usesOverlay, groups } = vuePageParts(page, comps, o);
   return `<script setup>
-${usesAsset ? "import { asset } from '../assets.js';\n" : ''}${usesIcons ? "import { icons } from '../icons.js';\n" : ''}${used.map((n) => `import ${n} from '../components/${n}.vue';`).join('\n')}
+${groups.length ? `import { ref } from 'vue';\n// выбранная вкладка в каждой группе выбора; сначала — как в макете\n${groups.map(([g, init]) => `const selected${g} = ref(${init});`).join('\n')}\n` : ''}${usesAsset ? "import { asset } from '../assets.js';\n" : ''}${usesIcons ? "import { icons } from '../icons.js';\n" : ''}${usesOverlay ? "import { openOverlay, closeOrBack } from '../overlay.js';\n" : ''}${used.map((n) => `import ${n} from '../components/${n}.vue';`).join('\n')}
 </script>
 
 <template>
@@ -404,7 +506,7 @@ const CATALOG_MAX = 24; // примеров одного компонента
 const CATALOG_SKIP = new Set(['style', 'ids']);
 /** Подпись примера: значения вариантов и атрибутов (variant=secondary, disabled). */
 function catalogCaption(comp, values) {
-  return comp.props.filter((p) => p.kind === 'vprop' || (p.kind === 'attr' && !p.plain))
+  return comp.props.filter((p) => p.kind === 'vprop' || p.kind === 'show' || (p.kind === 'attr' && !p.plain))
     .map((p) => [p.name, values[p.name]]).filter(([, v]) => v !== undefined && v !== false)
     .map(([k, v]) => (v === true ? k : `${k}=${v}`)).join(', ');
 }
@@ -416,7 +518,7 @@ export function catalogTree(comps) {
     if (!byComp.has(inst.comp)) byComp.set(inst.comp, new Map());
     // пример на сочетание вариантов (variant, state, disabled…); без вариантов — по значениям параметров
     // (положение на странице не в счёт)
-    const vkeys = inst.comp.props.filter((p) => p.kind === 'vprop' || (p.kind === 'attr' && !p.plain)).map((p) => p.name);
+    const vkeys = inst.comp.props.filter((p) => p.kind === 'vprop' || p.kind === 'show' || (p.kind === 'attr' && !p.plain)).map((p) => p.name);
     const key = JSON.stringify(vkeys.length ? vkeys.map((k) => inst.values[k])
       : Object.entries(inst.values).filter(([k]) => !CATALOG_SKIP.has(k) && !inst.comp.props.find((p) => p.name === k && p.kind === 'style')));
     if (!byComp.get(inst.comp).has(key)) byComp.get(inst.comp).set(key, { el, inst });
@@ -424,7 +526,7 @@ export function catalogTree(comps) {
   const T = (tag, cls, text) => ({ tag, cls, attrs: [], children: [{ text, cls: `${cls}-t` }] });
   const sections = [];
   for (const comp of comps.components) {
-    const hasVariants = comp.props.some((p) => p.kind === 'vprop');
+    const hasVariants = comp.props.some((p) => p.kind === 'vprop' || p.kind === 'show');
     const ex = [...(byComp.get(comp)?.values() || [])].slice(0, hasVariants ? CATALOG_MAX : 6);
     if (!ex.length) continue;
     const params = comp.props.filter((p) => !CATALOG_SKIP.has(p.kind) && p.kind !== 'style').map((p) => p.name);
@@ -590,6 +692,7 @@ export function exportReact(siteDir, pages, comps, groups = [], meta = {}) {
   const resp = respInfo(groups);
   // каталог компонентов — маршрут #components (как Storybook, без установки)
   const catalog = comps.components.length > 0;
+  const overlays = usesOverlays(pages);
   const routesList = [...resp, ...pages, ...(catalog ? [{ component: 'ComponentCatalog', route: 'components', title: 'Компоненты' }] : [])];
   const o = shipOptions(siteDir, pages, comps, root, resp);
   const files = {
@@ -601,7 +704,7 @@ export function exportReact(siteDir, pages, comps, groups = [], meta = {}) {
     'index.html': `<!DOCTYPE html>\n<html lang="ru">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1">\n<title>${pages[0]?.title || 'Сайт'}</title>\n</head>\n<body>\n<div id="root"></div>\n<script type="module" src="/src/main.jsx"></script>\n</body>\n</html>\n`,
     'src/assets.js': "export const asset = (p) => import.meta.env.BASE_URL + 'assets/' + p;\n",
     'src/main.jsx': "import { createRoot } from 'react-dom/client';\nimport App from './App.jsx';\nimport './styles/fonts.css';\nimport './styles/site.css';\n\ncreateRoot(document.getElementById('root')).render(<App />);\n",
-    'src/App.jsx': `import { useEffect, useState } from 'react';
+    'src/App.jsx': `import { useEffect, ${overlays ? 'useRef, ' : ''}useState } from 'react';
 ${routesList.map((p) => `import ${p.component} from './pages/${p.component}.jsx';`).join('\n')}
 
 // Страницы из макетов; переключение — #${routesList[0]?.route}
@@ -621,16 +724,36 @@ export default function App() {
     return () => removeEventListener('hashchange', on);
   }, []);
   const Page = routes[route] || routes[first];
-  return <Page />;
+${overlays ? `  // окно из прототипа (Open overlay): страница окна — в <dialog> поверх текущей; Esc и клик по фону закрывают
+  const [overlay, setOverlay] = useState(null);
+  const dialog = useRef(null);
+  useEffect(() => {
+    const on = (e) => setOverlay(e.detail);
+    addEventListener('ds-overlay', on);
+    return () => removeEventListener('ds-overlay', on);
+  }, []);
+  useEffect(() => {
+    if (overlay && !dialog.current.open) dialog.current.showModal();
+  }, [overlay]);
+  const Overlay = overlay && routes[overlay];
+  return (
+    <>
+      <Page />
+      <dialog ref={dialog} className="ds-overlay" onClose={() => setOverlay(null)} onClick={(e) => e.target === e.currentTarget && e.currentTarget.close()}>
+        {Overlay && <Overlay />}
+      </dialog>
+    </>
+  );` : '  return <Page />;'}
 }
 `,
-    'src/styles/site.css': o.css + (catalog ? `\n/* каталог компонентов (#components) */${CATALOG_CSS}` : ''),
+    'src/styles/site.css': o.css + (catalog ? `\n/* каталог компонентов (#components) */${CATALOG_CSS}` : '') + (overlays ? OVERLAY_CSS : ''),
     'src/styles/fonts.css': o.fonts,
     'README.md': `# Вёрстка из Figma — React\n\nСгенерировано DS Builder. Компонентов: ${comps.components.length}, страниц: ${pages.length}.\n\n\`\`\`bash\nnpm install\nnpm run dev\n\`\`\`\n\nСтраницы: ${routesList.map((p) => `#${p.route}`).join(', ')}.${catalog ? '\nКаталог компонентов (все варианты из макетов) — #components.' : ''}\nКарта проекта для ИИ-агента — AGENTS.md.\n`,
   };
   for (const r of resp) files[`src/pages/${r.component}.jsx`] = reactResponsive(r);
   for (const c of comps.components) files[`src/components/${c.name}.jsx`] = reactComponent(c, o);
   for (const p of pages) files[`src/pages/${p.component}.jsx`] = reactPage(p, comps, o);
+  if (overlays) files['src/overlay.js'] = OVERLAY_JS;
   if (catalog) files['src/pages/ComponentCatalog.jsx'] = reactPage({ component: 'ComponentCatalog', root: catalogTree(comps) }, comps, o);
   if (o.icons.size) files['src/icons.js'] = o.icons.module();
   files['AGENTS.md'] = agentsMd('react', { pages, comps, resp, routesList, css: o.css, icons: o.icons.size, meta });
@@ -645,6 +768,7 @@ export function exportVue(siteDir, pages, comps, groups = [], meta = {}) {
   const resp = respInfo(groups);
   // каталог компонентов — маршрут #components (как Storybook, без установки)
   const catalog = comps.components.length > 0;
+  const overlays = usesOverlays(pages);
   const routesList = [...resp, ...pages, ...(catalog ? [{ component: 'ComponentCatalog', route: 'components', title: 'Компоненты' }] : [])];
   const o = shipOptions(siteDir, pages, comps, root, resp);
   const files = {
@@ -657,7 +781,7 @@ export function exportVue(siteDir, pages, comps, groups = [], meta = {}) {
     'src/assets.js': "export const asset = (p) => import.meta.env.BASE_URL + 'assets/' + p;\n",
     'src/main.js': "import { createApp } from 'vue';\nimport App from './App.vue';\nimport './styles/fonts.css';\nimport './styles/site.css';\n\ncreateApp(App).mount('#app');\n",
     'src/App.vue': `<script setup>
-import { ref, onMounted, onUnmounted, computed } from 'vue';
+import { ref, onMounted, onUnmounted, computed${overlays ? ', nextTick' : ''} } from 'vue';
 ${routesList.map((p) => `import ${p.component} from './pages/${p.component}.vue';`).join('\n')}
 
 // Страницы из макетов; переключение — #${routesList[0]?.route}
@@ -673,19 +797,34 @@ const on = () => {
 onMounted(() => addEventListener('hashchange', on));
 onUnmounted(() => removeEventListener('hashchange', on));
 const Page = computed(() => routes[route.value] || routes[first]);
-</script>
+${overlays ? `// окно из прототипа (Open overlay): страница окна — в <dialog> поверх текущей; Esc и клик по фону закрывают
+const overlay = ref(null);
+const dialog = ref(null);
+const onOverlay = async (e) => {
+  overlay.value = e.detail;
+  await nextTick();
+  if (!dialog.value.open) dialog.value.showModal();
+};
+onMounted(() => addEventListener('ds-overlay', onOverlay));
+onUnmounted(() => removeEventListener('ds-overlay', onOverlay));
+const Overlay = computed(() => overlay.value && routes[overlay.value]);
+` : ''}</script>
 
 <template>
   <component :is="Page" />
-</template>
+${overlays ? `  <dialog ref="dialog" class="ds-overlay" @close="overlay = null" @click.self="dialog.close()">
+    <component :is="Overlay" v-if="Overlay" />
+  </dialog>
+` : ''}</template>
 `,
-    'src/styles/site.css': o.css + (catalog ? `\n/* каталог компонентов (#components) */${CATALOG_CSS}` : ''),
+    'src/styles/site.css': o.css + (catalog ? `\n/* каталог компонентов (#components) */${CATALOG_CSS}` : '') + (overlays ? OVERLAY_CSS : ''),
     'src/styles/fonts.css': o.fonts,
     'README.md': `# Вёрстка из Figma — Vue\n\nСгенерировано DS Builder. Компонентов: ${comps.components.length}, страниц: ${pages.length}.\n\n\`\`\`bash\nnpm install\nnpm run dev\n\`\`\`\n\nСтраницы: ${routesList.map((p) => `#${p.route}`).join(', ')}.${catalog ? '\nКаталог компонентов (все варианты из макетов) — #components.' : ''}\nКарта проекта для ИИ-агента — AGENTS.md.\n`,
   };
   for (const r of resp) files[`src/pages/${r.component}.vue`] = vueResponsive(r);
   for (const c of comps.components) files[`src/components/${c.name}.vue`] = vueComponent(c, o);
   for (const p of pages) files[`src/pages/${p.component}.vue`] = vuePage(p, comps, o);
+  if (overlays) files['src/overlay.js'] = OVERLAY_JS;
   if (catalog) files['src/pages/ComponentCatalog.vue'] = vuePage({ component: 'ComponentCatalog', root: catalogTree(comps) }, comps, o);
   if (o.icons.size) files['src/icons.js'] = o.icons.module();
   files['AGENTS.md'] = agentsMd('vue', { pages, comps, resp, routesList, css: o.css, icons: o.icons.size, meta });
@@ -702,7 +841,7 @@ const Page = computed(() => routes[route.value] || routes[first]);
 export async function renderReact(pages, comps, opt = {}) {
   const esbuild = require('esbuild');
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ds-react-'));
-  const files = { 'assets.js': `export const asset = (p) => ${jsStr(opt.assetPrefix || ASSET_PREFIX)} + p;\n` };
+  const files = { 'assets.js': `export const asset = (p) => ${jsStr(opt.assetPrefix || ASSET_PREFIX)} + p;\n`, 'overlay.js': OVERLAY_JS };
   // keep: null — с метками всех слоёв (проверка геометрии); Set — ровно как в отдаваемом проекте
   const o = { keep: opt.keep || null, icons: iconRegistry(), instanceOf: comps.instanceOf };
   for (const c of comps.components) files[`components/${c.name}.jsx`] = reactComponent(c, o);
@@ -731,12 +870,14 @@ export async function renderVue(pages, comps, opt = {}) {
   const out = {};
   const o = { keep: opt.keep || null, icons: iconRegistry(), instanceOf: comps.instanceOf };
   for (const p of pages) {
-    const { template, used } = vuePageParts(p, comps, o);
-    const app = vue.createSSRApp({ template });
+    const { template, used, groups } = vuePageParts(p, comps, o);
+    const app = vue.createSSRApp({ template, data: () => Object.fromEntries(groups.map(([g, i]) => [`selected${g}`, i])) });
     app.config.globalProperties.asset = (x) => (opt.assetPrefix || ASSET_PREFIX) + x;
     app.config.compilerOptions.whitespace = 'condense';
     const parts = comps.components.filter((c) => used.includes(c.name)).map((c) => [c.name, vueComponentParts(c, o)]);
     app.config.globalProperties.icons = o.icons.object();
+    app.config.globalProperties.openOverlay = () => {}; // обработчики нажатий при отрисовке на сервере не нужны
+    app.config.globalProperties.closeOrBack = () => {};
     for (const [name, pt] of parts) app.component(name, { props: pt.props, template: pt.template });
     out[p.component] = await renderToString(app);
   }
