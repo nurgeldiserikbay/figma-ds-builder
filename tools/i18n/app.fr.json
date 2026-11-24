@@ -104,5 +104,13 @@
  "вне папки сборок": "hors du dossier des builds",
  "нет такой папки": "ce dossier n'existe pas",
  "запрещено": "interdit",
- "не найдено": "introuvable"
+ "не найдено": "introuvable",
+ "Собрать снова без повторной выгрузки": "Reconstruire sans réexporter",
+ "Дополнить новой выгрузкой": "Ajouter un autre export",
+ "не дособрана": "inachevé",
+ "собрать снова": "reconstruire",
+ "Добавить к этой сборке другую выгрузку того же файла: прежние экраны возьмутся готовыми, свёрстаны будут только новые": "Ajouter à ce build un autre export du même fichier : les écrans existants sont réutilisés, seuls les nouveaux sont intégrés",
+ "дополнить": "compléter",
+ "{name} + новая выгрузка": "{name} + nouvel export",
+ "У этой сборки нет сохранённого пакета (она сделана до версии 0.3.29). Добавьте её архивы вместе с новыми.": "Ce build n’a pas de paquet enregistré (il date d’avant la version 0.3.29). Ajoutez ses archives avec les nouvelles."
 }

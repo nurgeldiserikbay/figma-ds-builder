@@ -104,5 +104,13 @@
  "вне папки сборок": "outside the builds folder",
  "нет такой папки": "no such folder",
  "запрещено": "forbidden",
- "не найдено": "not found"
+ "не найдено": "not found",
+ "Собрать снова без повторной выгрузки": "Build again without re-exporting",
+ "Дополнить новой выгрузкой": "Add another export",
+ "не дособрана": "not finished",
+ "собрать снова": "build again",
+ "Добавить к этой сборке другую выгрузку того же файла: прежние экраны возьмутся готовыми, свёрстаны будут только новые": "Add another export of the same file to this build: existing screens are reused, only new ones are laid out",
+ "дополнить": "add export",
+ "{name} + новая выгрузка": "{name} + new export",
+ "У этой сборки нет сохранённого пакета (она сделана до версии 0.3.29). Добавьте её архивы вместе с новыми.": "This build has no saved package (it was made before version 0.3.29). Add its archives together with the new ones."
 }

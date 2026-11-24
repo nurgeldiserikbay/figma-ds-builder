@@ -8,6 +8,7 @@
 // WebP без потерь. Если WebP не меньше исходного файла того же размера, остаётся исходный. Проверка — та же сверка с PNG из Figma.
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 
 const QUALITY = 0.9;
 
@@ -62,7 +63,7 @@ function need1x(u, iw, ih) {
  * @returns Map src → { x1, x2 } (пути внутри assets/, как src в пакете) — для image-set в CSS.
  * Картинки без замены в карте отсутствуют (остаются как есть).
  */
-export async function optimizeImages(browser, outDir, trees, { log = () => {} } = {}) {
+export async function optimizeImages(browser, outDir, trees, { log = () => {}, cacheDir = null } = {}) {
   const map = new Map();
   if (!browser) return map;
   const use = imageUsage(trees);
@@ -80,7 +81,12 @@ export async function optimizeImages(browser, outDir, trees, { log = () => {} } 
       const t1 = n1.w >= info.w ? { w: info.w, h: info.h } : n1;
       const t2 = n1.w * 2 >= info.w ? { w: info.w, h: info.h } : { w: n1.w * 2, h: n1.h * 2 };
       const sizes = t1.w === t2.w ? [t2] : [t1, t2];
-      const enc = await page.evaluate(async ({ b64, mime, sizes, q, maxBad }) => {
+      // кэш: та же картинка в тех же размерах — готовые WebP (дополнение сборки не кодирует заново)
+      const ckey = cacheDir && crypto.createHash('sha256').update(buf).update(JSON.stringify([sizes, QUALITY, 1])).digest('hex').slice(0, 40);
+      const cfile = ckey && path.join(cacheDir, `${ckey}.json`);
+      let enc = null;
+      if (cfile && fs.existsSync(cfile)) { try { enc = JSON.parse(fs.readFileSync(cfile, 'utf8')); } catch { enc = null; } }
+      if (!enc) enc = await page.evaluate(async ({ b64, mime, sizes, q, maxBad }) => {
         const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
         const blob = new Blob([bytes], { type: mime });
         const opt = { colorSpaceConversion: 'none', premultiplyAlpha: 'none' };
@@ -118,6 +124,7 @@ export async function optimizeImages(browser, outDir, trees, { log = () => {} } 
         }
         return out;
       }, { b64: buf.toString('base64'), mime: info.mime, sizes, q: QUALITY, maxBad: 0.0005 }).catch(() => null);
+      if (enc && cfile && !fs.existsSync(cfile)) { fs.mkdirSync(cacheDir, { recursive: true }); fs.writeFileSync(cfile, JSON.stringify(enc)); }
       if (!enc) continue;
       const base = src.replace(/\.(png|jpe?g|webp)$/i, '');
       const names = [];

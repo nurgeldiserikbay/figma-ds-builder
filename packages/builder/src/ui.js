@@ -38,8 +38,17 @@ function auditScore(dir) {
 function summary(home, name) {
   const dir = path.join(home, name);
   const file = path.join(dir, 'report.json');
+  const pkgMan = path.join(dir, '.package', 'manifest.json');
+  const hasPkg = fs.existsSync(pkgMan);
   if (!fs.existsSync(file)) {
     const af = path.join(dir, 'design-audit.json');
+    // сборка остановилась, но пакет сохранён — её можно собрать снова или дополнить, не выгружая заново
+    if (!fs.existsSync(af) && hasPkg) {
+      try {
+        const m = JSON.parse(fs.readFileSync(pkgMan, 'utf8'));
+        return { name, file: m.file || name, when: fs.statSync(pkgMan).mtime.toISOString(), kind: 'unfinished', frames: (m.frames || []).length, passed: 0, failed: 0, pkg: true };
+      } catch { return null; }
+    }
     if (!fs.existsSync(af)) return null;
     try {
       const a = JSON.parse(fs.readFileSync(af, 'utf8'));
@@ -60,6 +69,7 @@ function summary(home, name) {
       vue: fs.existsSync(path.join(dir, 'vue', 'package.json')),
       ds: fs.existsSync(path.join(dir, 'design-system', 'design-system.md')),
       audit: auditScore(dir),
+      pkg: hasPkg,
     };
   } catch { return null; }
 }
@@ -139,7 +149,7 @@ export async function startUi({ port = 0, open = true, home = defaultHome(), log
         const name = u.searchParams.get('name') || '';
         const dir = path.resolve(home, name);
         if (!name || /[\\/]/.test(name) || name.startsWith('.') || path.dirname(dir) !== home) return send(400, { error: 'неверное имя сборки' });
-        if (!fs.existsSync(path.join(dir, 'report.json')) && !fs.existsSync(path.join(dir, 'design-audit.json'))) return send(404, { error: 'нет такой сборки' });
+        if (!['report.json', 'design-audit.json', '.package/manifest.json'].some((f) => fs.existsSync(path.join(dir, f)))) return send(404, { error: 'нет такой сборки' });
         if ([...jobs.values()].some((j) => !j.done && j.name === name)) return send(409, { error: 'сборка ещё идёт' });
         try { fs.rmSync(dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 200 }); } catch (e) {
           return send(500, { error: 'Не удалось удалить: какой-то файл открыт в другой программе. Закройте его и попробуйте снова.' });
@@ -163,7 +173,18 @@ export async function startUi({ port = 0, open = true, home = defaultHome(), log
         const opts = JSON.parse(u.searchParams.get('opts') || '{}');
         let parts;
         const session = (u.searchParams.get('session') || '').replace(/[^a-z0-9]/gi, '');
-        if (session) {
+        // дополнить прошлую сборку: её пакет (.package) + новые архивы; без архивов — пересобрать её же
+        const baseName = u.searchParams.get('base') || '';
+        let basePkg = null;
+        if (baseName) {
+          const bdir = path.resolve(home, baseName);
+          if (/[\\/]/.test(baseName) || baseName.startsWith('.') || path.dirname(bdir) !== home) return send(400, { error: 'неверное имя сборки' });
+          basePkg = path.join(bdir, '.package');
+          if (!fs.existsSync(path.join(basePkg, 'manifest.json'))) return send(400, { error: 'У этой сборки нет сохранённого пакета (она сделана до версии 0.3.29). Добавьте её архивы вместе с новыми.' });
+        }
+        if (basePkg && !session) {
+          parts = [];
+        } else if (session) {
           parts = uploads.get(session) || [];
           uploads.delete(session);
           if (!parts.length) return send(400, { error: 'Архивы не загрузились — добавьте их ещё раз' });
@@ -175,7 +196,8 @@ export async function startUi({ port = 0, open = true, home = defaultHome(), log
           await new Promise((ok, fail) => { const w = fs.createWriteStream(zip); req.pipe(w); w.on('finish', ok); w.on('error', fail); req.on('error', fail); });
           parts = [{ zip, file }];
         }
-        const base = parts[0].file.replace(/\s*\(часть \d+ из \d+\)/i, '');
+        const base = baseName ? summary(home, baseName)?.file || baseName.replace(/-\d{4}-\d{2}-\d{2}-\d{2}-\d{2}$/, '')
+          : parts[0].file.replace(/\s*\(часть \d+ из \d+\)/i, '');
         const auditOnly = opts.mode === 'audit'; // «Только проверить макет»: анализ для дизайнера, без вёрстки
         const name = `${slug(base)}${auditOnly ? '-analiz' : ''}-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')}`;
         const out = path.join(home, name);
@@ -183,7 +205,8 @@ export async function startUi({ port = 0, open = true, home = defaultHome(), log
         const job = { id, name, lines: [], listeners: new Set(), done: false, code: null };
         const push = (line) => { job.lines.push(line); for (const l of job.listeners) l(line); };
         // в установленной программе (Electron) тот же исполняемый файл работает как Node
-        const cliArgs = auditOnly ? ['audit', ...parts.map((p) => p.zip), '--out', out] : buildArgs(parts.map((p) => p.zip), out, opts);
+        const inputs = [...(basePkg ? [basePkg] : []), ...parts.map((p) => p.zip)];
+        const cliArgs = auditOnly ? ['audit', ...inputs, '--out', out] : buildArgs(inputs, out, opts);
         const child = spawn(process.execPath, [CLI, ...cliArgs], { env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' }, windowsHide: true });
         let buf = '';
         const onData = (d) => { buf += d; const lines = buf.split(/\r?\n/); buf = lines.pop(); lines.forEach(push); };

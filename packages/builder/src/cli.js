@@ -79,6 +79,8 @@ ds-build build <пакет.zip> [ещё части.zip …] [опции]
                        (по умолчанию — только когда без неё слои не на своих местах)
   --no-semantic        без семантических тегов (только div)
   --jobs <N>           сколько фреймов проверять одновременно (по умолчанию — ядер процессора, не больше 4)
+  --no-keep-package    не сохранять пакет в <out>/.package (по умолчанию сохраняется — сборку можно дополнить:
+                       ds-build build <прошлая сборка>/.package новая.zip --out <новая>)
   --no-cache           пересобрать все фреймы; по умолчанию фреймы без изменений берутся из кэша
                        (~/.cache/ds-build/frames; кэш сбрасывается при обновлении программы)
   --svg-files          векторы — файлами <img src="….svg">; по умолчанию небольшие SVG вставляются в страницу
@@ -94,7 +96,7 @@ ds-build build <пакет.zip> [ещё части.zip …] [опции]
 `;
 
 function parseArgs(argv) {
-  const a = { _: [], frames: [], css: [], frameworks: [], groups: {}, responsive: true, inlineSvg: true, cache: true, jobs: Math.max(1, Math.min(4, os.availableParallelism ? os.availableParallelism() : os.cpus().length)), layout: 'auto', threshold: 0.1, textThreshold: 0.5, textAreaThreshold: 4, out: 'out', verify: true, refine: true, analyze: true, fonts: 'auto', semantic: true, ai: false };
+  const a = { _: [], frames: [], css: [], frameworks: [], groups: {}, responsive: true, inlineSvg: true, cache: true, keepPackage: true, jobs: Math.max(1, Math.min(4, os.availableParallelism ? os.availableParallelism() : os.cpus().length)), layout: 'auto', threshold: 0.1, textThreshold: 0.5, textAreaThreshold: 4, out: 'out', verify: true, refine: true, analyze: true, fonts: 'auto', semantic: true, ai: false };
   for (let i = 0; i < argv.length; i++) {
     const k = argv[i];
     if (k === '--out') a.out = argv[++i];
@@ -116,6 +118,7 @@ function parseArgs(argv) {
     else if (k === '--no-responsive') a.responsive = false;
     else if (k === '--jobs') a.jobs = Math.max(1, parseInt(argv[++i], 10) || 1);
     else if (k === '--no-cache') a.cache = false;
+    else if (k === '--no-keep-package') a.keepPackage = false;
     else if (k === '--svg-files') a.inlineSvg = false;
     else if (k === '--port') a.port = Number(argv[++i]);
     else if (k === '--home') a.home = path.resolve(argv[++i]);
@@ -252,13 +255,32 @@ async function build(args) {
   const pkg = loadPackage(pkgDir);
   const out = path.resolve(args.out);
   fs.mkdirSync(out, { recursive: true });
+  // пакет, из которого собрано, — рядом со сборкой (.package): её можно дополнить новой выгрузкой
+  // (ds-build build <сборка>/.package новая.zip) или пересобрать без повторной выгрузки
+  if (args.keepPackage) {
+    const keep = path.join(out, '.package');
+    if (path.resolve(pkgDir) !== keep) {
+      fs.rmSync(keep, { recursive: true, force: true });
+      fs.cpSync(pkgDir, keep, { recursive: true });
+    }
+  }
   // токены: из плагина, иначе — собственный анализ дизайн-системы
   // дизайн-система строится всегда; готовые токены из пакета (если есть) — приоритетнее для переменных в CSS
   let tokenJson = pkg.tokens;
   let ds = null;
   if (args.analyze) {
     ds = runAnalysis(pkg, args, path.join(out, 'design-system'));
-    if (!tokenJson) tokenJson = toTokens(ds);
+    if (!tokenJson) {
+      tokenJson = toTokens(ds);
+      // палитра, подобранная по экранам, — в сохранённый пакет: сборка-дополнение возьмёт те же токены,
+      // и прежние экраны останутся в кэше (иначе новые экраны чуть сдвигают палитру и меняют CSS всех)
+      const keep = path.join(out, '.package');
+      if (args.keepPackage && fs.existsSync(path.join(keep, 'manifest.json'))) {
+        fs.writeFileSync(path.join(keep, 'tokens.json'), JSON.stringify(tokenJson, null, 2));
+        const m = JSON.parse(fs.readFileSync(path.join(keep, 'manifest.json'), 'utf8'));
+        fs.writeFileSync(path.join(keep, 'manifest.json'), JSON.stringify({ ...m, tokens: 'tokens.json' }, null, 2));
+      }
+    }
     console.log(`Дизайн-система: ${ds.colors.tokens.length} цветов, ${ds.typography.styles.length} стилей текста, аудит ${ds.audit.score}/100 → design-system/`);
   }
   const pkgJson = (rel) => { const f = rel && path.join(pkg.dir, rel); return f && fs.existsSync(f) ? JSON.parse(fs.readFileSync(f, 'utf8')) : null; };
@@ -304,7 +326,7 @@ async function build(args) {
   }
   const browser = args.verify ? await openBrowser() : null;
   // картинки: WebP по размеру показа (1x/2x) — заливки в деревьях ссылаются на новые файлы
-  const imageSet = await optimizeImages(browser, out, frames.map((f) => f.tree()), { log: (m) => console.log(m) });
+  const imageSet = await optimizeImages(browser, out, frames.map((f) => f.tree()), { log: (m) => console.log(m), cacheDir: args.cache ? path.join(defaultCacheDir(), 'images') : null });
   const results = [];
   const fwPages = [];
   const responsive = [];
@@ -317,7 +339,7 @@ async function build(args) {
   const cacheRoot = path.join(defaultCacheDir(), 'frames');
   const optKey = crypto.createHash('sha256').update(JSON.stringify([
     programHash(), args.layout, args.threshold, args.textThreshold, args.textAreaThreshold, args.refine, args.semantic, args.inlineSvg, args.ai, args.verify, !!args.allowAbsolute,
-    tokens.css(), extraCss, frames.map((f) => f.id).join(','), fs.existsSync(path.join(out, 'fonts.css')) ? fs.readFileSync(path.join(out, 'fonts.css'), 'utf8').replace(/url\([^)]*\)/g, '') : '', pkg.scale,
+    tokens.css(), extraCss, fs.existsSync(path.join(out, 'fonts.css')) ? fs.readFileSync(path.join(out, 'fonts.css'), 'utf8').replace(/url\([^)]*\)/g, '') : '', pkg.scale,
   ])).digest('hex');
   const slots = [];
   let cached = 0, doneCount = 0;
@@ -334,7 +356,9 @@ async function build(args) {
       fs.mkdirSync(fdir, { recursive: true });
       const hasRef = args.verify && f.pngPath && fs.existsSync(f.pngPath);
       if (hasRef) fs.copyFileSync(f.pngPath, path.join(fdir, 'reference.png'));
+      // в ключе — только куда ведут переходы этого фрейма: новые фреймы в пакете не сбрасывают кэш остальных
       const key = args.cache ? crypto.createHash('sha256').update(optKey).update(JSON.stringify(tree))
+        .update(JSON.stringify(linkTargets(tree).map((id) => [id, frameHref(id)])))
         .update(hasRef ? fs.readFileSync(f.pngPath) : '').digest('hex').slice(0, 40) : null;
       const hit = key && path.join(cacheRoot, key);
       if (hit && fs.existsSync(path.join(hit, 'meta.json'))) {
@@ -848,6 +872,17 @@ function designNotes(pkg) {
     })(tree, [f.name]);
   }
   return { components, layers: layers.slice(0, 200) };
+}
+
+/** id фреймов, на которые ведут переходы прототипа из дерева (Navigate to, Open overlay, ссылки в тексте). */
+function linkTargets(tree) {
+  const ids = new Set();
+  (function walk(n) {
+    if (n.link?.id) ids.add(n.link.id);
+    for (const sg of n.text?.segments || []) if (sg.link?.id) ids.add(sg.link.id);
+    (n.children || []).forEach(walk);
+  })(tree);
+  return [...ids].sort();
 }
 
 /** Кнопки «Open overlay» во всех фреймах: где, какая (текст или имя слоя), какое окно. */

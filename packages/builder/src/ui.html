@@ -323,13 +323,15 @@ function reach(id, note) {
 
 form.addEventListener('submit', (ev) => { ev.preventDefault(); start(options()); });
 $('auditBtn').addEventListener('click', () => start({ mode: 'audit' }));
-async function start(o) {
-  if (!file || running) return;
+// base — имя прошлой сборки: дополнить её новыми архивами (extra) или пересобрать без повторной выгрузки
+async function start(o, base = null, extra = null) {
+  const list = base ? extra || [] : files;
+  if ((!base && !file) || running) return;
   running = true; updateRun(); $('err').textContent = '';
   stages = stagesFor(o).map((s) => ({ ...s, state: 'wait' }));
   $('start').hidden = true;
   const job = $('job'); job.hidden = false; job.classList.remove('done');
-  $('jobTitle').textContent = file.name.replace(PART, '').replace(/\.zip$/i, '').trim();
+  $('jobTitle').textContent = base ? (list.length ? tf('{name} + новая выгрузка', { name: base }) : base) : file.name.replace(PART, '').replace(/\.zip$/i, '').trim();
   $('jobSub').textContent = o.mode === 'audit' ? t('Обычно несколько секунд.') : t('Обычно это занимает от 30 секунд до нескольких минут.');
   $('result').innerHTML = ''; $('log').textContent = '';
   document.querySelector('details.log').open = false;
@@ -337,13 +339,13 @@ async function start(o) {
   let res;
   try {
     // части — по одной (каждая может весить сотни мегабайт), затем одна сборка
-    const session = Math.random().toString(36).slice(2) + Date.now().toString(36);
-    for (const [i, f] of files.entries()) {
-      reach('upload', files.length > 1 ? tf('{done} из {total}', { done: i + 1, total: files.length }) : undefined);
+    const session = list.length ? Math.random().toString(36).slice(2) + Date.now().toString(36) : '';
+    for (const [i, f] of list.entries()) {
+      reach('upload', list.length > 1 ? tf('{done} из {total}', { done: i + 1, total: list.length }) : undefined);
       const up = await fetch(`/api/upload?session=${session}&file=${encodeURIComponent(f.name)}`, { method: 'POST', body: f });
       if (!up.ok) { res = up; break; }
     }
-    if (!res) res = await fetch(`/api/build?session=${session}&opts=${encodeURIComponent(JSON.stringify(o))}`, { method: 'POST' });
+    if (!res) res = await fetch(`/api/build?session=${session}${base ? `&base=${encodeURIComponent(base)}` : ''}&opts=${encodeURIComponent(JSON.stringify(o))}`, { method: 'POST' });
   } catch (e) { res = { ok: false, json: async () => ({ error: t('Программа не отвечает. Перезапустите её.') }) }; }
   const data = await res.json();
   if (!res.ok) { running = false; job.hidden = true; $('start').hidden = false; $('err').textContent = t(data.error); updateRun(); return; }
@@ -372,12 +374,13 @@ function follow(id) {
     const base = `/out/${encodeURIComponent(d.name)}`;
     // итог — функцией: при смене языка рисуется заново
     lastDone = () => {
-      if (d.code === 1 || !s) {
+      if (d.code !== 0 || !s || s.kind === 'unfinished') {
         stages.forEach((x) => { if (x.state === 'now') x.state = 'bad'; });
         drawStages();
         $('jobSub').textContent = t('Сборка остановилась с ошибкой.');
         $('result').innerHTML = `<div class="verdict bad"><b>${t('Не получилось собрать')}</b><p>${t('Причина — в подробном журнале ниже. Если непонятно, что делать, пришлите его.')}</p></div>
-          <div class="actions"><button class="btn primary" type="button" id="again">${t('Попробовать снова')}</button></div>`;
+          <div class="actions">${s?.pkg ? `<button class="btn primary" type="button" data-rebuild="${esc(d.name)}">${t('Собрать снова без повторной выгрузки')}</button>` : ''}
+          <button class="btn${s?.pkg ? '' : ' primary'}" type="button" id="again">${t('Попробовать снова')}</button></div>`;
         document.querySelector('details.log').open = true;
       } else if (s.kind === 'audit') {
         stages.forEach((x) => { x.state = 'ok'; });
@@ -403,6 +406,7 @@ function follow(id) {
             <a class="btn${s.html ? '' : ' primary'}" href="${base}/report.html" target="_blank" rel="noopener">${t('Открыть отчёт')}</a>
             ${s.audit != null ? `<a class="btn" href="${base}/design-audit.html" target="_blank" rel="noopener">${tf('Анализ макета: {n}/100', { n: s.audit })}</a>` : ''}
             <button class="btn" type="button" data-open="${esc(d.name)}${s.html ? '/html' : ''}">${t('Папка с файлами')}</button>
+            ${s.pkg ? `<button class="btn" type="button" data-extend="${esc(d.name)}">${t('Дополнить новой выгрузкой')}</button>` : ''}
             <button class="btn" type="button" id="again">${t('Новая сборка')}</button>
           </div>`;
       }
@@ -422,12 +426,15 @@ async function loadBuilds() {
   ul.innerHTML = r.builds.map((b) => {
     const base = `/out/${encodeURIComponent(b.name)}`;
     const when = new Date(b.when).toLocaleString(I18N.lang === 'zh' ? 'zh-CN' : I18N.lang, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
-    const v = b.kind === 'audit' ? `<span class="v${b.audit < 50 ? ' bad' : ' ok'}">${tf('анализ макета: {n}/100', { n: b.audit })}</span>`
+    const v = b.kind === 'unfinished' ? `<span class="v bad">${t('не дособрана')}</span>`
+      : b.kind === 'audit' ? `<span class="v${b.audit < 50 ? ' bad' : ' ok'}">${tf('анализ макета: {n}/100', { n: b.audit })}</span>`
       : b.failed ? `<span class="v bad">${tf('не совпало: {failed} из {frames}', b)}</span>` : b.passed ? `<span class="v ok">${t('совпадает ✓')}</span>` : '';
     return `<li><div class="t">${esc(b.file)}</div>${v}
       <div><div class="m">${esc(when)} · ${tf('фреймов: {n}', { n: b.frames })}</div><div class="links">
         ${b.html ? `<a href="${base}/html/index.html" target="_blank" rel="noopener">${t('вёрстка')}</a>` : ''}
-        ${b.kind === 'audit' ? '' : `<a href="${base}/report.html" target="_blank" rel="noopener">${t('отчёт')}</a>`}
+        ${b.kind === 'audit' || b.kind === 'unfinished' ? '' : `<a href="${base}/report.html" target="_blank" rel="noopener">${t('отчёт')}</a>`}
+        ${b.kind === 'unfinished' ? `<button type="button" data-rebuild="${esc(b.name)}">${t('собрать снова')}</button>` : ''}
+        ${b.pkg ? `<button type="button" data-extend="${esc(b.name)}" title="${esc(t('Добавить к этой сборке другую выгрузку того же файла: прежние экраны возьмутся готовыми, свёрстаны будут только новые'))}">${t('дополнить')}</button>` : ''}
         ${b.audit != null ? `<a href="${base}/design-audit.html" target="_blank" rel="noopener">${t('анализ макета')}</a>` : ''}
         ${b.ds ? `<a href="${base}/design-system/design-system.md" target="_blank" rel="noopener">${t('дизайн-система')}</a>` : ''}
         <button type="button" data-open="${esc(b.name)}">${t('папка')}</button>
@@ -437,6 +444,21 @@ async function loadBuilds() {
       </div></div></li>`;
   }).join('');
 }
+// дополнить сборку: выбрать архивы новой выгрузки; собрать снова — тот же пакет без выгрузки
+const extendInput = Object.assign(document.createElement('input'), { type: 'file', accept: '.zip', multiple: true, hidden: true });
+document.body.append(extendInput);
+let extendBase = null;
+extendInput.addEventListener('change', () => {
+  const list = [...extendInput.files];
+  extendInput.value = '';
+  if (list.length && extendBase) { window.scrollTo(0, 0); start(options(), extendBase, list); }
+});
+document.addEventListener('click', (ev) => {
+  const x = ev.target.closest('[data-extend]');
+  if (x && !running) { extendBase = x.dataset.extend; extendInput.click(); }
+  const r = ev.target.closest('[data-rebuild]');
+  if (r && !running) { window.scrollTo(0, 0); start(options(), r.dataset.rebuild); }
+});
 document.addEventListener('click', async (ev) => {
   const b = ev.target.closest('[data-open]');
   if (b) fetch(`/api/open?path=${encodeURIComponent(b.dataset.open)}`, { method: 'POST' });

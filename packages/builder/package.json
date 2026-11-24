@@ -1,6 +1,6 @@
 {
   "name": "figma-ds-build",
-  "version": "0.3.28",
+  "version": "0.3.29",
   "description": "Вёрстка из Figma с гарантией pixel perfect: архив из плагина → дизайн-система, HTML/CSS, React, Vue → сверка с макетом и автодоработка.",
   "keywords": [
     "figma",
@@ -31,7 +31,7 @@
   ],
   "scripts": {
     "fixture": "node fixtures/make-fixture.js",
-    "test": "node test/ai-chain.js && node test/semantic-names.js && node test/figma-tokens.js && node test/componentize.js && node test/fluid.js && node test/links.js && node test/assets.js && node test/fw-variants.js && node fixtures/make-fixture.js && node test/design-audit.js && node src/cli.js build fixtures/sample --out out/sample --framework html,react,vue && node test/ui.js",
+    "test": "node test/ai-chain.js && node test/semantic-names.js && node test/figma-tokens.js && node test/componentize.js && node test/fluid.js && node test/links.js && node test/assets.js && node test/fw-variants.js && node test/merge.js && node fixtures/make-fixture.js && node test/design-audit.js && node src/cli.js build fixtures/sample --out out/sample --framework html,react,vue && node test/ui.js",
     "ui": "node src/cli.js ui"
   },
   "engines": {

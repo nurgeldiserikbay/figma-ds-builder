@@ -104,5 +104,13 @@
  "вне папки сборок": "fuera de la carpeta de compilaciones",
  "нет такой папки": "no existe esa carpeta",
  "запрещено": "prohibido",
- "не найдено": "no encontrado"
+ "не найдено": "no encontrado",
+ "Собрать снова без повторной выгрузки": "Volver a construir sin exportar de nuevo",
+ "Дополнить новой выгрузкой": "Añadir otra exportación",
+ "не дособрана": "sin terminar",
+ "собрать снова": "volver a construir",
+ "Добавить к этой сборке другую выгрузку того же файла: прежние экраны возьмутся готовыми, свёрстаны будут только новые": "Añade a esta compilación otra exportación del mismo archivo: las pantallas anteriores se reutilizan y solo se maquetan las nuevas",
+ "дополнить": "añadir",
+ "{name} + новая выгрузка": "{name} + nueva exportación",
+ "У этой сборки нет сохранённого пакета (она сделана до версии 0.3.29). Добавьте её архивы вместе с новыми.": "Esta compilación no tiene un paquete guardado (se hizo antes de la versión 0.3.29). Añade sus archivos junto con los nuevos."
 }

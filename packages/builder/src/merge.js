@@ -16,12 +16,15 @@ export function mergePackages(dirs, outDir) {
     for (let i = 1; i <= e.total; i++) if (!e.got.has(i)) miss.push(i);
     if (miss.length) notes.push(`Не хватает частей выгрузки: ${miss.join(', ')} из ${e.total} — они не будут свёрстаны`);
   }
-  // порядок: по номеру части
-  const order = dirs.map((d, i) => ({ d, m: mans[i] })).sort((a, b) => (a.m.part?.index || 0) - (b.m.part?.index || 0));
+  // порядок: выгрузки — как переданы (прошлая сборка, затем новая), части одной выгрузки — по номеру
+  const groupAt = new Map();
+  dirs.forEach((d, i) => { const k = mans[i].part?.id || `#${i}`; if (!groupAt.has(k)) groupAt.set(k, i); });
+  const order = dirs.map((d, i) => ({ d, m: mans[i], g: groupAt.get(mans[i].part?.id || `#${i}`) }))
+    .sort((a, b) => a.g - b.g || (a.m.part?.index || 0) - (b.m.part?.index || 0));
 
   fs.mkdirSync(outDir, { recursive: true });
   const frames = [];
-  const seen = new Set();
+  const seen = new Map(); // id → место в списке: тот же фрейм в новой выгрузке заменяет прежний
   const fonts = new Map();
   const comps = new Map(); // описания компонентов — объединение частей
   for (const { d, m } of order) {
@@ -29,11 +32,12 @@ export function mergePackages(dirs, outDir) {
     if (cp && fs.existsSync(cp)) for (const c of JSON.parse(fs.readFileSync(cp, 'utf8'))) if (!comps.has(c.name)) comps.set(c.name, c);
     for (const sub of ['frames', 'vectors', 'images']) {
       const from = path.join(d, sub);
-      if (fs.existsSync(from)) fs.cpSync(from, path.join(outDir, sub), { recursive: true, force: false, errorOnExist: false });
+      // более поздняя выгрузка перезаписывает файлы (фрейм могли поправить в Figma)
+      if (fs.existsSync(from)) fs.cpSync(from, path.join(outDir, sub), { recursive: true, force: true });
     }
     for (const f of m.frames || []) {
-      if (seen.has(f.id)) continue; // тот же фрейм в двух выгрузках — один раз
-      seen.add(f.id);
+      if (seen.has(f.id)) { frames[seen.get(f.id)] = f; continue; } // тот же фрейм — версия из более поздней выгрузки, место — прежнее
+      seen.set(f.id, frames.length);
       frames.push(f);
     }
     const fp = path.join(d, m.fonts || 'fonts.json');
@@ -47,10 +51,13 @@ export function mergePackages(dirs, outDir) {
     }
   }
   const first = order[0];
+  // переменные, стили, токены — из самой поздней выгрузки, где они есть (общие для файла, могли измениться)
   for (const k of ['variables', 'styles', 'tokens']) {
-    const rel = first.m[k] || `${k}.json`;
-    const p = path.join(first.d, rel);
-    if (fs.existsSync(p)) fs.copyFileSync(p, path.join(outDir, path.basename(rel)));
+    for (const { d, m } of [...order].reverse()) {
+      const rel = m[k] || `${k}.json`;
+      const p = path.join(d, rel);
+      if (fs.existsSync(p)) { fs.copyFileSync(p, path.join(outDir, path.basename(rel))); break; }
+    }
   }
   // список шрифтов — только если он был хотя бы в одной части (иначе программа берёт шрифты из дерева слоёв)
   if (fonts.size) fs.writeFileSync(path.join(outDir, 'fonts.json'), JSON.stringify([...fonts.values()].sort((a, b) => b.uses - a.uses), null, 2));

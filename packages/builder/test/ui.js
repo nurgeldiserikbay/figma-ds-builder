@@ -122,6 +122,34 @@ assert.equal((await req('/out/..%2F..%2Fetc%2Fpasswd', { headers: H })).status, 
 assert.equal((await req(`/api/open?path=${encodeURIComponent('../..')}`, { method: 'POST', headers: H })).status, 400);
 assert.ok(!fs.readdirSync(path.join(home, '.uploads')).length, 'загруженный архив удалён');
 
+// сборка хранит пакет (.package): собрать снова без выгрузки, дополнить новой выгрузкой
+{
+  assert.ok(fs.existsSync(path.join(home, name, '.package', 'manifest.json')), 'пакет сохранён рядом со сборкой');
+  assert.ok(JSON.parse((await req('/api/builds', { headers: H })).text).builds.find((b) => b.name === name).pkg, 'в списке — можно дополнить');
+  for (const bad of ['..', '../x', '.uploads', 'нет-такой'])
+    assert.equal((await req(`/api/build?base=${encodeURIComponent(bad)}&opts=%7B%7D`, { method: 'POST', headers: H })).status, 400, `base «${bad}» — нельзя`);
+  const follow = async (t) => new Promise((ok, fail) => {
+    http.get(`${base}/api/jobs/${JSON.parse(t).id}/events`, { headers: H }, (res) => { let x = ''; res.setEncoding('utf8'); res.on('data', (d) => (x += d)); res.on('end', () => ok(x)); }).on('error', fail);
+  });
+  const again = await req(`/api/build?base=${encodeURIComponent(name)}&opts=%7B%7D`, { method: 'POST', headers: H });
+  assert.equal(again.status, 200, again.text);
+  const ev4 = await follow(again.text);
+  assert.match(ev4, /Без изменений \(из кэша\): 2 из 2/, 'пересборка — экраны из кэша');
+  const d4 = JSON.parse(/event: done\ndata: (.*)/.exec(ev4)[1]);
+  assert.equal(d4.code, 0);
+  assert.equal(d4.summary.frames, 2);
+  // дополнить: та же выгрузка ещё раз (тот же фрейм заменяется, не дублируется)
+  const session = 'ext' + Date.now().toString(36);
+  assert.equal((await req(`/api/upload?session=${session}&file=${encodeURIComponent('Sample — ds-package.zip')}`, { method: 'POST', headers: { ...H, 'content-type': 'application/zip' }, body: zip })).status, 200);
+  const ext = await req(`/api/build?session=${session}&base=${encodeURIComponent(name)}&opts=%7B%7D`, { method: 'POST', headers: H });
+  assert.equal(ext.status, 200, ext.text);
+  const ev5 = await follow(ext.text);
+  assert.match(ev5, /Частей пакета: 2 — собраны в один/);
+  const d5 = JSON.parse(/event: done\ndata: (.*)/.exec(ev5)[1]);
+  assert.equal(d5.code, 0, ev5.slice(-1500));
+  assert.equal(d5.summary.frames, 2, 'тот же фрейм из новой выгрузки — заменяет, а не дублирует');
+}
+
 // удаление сборки: только папка сборки внутри home
 const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'ds-ui-outside-'));
 fs.writeFileSync(path.join(outside, 'report.json'), '[]');

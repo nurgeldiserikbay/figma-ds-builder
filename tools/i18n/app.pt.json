@@ -104,5 +104,13 @@
  "вне папки сборок": "fora da pasta de compilações",
  "нет такой папки": "essa pasta não existe",
  "запрещено": "proibido",
- "не найдено": "não encontrado"
+ "не найдено": "não encontrado",
+ "Собрать снова без повторной выгрузки": "Gerar de novo sem exportar novamente",
+ "Дополнить новой выгрузкой": "Adicionar outra exportação",
+ "не дособрана": "não concluída",
+ "собрать снова": "gerar de novo",
+ "Добавить к этой сборке другую выгрузку того же файла: прежние экраны возьмутся готовыми, свёрстаны будут только новые": "Adiciona a esta compilação outra exportação do mesmo arquivo: as telas anteriores são reaproveitadas e só as novas são diagramadas",
+ "дополнить": "adicionar",
+ "{name} + новая выгрузка": "{name} + nova exportação",
+ "У этой сборки нет сохранённого пакета (она сделана до версии 0.3.29). Добавьте её архивы вместе с новыми.": "Esta compilação não tem um pacote salvo (foi feita antes da versão 0.3.29). Adicione os arquivos dela junto com os novos."
 }
