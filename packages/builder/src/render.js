@@ -36,12 +36,25 @@ export async function renderPage(browser, htmlPath, { width, height, scale = 1, 
   await page.goto(pathToFileURL(htmlPath).href, { waitUntil: 'load' });
   await page.evaluate(() => document.fonts.ready);
   const fonts = await page.evaluate(() => {
-    const fams = new Set();
+    // шрифты из npm разбиты на поднаборы символов (латиница, кириллица…): проверяем на тексте самой страницы,
+    // иначе кириллический макет «не находит» шрифт, у которого просто не загружался латинский поднабор
+    const fams = new Map();
     document.querySelectorAll('span[class^="t-"]').forEach((el) => {
-      fams.add(getComputedStyle(el).fontFamily.split(',')[0].replace(/["']/g, '').trim());
+      const cs = getComputedStyle(el);
+      const f = cs.fontFamily.split(',')[0].replace(/["']/g, '').trim();
+      const sample = (el.textContent || '').replace(/\s+/g, '').slice(0, 40);
+      if (!fams.has(f)) fams.set(f, { sample: '', font: `${cs.fontStyle} ${cs.fontWeight} 16px "${f}"` });
+      const e = fams.get(f);
+      if (e.sample.length < 40) e.sample += sample;
     });
     // check() == false значит «шрифт недоступен», браузер подставит запасной
-    return [...fams].map((f) => ({ family: f, available: document.fonts.check(`16px "${f}"`) }));
+    // шрифта нет ни в @font-face, ни в системе — check() всё равно true; тогда сравниваем ширину с запасными
+    const faces = new Set([...document.fonts].map((f) => f.family.replace(/["']/g, '')));
+    const ctx = document.createElement('canvas').getContext('2d');
+    const width = (font, text) => { ctx.font = font; return ctx.measureText(text).width; };
+    const inSystem = (f, text) => ['monospace', 'serif', 'sans-serif'].some((g) => width(`16px "${f}", ${g}`, text) !== width(`16px ${g}`, text));
+    return [...fams].map(([family, e]) => ({ family,
+      available: faces.has(family) ? document.fonts.check(e.font, e.sample || 'a') : inSystem(family, e.sample || 'abcxyz') }));
   });
   // Геометрия каждого элемента, привязанного к слою Figma
   const boxes = await page.evaluate(() =>

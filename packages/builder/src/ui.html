@@ -513,7 +513,8 @@ function follow(id) {
     const base = `/out/${encodeURIComponent(d.name)}`;
     // итог — функцией: при смене языка рисуется заново
     lastDone = () => {
-      if (d.code !== 0 || !s || s.kind === 'unfinished') {
+      // код 2 — сборка дошла до конца, но часть экранов не совпала с макетом: это результат, а не ошибка
+      if ((d.code !== 0 && d.code !== 2) || !s || s.kind === 'unfinished') {
         stages.forEach((x) => { if (x.state === 'now') x.state = 'bad'; });
         drawStages();
         $('jobSub').textContent = t('Сборка остановилась с ошибкой.');
