@@ -140,13 +140,22 @@
   .feature p { color: var(--muted); font-size: 17px; max-width: 52ch; }
 
   /* шаги с командами */
-  .downloads { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin: 0 0 40px; }
+  .downloads { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin: 0 0 40px; }
+  @media (max-width: 1100px) { .downloads { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   .dl { display: block; padding: 20px 22px; border: 1px solid var(--rule); border-radius: 10px; color: var(--ink); text-decoration: none; }
   .dl b { display: block; font-size: 20px; font-weight: 600; margin-bottom: 4px; }
   .dl span { color: var(--muted); font-size: 15px; }
   .dl:hover { border-color: var(--ink); color: var(--ink); }
   .dl.mine { border: 1.5px solid var(--select); box-shadow: 0 0 0 3px rgba(13,153,255,.12); }
   .dl.mine b::after { content: " — ваша система"; font-size: 14px; font-weight: 400; color: var(--select); }
+  /* подпись в CSS — переводчик страницы её не видит, поэтому по языку страницы */
+  html:lang(en) .dl.mine b::after { content: " — your system"; }
+  html:lang(zh) .dl.mine b::after { content: " — 你的系统"; }
+  html:lang(es) .dl.mine b::after { content: " — tu sistema"; }
+  html:lang(pt) .dl.mine b::after { content: " — seu sistema"; }
+  html:lang(de) .dl.mine b::after { content: " — dein System"; }
+  html:lang(fr) .dl.mine b::after { content: " — votre système"; }
+  html:lang(kk) .dl.mine b::after { content: " — сіздің жүйеңіз"; }
   details.dev { margin-top: 32px; }
   details.dev summary { cursor: pointer; color: var(--muted); font-size: 17px; }
   details.dev > p { color: var(--muted); font-size: 17px; margin: 12px 0; max-width: 64ch; }
@@ -413,8 +422,9 @@
       <a class="dl" role="listitem" data-os="win" href="https://github.com/nurgeldiserikbay/figma-ds-builder/releases/latest/download/DS-Builder-Setup.exe"><b>Windows</b><span>установщик .exe · Windows 10 и 11</span></a>
       <a class="dl" role="listitem" data-os="mac" href="https://github.com/nurgeldiserikbay/figma-ds-builder/releases/latest/download/DS-Builder-mac-arm64.dmg"><b>macOS</b><span>.dmg · Mac на Apple Silicon (M1 и новее)</span></a>
       <a class="dl" role="listitem" data-os="linux" href="https://github.com/nurgeldiserikbay/figma-ds-builder/releases/latest/download/DS-Builder-linux-x86_64.AppImage"><b>Linux</b><span>.AppImage · x64</span></a>
+      <a class="dl" role="listitem" data-os="plugin" href="https://github.com/nurgeldiserikbay/figma-ds-builder/releases/latest/download/DS-Builder-Figma-plugin.zip"><b>Плагин для Figma</b><span>.zip · отдельно от программы</span></a>
     </div>
-    <p class="intro" style="margin-top:-24px">Кнопки сразу скачивают последнюю версию. Плагин для Figma входит в программу.</p>
+    <p class="intro" style="margin-top:-24px">Кнопки сразу скачивают последнюю версию. Плагин для Figma входит в программу, но его можно скачать и отдельно — например, дизайнеру, который только выгружает макеты.</p>
     <div>
       <div class="step">
         <div class="n">1</div>
@@ -430,6 +440,7 @@
         <div>
           <h3>Подключите плагин в Figma</h3>
           <p>В окне DS Builder нажмите «Плагина ещё нет в Figma?» → «открыть папку с плагином». Затем в Figma Desktop выберите Plugins → Development → Import plugin from manifest и укажите <code>manifest.json</code> из этой папки. Плагин появится под названием «DS Builder».</p>
+          <p>Скачали плагин отдельно? Распакуйте zip в постоянную папку и укажите <code>manifest.json</code> из неё. Новую версию распакуйте в ту же папку — Figma подхватит её сама.</p>
           <p>Локальные плагины работают только в приложении Figma для компьютера.</p>
         </div>
       </div>

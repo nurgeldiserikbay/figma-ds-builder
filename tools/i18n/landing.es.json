@@ -70,7 +70,6 @@
  "DS Builder ставится как обычная программа, без терминала. Плагин для Figma входит в неё. Нужны Figma Desktop и Google Chrome или Microsoft Edge: в браузере программа проверяет вёрстку.": "DS Builder se instala como cualquier aplicación, sin terminal. El plugin de Figma viene incluido. Necesitas Figma Desktop y Google Chrome o Microsoft Edge: la aplicación verifica la maquetación en el navegador.",
  "<b>Windows</b><span>установщик .exe · Windows 10 и 11</span>": "<b>Windows</b><span>instalador .exe · Windows 10 y 11</span>",
  "<b>macOS</b><span>.dmg · Mac на Apple Silicon (M1 и новее)</span>": "<b>macOS</b><span>.dmg · Mac con Apple Silicon (M1 o posterior)</span>",
- "Кнопки сразу скачивают последнюю версию. Плагин для Figma входит в программу.": "Los botones descargan directamente la última versión. El plugin de Figma viene incluido en la aplicación.",
  "Скачайте и установите": "Descarga e instala",
  "Нажмите кнопку для своей системы и запустите скачанный файл. Установщики пока без цифровой подписи, поэтому система спросит подтверждение один раз.": "Pulsa el botón de tu sistema y ejecuta el archivo descargado. Los instaladores aún no tienen firma digital, así que el sistema pedirá confirmación una vez.",
  "<b>Windows:</b> «Windows защитил ваш компьютер» → «Подробнее» → «Выполнить в любом случае».<br> <b>macOS:</b> если «не удаётся проверить разработчика» — Системные настройки → Конфиденциальность и безопасность → «Всё равно открыть».": "<b>Windows:</b> «Windows protegió su PC» → «Más información» → «Ejecutar de todas formas».<br> <b>macOS:</b> si «no se puede verificar el desarrollador» — Ajustes del Sistema → Privacidad y seguridad → «Abrir igualmente».",
@@ -166,5 +165,8 @@
  "Скопировано": "Copiado",
  "Копировать": "Copiar",
  "Выделите и скопируйте": "Selecciona y copia",
- "Номер скопирован": "Número copiado"
+ "Номер скопирован": "Número copiado",
+ "<b>Плагин для Figma</b><span>.zip · отдельно от программы</span>": "<b>Plugin para Figma</b><span>.zip · aparte de la aplicación</span>",
+ "Кнопки сразу скачивают последнюю версию. Плагин для Figma входит в программу, но его можно скачать и отдельно — например, дизайнеру, который только выгружает макеты.": "Los botones descargan la última versión al instante. El plugin para Figma viene con la aplicación, pero también se puede descargar por separado, por ejemplo, para un diseñador que solo exporta diseños.",
+ "Скачали плагин отдельно? Распакуйте zip в постоянную папку и укажите <code>manifest.json</code> из неё. Новую версию распакуйте в ту же папку — Figma подхватит её сама.": "¿Descargaste el plugin por separado? Descomprime el zip en una carpeta fija y elige su <code>manifest.json</code>. Descomprime las versiones nuevas en la misma carpeta: Figma las detecta sola."
 }
