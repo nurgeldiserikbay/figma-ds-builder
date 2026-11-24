@@ -275,9 +275,9 @@ function jsx(el, c, depth, p = [], noShow = false) {
   }
   const isRoot = p.length === 0;
   if (c.mode === 'comp' && isRoot) attrs.push('style={style}');
-  if (c.mode === 'comp' && isRoot && selectProp(c.comp)) attrs.push('onClick={onClick}'); // выбор во вкладках — нажатием
   else if (pp.style) attrs.push(`style={${pp.style}}`);
   else if (el.style) attrs.push(`style={${styleObjJs(el.style)}}`);
+  if (c.mode === 'comp' && isRoot && selectProp(c.comp)) attrs.push('onClick={onClick}'); // выбор во вкладках — нажатием
   const act = linkAction(el);
   for (const [k, v] of el.attrs || []) {
     if (!keepAttr(k, v, pk, c) || va?.skip.has(k)) continue;

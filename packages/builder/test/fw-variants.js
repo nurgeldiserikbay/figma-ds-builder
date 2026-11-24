@@ -115,6 +115,8 @@ console.log('React/Vue: компонент Figma → параметры variant,
   assert.match(pageCode, /<Tab selected=\{selected1 === 0\} [^>]*onClick=\{\(\) => setSelected1\(0\)\}/, 'нажатие выбирает вкладку');
   const compCode = fs.readFileSync(path.join(dir, 'react/src/components/Tab.jsx'), 'utf8');
   assert.match(compCode, /onClick=\{onClick\}/);
+  const rootTag = compCode.match(/<div className[^>]*>/)[0];
+  assert.equal((rootTag.match(/ style=/g) || []).length, 1, 'у корня один style — положение от страницы');
   assert.match(compCode, /aria-selected=\{selected\}/);
   const flat = (h) => h.replace(/ data-(figma-id|name|component|variant)="[^"]*"/g, '').replace(/>\s+</g, '><').replace(/<!--\[-->|<!--\]-->|<!---->| style=""/g, '').trim();
   const { htmlOf } = await import('../src/generate.js');
