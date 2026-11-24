@@ -220,6 +220,32 @@ function jsx(el, c, depth, p = []) {
   return `${pad}<${el.tag} ${attrs.join(' ')}>\n${inner}\n${pad}</${el.tag}>`;
 }
 
+/** Допустимые значения свойства варианта (что встретилось в макетах). */
+const vpropValues = (p) => [...new Set((p.values || []).filter((v) => v !== undefined && v !== null && v !== ''))].sort();
+/** JSDoc-описание параметров: тип и смысл каждого — подсказки и проверка в редакторе (VS Code), TypeScript его понимает. */
+function propsJsDoc(comp, withIds) {
+  const L = [];
+  const q = (v) => `'${String(v).replace(/'/g, "\\'")}'`;
+  for (const p of comp.props) {
+    let type = 'string', what;
+    if (p.kind === 'vprop') {
+      type = p.bool ? 'boolean' : vpropValues(p).map(q).join(' | ') || 'string';
+      what = `свойство варианта Figma «${p.key}»`;
+    } else if (p.kind === 'attr') {
+      type = p.plain ? 'string' : 'boolean';
+      what = `атрибут ${p.attr}`;
+    } else if (p.kind === 'text') what = 'текст';
+    else if (p.kind === 'html') what = 'иконка (SVG из icons.js)';
+    else if (p.kind === 'src') what = 'картинка (путь)';
+    else if (p.kind === 'style') { type = "import('react').CSSProperties"; what = 'положение или размер части'; }
+    else if (p.kind === 'cls') what = p.extraOf !== undefined ? 'дополнительный класс корня' : 'класс части (оформление)';
+    L.push(` * @param {${type}} [props.${p.name}] ${what}${p.sample !== undefined && typeof p.sample !== 'object' && p.kind === 'text' ? ` — например «${String(p.sample).slice(0, 40)}»` : ''}`);
+  }
+  if (withIds) L.push(' * @param {Array<string | null>} [props.ids] слои Figma, к которым привязаны поправки в CSS');
+  L.push(" * @param {import('react').CSSProperties} [props.style] положение на странице");
+  return L;
+}
+
 function reactComponent(comp, o = {}) {
   const keepIdx = keepIdxOf(comp, o.keep, o.instanceOf);
   const c = { mode: 'comp', comp, propAt: propMap(comp), idIndex: new Map(comp.idPaths.map((p, i) => [p, i])), used: new Set(), keep: o.keep, keepIdx, icons: o.icons };
@@ -227,7 +253,11 @@ function reactComponent(comp, o = {}) {
   const withIds = keepIdx.size > 0;
   const args = [...comp.props.map((p) => p.name), ...(withIds ? ['ids'] : []), 'style'].join(', ');
   const imports = [c.usesAsset && "import { asset } from '../assets.js';", c.usesIcons && "import { icons } from '../icons.js';"].filter(Boolean);
-  return `${imports.length ? imports.join('\n') + '\n\n' : ''}/** Компонент из макета: ${comp.instances.length} использований.${withIds ? ' ids — слои Figma, к которым привязаны поправки в CSS.' : ''} */
+  return `${imports.length ? imports.join('\n') + '\n\n' : ''}/**
+ * ${comp.name} — компонент из макета: ${comp.instances.length} использований.
+ * @param {object} props
+${propsJsDoc(comp, withIds).join('\n')}
+ */
 export default function ${comp.name}({ ${args} }) {
   return (
 ${body}
@@ -333,7 +363,10 @@ function vueComponent(comp, o = {}) {
   const defs = props.map((p) => (p === 'ids' ? 'ids: Array' : p === 'style' || kinds[p] === 'style' ? `${p}: [String, Object]`
     : kinds[p] === 'attr' && pr[p].plain ? `${p}: String`
     : kinds[p] === 'attr' ? `${p}: { type: [Boolean, String], default: undefined }`
-    : kinds[p] === 'vprop' && pr[p].bool ? `${p}: { type: Boolean, default: undefined }` : `${p}: String`)).join(', ');
+    : kinds[p] === 'vprop' && pr[p].bool ? `${p}: { type: Boolean, default: undefined }`
+    // свойство варианта: только значения из макета (Vue предупредит в консоли о другом)
+    : kinds[p] === 'vprop' && vpropValues(pr[p]).length ? `${p}: { type: String, validator: (v) => ${JSON.stringify(vpropValues(pr[p])).replace(/"/g, "'")}.includes(v) }`
+    : `${p}: String`)).join(', ');
   return `<script setup>
 ${usesAsset ? "import { asset } from '../assets.js';\n" : ''}${usesIcons ? "import { icons } from '../icons.js';\n" : ''}// Компонент из макета: ${comp.instances.length} использований.${withIds ? ' ids — слои Figma, к которым привязаны поправки в CSS.' : ''}
 defineProps({ ${defs} });
@@ -362,6 +395,64 @@ ${template}
 </template>
 `;
 }
+
+// ---------------------------------------------------------------------------------------------
+// Каталог компонентов (#components): каждый компонент во всех вариантах, что есть в макетах
+// ---------------------------------------------------------------------------------------------
+
+const CATALOG_MAX = 24; // примеров одного компонента
+const CATALOG_SKIP = new Set(['style', 'ids']);
+/** Подпись примера: значения вариантов и атрибутов (variant=secondary, disabled). */
+function catalogCaption(comp, values) {
+  return comp.props.filter((p) => p.kind === 'vprop' || (p.kind === 'attr' && !p.plain))
+    .map((p) => [p.name, values[p.name]]).filter(([, v]) => v !== undefined && v !== false)
+    .map(([k, v]) => (v === true ? k : `${k}=${v}`)).join(', ');
+}
+
+/** Страница-каталог в виде дерева элементов: копии из макетов (те же объекты — рисуются как компоненты). */
+export function catalogTree(comps) {
+  const byComp = new Map();
+  for (const [el, inst] of comps.instanceOf) {
+    if (!byComp.has(inst.comp)) byComp.set(inst.comp, new Map());
+    // пример на сочетание вариантов (variant, state, disabled…); без вариантов — по значениям параметров
+    // (положение на странице не в счёт)
+    const vkeys = inst.comp.props.filter((p) => p.kind === 'vprop' || (p.kind === 'attr' && !p.plain)).map((p) => p.name);
+    const key = JSON.stringify(vkeys.length ? vkeys.map((k) => inst.values[k])
+      : Object.entries(inst.values).filter(([k]) => !CATALOG_SKIP.has(k) && !inst.comp.props.find((p) => p.name === k && p.kind === 'style')));
+    if (!byComp.get(inst.comp).has(key)) byComp.get(inst.comp).set(key, { el, inst });
+  }
+  const T = (tag, cls, text) => ({ tag, cls, attrs: [], children: [{ text, cls: `${cls}-t` }] });
+  const sections = [];
+  for (const comp of comps.components) {
+    const hasVariants = comp.props.some((p) => p.kind === 'vprop');
+    const ex = [...(byComp.get(comp)?.values() || [])].slice(0, hasVariants ? CATALOG_MAX : 6);
+    if (!ex.length) continue;
+    const params = comp.props.filter((p) => !CATALOG_SKIP.has(p.kind) && p.kind !== 'style').map((p) => p.name);
+    sections.push({ tag: 'section', cls: 'catalog__item', attrs: [['id', `c-${comp.name}`]], children: [
+      T('h2', 'catalog__name', comp.name),
+      T('p', 'catalog__meta', `Копий в макетах: ${comp.instances.length}. Параметры: ${params.join(', ') || 'нет'}.`),
+      { tag: 'div', cls: 'catalog__grid', attrs: [], children: ex.map(({ el, inst }) => ({ tag: 'figure', cls: 'catalog__cell', attrs: [], children: [
+        { tag: 'div', cls: 'catalog__stage', attrs: [], children: [el] },
+        ...(hasVariants ? [T('figcaption', 'catalog__cap', catalogCaption(comp, inst.values))] : []),
+      ] })) },
+    ] });
+  }
+  return { tag: 'main', cls: 'catalog', attrs: [], children: [T('h1', 'catalog__title', 'Компоненты'), ...sections] };
+}
+
+/** Стили каталога: копия в ячейке — в потоке, без положения со страницы макета. */
+export const CATALOG_CSS = `
+.catalog { padding: 40px; background: #fff; color: #1d1d1f; font: 15px/1.5 system-ui, sans-serif; }
+.catalog__title { font-size: 32px; font-weight: 600; margin: 0 0 24px; }
+.catalog__item { padding: 32px 0; border-top: 1px solid #e5e5ea; }
+.catalog__name { font-size: 22px; font-weight: 600; margin: 0; }
+.catalog__meta { color: #6e6e73; margin: 4px 0 20px; }
+.catalog__grid { display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start; }
+.catalog__cell { margin: 0; display: flex; flex-direction: column; gap: 8px; max-width: 100%; }
+.catalog__stage { padding: 16px; border: 1px dashed #d2d2d7; border-radius: 8px; max-width: 100%; overflow: auto; }
+.catalog__stage > * { position: static !important; left: auto !important; top: auto !important; right: auto !important; bottom: auto !important; margin: 0 !important; transform: none !important; }
+.catalog__cap { color: #6e6e73; font-size: 13px; }
+`;
 
 // ---------------------------------------------------------------------------------------------
 // Проекты
@@ -497,7 +588,9 @@ export function exportReact(siteDir, pages, comps, groups = [], meta = {}) {
   const root = path.join(siteDir, 'react');
   fs.rmSync(root, { recursive: true, force: true });
   const resp = respInfo(groups);
-  const routesList = [...resp, ...pages];
+  // каталог компонентов — маршрут #components (как Storybook, без установки)
+  const catalog = comps.components.length > 0;
+  const routesList = [...resp, ...pages, ...(catalog ? [{ component: 'ComponentCatalog', route: 'components', title: 'Компоненты' }] : [])];
   const o = shipOptions(siteDir, pages, comps, root, resp);
   const files = {
     'package.json': JSON.stringify({ name: 'figma-ds-site-react', private: true, type: 'module',
@@ -531,13 +624,14 @@ export default function App() {
   return <Page />;
 }
 `,
-    'src/styles/site.css': o.css,
+    'src/styles/site.css': o.css + (catalog ? `\n/* каталог компонентов (#components) */${CATALOG_CSS}` : ''),
     'src/styles/fonts.css': o.fonts,
-    'README.md': `# Вёрстка из Figma — React\n\nСгенерировано DS Builder. Компонентов: ${comps.components.length}, страниц: ${pages.length}.\n\n\`\`\`bash\nnpm install\nnpm run dev\n\`\`\`\n\nСтраницы: ${routesList.map((p) => `#${p.route}`).join(', ')}.\nКарта проекта для ИИ-агента — AGENTS.md.\n`,
+    'README.md': `# Вёрстка из Figma — React\n\nСгенерировано DS Builder. Компонентов: ${comps.components.length}, страниц: ${pages.length}.\n\n\`\`\`bash\nnpm install\nnpm run dev\n\`\`\`\n\nСтраницы: ${routesList.map((p) => `#${p.route}`).join(', ')}.${catalog ? '\nКаталог компонентов (все варианты из макетов) — #components.' : ''}\nКарта проекта для ИИ-агента — AGENTS.md.\n`,
   };
   for (const r of resp) files[`src/pages/${r.component}.jsx`] = reactResponsive(r);
   for (const c of comps.components) files[`src/components/${c.name}.jsx`] = reactComponent(c, o);
   for (const p of pages) files[`src/pages/${p.component}.jsx`] = reactPage(p, comps, o);
+  if (catalog) files['src/pages/ComponentCatalog.jsx'] = reactPage({ component: 'ComponentCatalog', root: catalogTree(comps) }, comps, o);
   if (o.icons.size) files['src/icons.js'] = o.icons.module();
   files['AGENTS.md'] = agentsMd('react', { pages, comps, resp, routesList, css: o.css, icons: o.icons.size, meta });
   writeFiles(root, files);
@@ -549,7 +643,9 @@ export function exportVue(siteDir, pages, comps, groups = [], meta = {}) {
   const root = path.join(siteDir, 'vue');
   fs.rmSync(root, { recursive: true, force: true });
   const resp = respInfo(groups);
-  const routesList = [...resp, ...pages];
+  // каталог компонентов — маршрут #components (как Storybook, без установки)
+  const catalog = comps.components.length > 0;
+  const routesList = [...resp, ...pages, ...(catalog ? [{ component: 'ComponentCatalog', route: 'components', title: 'Компоненты' }] : [])];
   const o = shipOptions(siteDir, pages, comps, root, resp);
   const files = {
     'package.json': JSON.stringify({ name: 'figma-ds-site-vue', private: true, type: 'module',
@@ -583,13 +679,14 @@ const Page = computed(() => routes[route.value] || routes[first]);
   <component :is="Page" />
 </template>
 `,
-    'src/styles/site.css': o.css,
+    'src/styles/site.css': o.css + (catalog ? `\n/* каталог компонентов (#components) */${CATALOG_CSS}` : ''),
     'src/styles/fonts.css': o.fonts,
-    'README.md': `# Вёрстка из Figma — Vue\n\nСгенерировано DS Builder. Компонентов: ${comps.components.length}, страниц: ${pages.length}.\n\n\`\`\`bash\nnpm install\nnpm run dev\n\`\`\`\n\nСтраницы: ${routesList.map((p) => `#${p.route}`).join(', ')}.\nКарта проекта для ИИ-агента — AGENTS.md.\n`,
+    'README.md': `# Вёрстка из Figma — Vue\n\nСгенерировано DS Builder. Компонентов: ${comps.components.length}, страниц: ${pages.length}.\n\n\`\`\`bash\nnpm install\nnpm run dev\n\`\`\`\n\nСтраницы: ${routesList.map((p) => `#${p.route}`).join(', ')}.${catalog ? '\nКаталог компонентов (все варианты из макетов) — #components.' : ''}\nКарта проекта для ИИ-агента — AGENTS.md.\n`,
   };
   for (const r of resp) files[`src/pages/${r.component}.vue`] = vueResponsive(r);
   for (const c of comps.components) files[`src/components/${c.name}.vue`] = vueComponent(c, o);
   for (const p of pages) files[`src/pages/${p.component}.vue`] = vuePage(p, comps, o);
+  if (catalog) files['src/pages/ComponentCatalog.vue'] = vuePage({ component: 'ComponentCatalog', root: catalogTree(comps) }, comps, o);
   if (o.icons.size) files['src/icons.js'] = o.icons.module();
   files['AGENTS.md'] = agentsMd('vue', { pages, comps, resp, routesList, css: o.css, icons: o.icons.size, meta });
   writeFiles(root, files);
@@ -714,6 +811,8 @@ export function agentsMd(kind, { pages, comps, resp = [], routesList, css, icons
   if (comps?.components?.length && kind !== 'html') {
     L.push('');
     L.push('## Компоненты');
+    L.push('', 'Все компоненты во всех вариантах из макетов — страница-каталог `#components` (src/pages/ComponentCatalog). ' +
+      'Типы параметров — в JSDoc над компонентом (React) или в defineProps (Vue): значения вариантов там перечислены.', '');
     L.push('');
     L.push('Повторяющиеся блоки макета. Параметры: text — текст, src — картинка, html — иконка из icons.js, cls — вариант оформления, style — положение,');
     L.push('vprop — свойство варианта компонента Figma (значения — в скобках; `variant="secondary"` даёт класс `button--secondary`), attr — атрибут (disabled, aria-selected, placeholder…).');

@@ -86,9 +86,12 @@ export const camel = (s) => {
 const at = (el, path) => (path === '' ? el : path.split('.').reduce((e, i) => e.children[+i], el));
 
 /** Все места шаблона: путь, подсказка для имени (имя ближайшего слоя), элемент. */
-function slots(el, p = [], hint = 'root', out = []) {
-  out.push({ path: p.join('.'), el, hint: p.length === 0 ? 'root' : el.id ? el.name : hint });
-  (el.children || []).forEach((c, i) => slots(c, [...p, i], el.id ? (p.length === 0 ? 'root' : el.name) : hint, out));
+function slots(el, p = [], hint = 'root', out = [], prop = null) {
+  // слой связан со свойством компонента Figma (текст «Label», замена «Icon») — параметр получает его имя
+  const own = el.figmaProps?.characters || el.figmaProps?.mainComponent || null;
+  const pr = p.length === 0 ? null : own || (el.id ? null : prop);
+  out.push({ path: p.join('.'), el, hint: p.length === 0 ? 'root' : el.id ? el.name : hint, prop: pr });
+  (el.children || []).forEach((c, i) => slots(c, [...p, i], el.id ? (p.length === 0 ? 'root' : el.name) : hint, out, p.length === 0 ? null : own || pr));
   return out;
 }
 
@@ -137,11 +140,11 @@ function diffProps(instances, maxShare) {
     const vals = (kind) => instances.map((i) => valueAt(i, s.path, kind));
     const differs = (kind) => { const v = vals(kind); return v.some((x) => x !== v[0]); };
     if (s.el.text !== undefined) {
-      if (differs('text')) add('text', s.path, s.hint);
+      if (differs('text')) add('text', s.path, s.hint, {}, s.prop ? camel(s.prop) : null);
       if (differs('cls')) add('cls', s.path, s.hint + '-text'); // цвет/начертание текста — в классе фрагмента
       continue;
     }
-    if (s.el.html !== undefined) { if (differs('html')) add('html', s.path, s.hint); if (differs('style')) { add('style', s.path, s.hint); styleDiffs++; } continue; }
+    if (s.el.html !== undefined) { if (differs('html')) add('html', s.path, s.hint, {}, s.prop ? camel(s.prop) : null); if (differs('style')) { add('style', s.path, s.hint); styleDiffs++; } continue; }
     if (s.el.tag === 'img') { if (differs('src')) add('src', s.path, s.hint); if (differs('style')) { add('style', s.path, s.hint); styleDiffs++; } continue; }
     if (differs('cls') && !(s.path === '' && vs)) add('cls', s.path, s.hint);
     if (s.path !== '' && differs('style')) { add('style', s.path, s.hint); styleDiffs++; }

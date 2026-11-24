@@ -464,6 +464,7 @@ function buildEl(box, place, ctx, inPhrasing = false, grow = false) {
   return {
     tag, cls, style: placementStyle(place), attrs, children: kids, inlineChildren: inlineKids, void: voidEl || undefined,
     id: node?.id, name: sem?.name || (node ? node.name : 'group'), kind: box.kind, component: node?.component || null,
+    figmaProps: (box.kind === 'node' && node?.propRefs) || null,
   };
 }
 

@@ -116,6 +116,10 @@ ID узлов Figma содержат `:` и `;` — в именах файлов
   //   { "type": "close" }                — Close overlay
   // программа делает из слоя ссылку <a href>; наведение и Change to не берутся
   "link": { "type": "frame", "id": "4:3" },
+  // свойства компонента у копии (кроме вариантов): { "Label": { "type": "TEXT", "value": "Купить" }, "Show icon": { "type": "BOOLEAN", "value": true }, "Icon": { "type": "INSTANCE_SWAP" } }
+  //   — в "component": { "name", "variant", "props" }
+  // слой связан со свойством компонента: что задаёт свойство (текст, показ, замену)
+  "propRefs": { "characters": "Label", "visible": "Show icon", "mainComponent": "Icon" },
   // аннотации Dev Mode на слое: текст и отмеченные свойства (если есть)
   "notes": [{ "text": "Поле обязательное" }, { "text": "", "properties": ["width"] }],
   // как узел ведёт себя внутри Auto Layout родителя

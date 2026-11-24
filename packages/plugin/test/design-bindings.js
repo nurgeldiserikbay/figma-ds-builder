@@ -83,7 +83,9 @@ const text = base('Text', 'TEXT', 360, {
 });
 const btnSet = { type: 'COMPONENT_SET', name: 'Button', description: '  Главное действие на экране. Одна на экран.  ' };
 const btnMain = { type: 'COMPONENT', name: 'Variant=Primary', parent: btnSet };
-const renamed = base('Button Override', 'INSTANCE', 400, { variantProperties: { Variant: 'Primary' }, children: [], getMainComponentAsync: async () => btnMain });
+const renamed = base('Button Override', 'INSTANCE', 400, { variantProperties: { Variant: 'Primary' }, children: [], getMainComponentAsync: async () => btnMain,
+  componentProperties: { Variant: { type: 'VARIANT', value: 'Primary' }, 'Label#12:0': { type: 'TEXT', value: 'Купить' }, 'Show icon#12:1': { type: 'BOOLEAN', value: true }, 'Icon#12:2': { type: 'INSTANCE_SWAP', value: '5:5' } },
+  componentPropertyReferences: { visible: 'Show button#3:1' } });
 // векторы: две одинаковые иконки и одна другая — из Figma экспортируются два раза, файлов три
 let svgExports = 0;
 const vec = (name, d) => base(name, 'VECTOR', 10, { width: 24, height: 24, relativeTransform: [[1, 0, 10], [0, 1, 0]], fillGeometry: [{ data: d, windingRule: 'NONZERO' }], strokeGeometry: [],
@@ -99,7 +101,7 @@ const tree = file('tree');
 const [c, o, g, t, r, mo, cl] = tree.children;
 assert.equal(svgExports, 2, 'одинаковые векторы — один экспорт');
 assert.equal(pkg.files.filter((f) => f.path.startsWith('vectors/')).length, 3, 'файл у каждого вектора');
-assert.deepEqual(r.component, { name: 'Button', variant: { Variant: 'Primary' } }, 'переименованная копия — имя набора компонента');
+assert.deepEqual({ ...r.component, props: undefined }, { name: 'Button', variant: { Variant: 'Primary' }, props: undefined }, 'переименованная копия — имя набора компонента');
 assert.deepEqual(tree.modes, { Color: 'Dark' }, 'режим на фрейме');
 assert.equal(c.fills[0].variable, 'bg/brand', 'библиотечная переменная на заливке — по имени');
 assert.equal(c.strokeStyle, 'Brand/Line', 'библиотечный цветовой стиль на обводке');
@@ -117,6 +119,8 @@ assert.deepEqual(o.link, { type: 'url', url: 'https://example.com', newTab: true
 assert.equal(g.link, undefined);
 assert.deepEqual(mo.link, { type: 'overlay', id: '8:1' }, 'Open overlay');
 assert.deepEqual(cl.link, { type: 'close' }, 'Close overlay');
+assert.deepEqual(r.component.props, { Label: { type: 'TEXT', value: 'Купить' }, 'Show icon': { type: 'BOOLEAN', value: true }, Icon: { type: 'INSTANCE_SWAP' } }, 'свойства компонента без вариантов и #id');
+assert.deepEqual(r.propRefs, { visible: 'Show button' }, 'слой связан со свойством');
 assert.deepEqual(cl.notes, [{ text: 'Закрывает окно без сохранения' }, { text: '', properties: ['width'] }], 'аннотации Dev Mode');
 assert.deepEqual(file('components.json'), [{ name: 'Button', description: 'Главное действие на экране. Одна на экран.' }], 'описание компонента');
 assert.equal(pkg.manifest.components, 'components.json');

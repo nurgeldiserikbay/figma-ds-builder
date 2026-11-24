@@ -338,6 +338,24 @@ function serializeSafe(node, ox, oy, ctx) {
   }
 }
 
+/** Имя свойства компонента без служебного «#id»: «Label#12:0» → «Label». */
+function propName(n) { return String(n).replace(/#[^#]*$/, ''); }
+
+/** Свойства копии компонента (кроме вариантов — они в variant): текст, да/нет, замена. */
+function instanceProps(node) {
+  var cp;
+  try { cp = node.componentProperties; } catch (e) { return undefined; }
+  if (!cp) return undefined;
+  var out = {}, any = false;
+  Object.keys(cp).forEach(function (k) {
+    var p = cp[k];
+    if (!p || p.type === 'VARIANT') return;
+    out[propName(k)] = { type: p.type, value: p.type === 'INSTANCE_SWAP' ? undefined : p.value };
+    any = true;
+  });
+  return any ? out : undefined;
+}
+
 /** Аннотации Dev Mode: текст (label) и отмеченные свойства. */
 function annotationsOf(node) {
   var list;
@@ -422,6 +440,14 @@ function serialize(node, ox, oy, ctx) {
   if (modes) o.modes = modes;
   var link = protoLink(node);
   if (link) o.link = link;
+  // слой связан со свойством компонента Figma: текст (characters), показ (visible), замена (mainComponent)
+  var refs;
+  try { refs = node.componentPropertyReferences; } catch (e) { refs = null; }
+  if (refs) {
+    var pr = {};
+    Object.keys(refs).forEach(function (k) { if (refs[k]) pr[k] = propName(refs[k]); });
+    if (Object.keys(pr).length) o.propRefs = pr;
+  }
   // аннотации Dev Mode: «поле обязательное», «сортируется по клику» — для ИИ-агента
   var notes = annotationsOf(node);
   if (notes) o.notes = notes;
@@ -439,7 +465,7 @@ function serialize(node, ox, oy, ctx) {
     ctx.pending['main|' + node.id] = true;
     ctx.names.mainFallback[node.id] = node.name;
     ctx.names.nodes[node.id] = node; // для поиска главного компонента без getNodeByIdAsync
-    o.component = { name: '\u0000main|' + node.id, variant: variant };
+    o.component = { name: '\u0000main|' + node.id, variant: variant, props: instanceProps(node) };
     ctx.instances.push(node);
   }
 
