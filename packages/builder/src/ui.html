@@ -156,6 +156,12 @@
   .aiprov h3 { margin: 0 0 2px; font-size: 15px; display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
   .aiprov h3 small { font-weight: 400; color: var(--muted); font-size: 13px; }
   .aiprov p { margin: 2px 0 8px; color: var(--muted); font-size: 13px; }
+  .aiprov .howto { margin: 4px 0 10px; padding-left: 20px; font-size: 13px; color: var(--ink); }
+  .aiprov .howto li { margin: 2px 0; }
+  .aiprov .row + .row { margin-top: 8px; }
+  .aiprov details.more { margin: 6px 0; font-size: 13px; }
+  .aiprov details.more summary { cursor: pointer; color: var(--muted); }
+  .aiprov select { font: inherit; }
   .aiprov .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: end; }
   .aiprov label { font-size: 13px; color: var(--muted); display: flex; flex-direction: column; gap: 4px; flex: 1 1 180px; }
   .aiprov input[type=text], .aiprov input[type=password] { min-height: 34px; padding: 0 10px; border: 1px solid var(--rule); border-radius: 6px; font-size: 14px; color: var(--ink); }
@@ -187,10 +193,27 @@
       <div class="aiprov">
         <h3>Ollama <small>на вашем компьютере, бесплатно, макеты никуда не уходят</small></h3>
         <p class="st" id="ollamaSt">проверяю…</p>
+        <ol class="howto" id="ollamaSteps" hidden>
+          <li>Скачайте Ollama и установите, как обычную программу.</li>
+          <li>Вернитесь сюда и нажмите «Проверить снова» — программа сама запустит Ollama.</li>
+          <li>Нажмите «Скачать модель» — один раз, несколько гигабайт.</li>
+        </ol>
         <div class="row">
-          <label>Модель<input type="text" name="ollama.model" autocomplete="off"></label>
+          <a class="btn primary" id="ollamaGet" href="https://ollama.com/download" target="_blank" rel="noopener" hidden>Скачать Ollama</a>
+          <button type="button" class="btn primary" id="ollamaRun" hidden>Запустить Ollama</button>
+          <button type="button" class="btn" id="ollamaAgain">Проверить снова</button>
+        </div>
+        <div class="row">
+          <label>Модель<input type="text" name="ollama.model" list="ollamaModels" autocomplete="off"></label>
           <button type="button" class="btn" id="ollamaPull">Скачать модель</button>
         </div>
+        <datalist id="ollamaModels"></datalist>
+        <p>Хватает 8 ГБ памяти — qwen2.5-coder:7b. Слабый компьютер — qwen2.5:3b.</p>
+        <details class="more">
+          <summary>Ollama на другом компьютере</summary>
+          <div class="row"><label>Адрес<input type="text" name="ollama.url" placeholder="http://localhost:11434" autocomplete="off"></label></div>
+          <p>На том компьютере запустите Ollama с OLLAMA_HOST=0.0.0.0 и укажите здесь его адрес.</p>
+        </details>
         <label class="opt"><input type="checkbox" name="ollama.enabled"><span>Использовать Ollama</span></label>
       </div>
       <div class="aiprov">
@@ -209,13 +232,32 @@
         <div class="row"><label>Ключ<input type="password" name="openrouter.key" autocomplete="off"></label></div>
       </div>
       <div class="aiprov">
-        <h3>Свой ИИ <small>LM Studio, сервер компании, платный API — любой, совместимый с OpenAI</small></h3>
-        <p>Используется первым, если указан адрес.</p>
+        <h3>Свой ИИ <small>любой сервис по своему ключу: OpenAI, Claude, DeepSeek, LM Studio, сервер компании…</small></h3>
+        <p>Используется первым, если указан адрес. Платные сервисы списывают деньги по своему тарифу — на один макет уходят доли цента.</p>
+        <div class="row">
+          <label>Сервис<select name="custom.preset" id="aiPreset">
+            <option value="">Другой (совместимый с OpenAI)</option>
+            <option value="openai">OpenAI</option>
+            <option value="anthropic">Anthropic Claude</option>
+            <option value="deepseek">DeepSeek</option>
+            <option value="mistral">Mistral</option>
+            <option value="xai">xAI Grok</option>
+            <option value="together">Together AI</option>
+            <option value="lmstudio">LM Studio на этом компьютере</option>
+            <option value="jan">Jan на этом компьютере</option>
+          </select></label>
+          <span id="aiPresetKey"></span>
+        </div>
         <div class="row">
           <label>Адрес<input type="text" name="custom.url" placeholder="http://localhost:1234/v1" autocomplete="off"></label>
-          <label>Модель<input type="text" name="custom.model" autocomplete="off"></label>
           <label>Ключ, если нужен<input type="password" name="custom.key" autocomplete="off"></label>
         </div>
+        <div class="row">
+          <label>Модель<input type="text" name="custom.model" list="customModels" autocomplete="off"></label>
+          <button type="button" class="btn" id="customList">Загрузить список моделей</button>
+        </div>
+        <datalist id="customModels"></datalist>
+        <p class="st" id="customSt"></p>
       </div>
       <p>Ключи хранятся только на этом компьютере. Облачным ИИ уходят имена слоёв и короткие фрагменты текста макета, бесплатные планы могут их сохранять.</p>
       <ul class="aires" id="aiRes" aria-live="polite"></ul>
@@ -557,7 +599,7 @@ if ('__PLUGIN__' === '1') {
 }
 // окно «ИИ»: настройки, проверка, скачивание модели Ollama
 // ответы проверки (ai.js) — здесь, чтобы попали в переводы
-const AI_ERRORS = () => [t('не запущен (нет ответа по адресу)'), t('ключ не подходит'), t('лимит на сегодня исчерпан'), t('нет такой модели или адреса'), t('нет связи с сервером'), t('Ollama не запущена')];
+const AI_ERRORS = () => [t('не запущен (нет ответа по адресу)'), t('ключ не подходит'), t('лимит на сегодня исчерпан'), t('нет такой модели или адреса'), t('нет связи с сервером'), t('Ollama не запущена'), t('Ollama не установлена'), t('Ollama не ответила — запустите её вручную'), t('укажите адрес')];
 const aiForm = $('aiForm');
 const aiField = (n) => aiForm.elements[n];
 async function aiLoad() {
@@ -568,12 +610,65 @@ async function aiLoad() {
     if (!el) continue;
     if (el.type === 'checkbox') el.checked = !!val; else el.value = val;
   }
+  aiPresetHint();
   const st = $('ollamaSt');
   const model = aiField('ollama.model').value;
-  if (!r.ollama.running) { st.className = 'st bad'; st.innerHTML = `${t('Ollama не найдена.')} <a href="https://ollama.com/download" target="_blank" rel="noopener">${t('Скачать Ollama')}</a> ${t('— установите и запустите, затем откройте это окно снова.')}`; }
-  else if (!r.ollama.models.some((m) => m === model || m === `${model}:latest`)) { st.className = 'st'; st.textContent = tf('Ollama работает. Модели {model} ещё нет — нажмите «Скачать модель» (несколько гигабайт).', { model }); }
+  const o = r.ollama;
+  $('ollamaGet').hidden = o.running || o.installed;
+  $('ollamaRun').hidden = o.running || !o.installed;
+  $('ollamaSteps').hidden = o.running || o.installed;
+  $('ollamaPull').disabled = !o.running;
+  $('ollamaGet').href = OLLAMA_DL[r.platform] || 'https://ollama.com/download';
+  $('ollamaModels').innerHTML = [...new Set([...(o.models || []), 'qwen2.5-coder:7b', 'qwen2.5:3b', 'llama3.2:3b'])].map((m) => `<option value="${esc(m)}">`).join('');
+  if (!o.running && !o.installed) { st.className = 'st bad'; st.textContent = t('Ollama не установлена. Это бесплатная программа: ИИ работает прямо на вашем компьютере.'); }
+  else if (!o.running) { st.className = 'st'; st.textContent = t('Ollama установлена, но не запущена — нажмите «Запустить Ollama».'); }
+  else if (!o.models.some((m) => m === model || m === `${model}:latest`)) { st.className = 'st'; st.textContent = tf('Ollama работает. Модели {model} ещё нет — нажмите «Скачать модель» (несколько гигабайт).', { model }); }
   else { st.className = 'st ok'; st.textContent = tf('Ollama работает, модель {model} готова.', { model }); }
 }
+const OLLAMA_DL = { darwin: 'https://ollama.com/download/mac', win32: 'https://ollama.com/download/windows', linux: 'https://ollama.com/download/linux' };
+// готовые сервисы: адрес и где взять ключ; модель — из списка, который отдаёт сам сервис
+const AI_PRESETS = {
+  openai: { url: 'https://api.openai.com/v1', keys: 'https://platform.openai.com/api-keys' },
+  anthropic: { url: 'https://api.anthropic.com/v1', keys: 'https://console.anthropic.com/settings/keys' },
+  deepseek: { url: 'https://api.deepseek.com/v1', keys: 'https://platform.deepseek.com/api_keys' },
+  mistral: { url: 'https://api.mistral.ai/v1', keys: 'https://console.mistral.ai/api-keys' },
+  xai: { url: 'https://api.x.ai/v1', keys: 'https://console.x.ai' },
+  together: { url: 'https://api.together.xyz/v1', keys: 'https://api.together.ai/settings/api-keys' },
+  lmstudio: { url: 'http://localhost:1234/v1', local: 1 },
+  jan: { url: 'http://localhost:1337/v1', local: 1 },
+};
+function aiPresetHint() {
+  const p = AI_PRESETS[$('aiPreset').value];
+  $('aiPresetKey').innerHTML = !p ? '' : p.local ? esc(t('Запустите в нём локальный сервер — ключ не нужен.'))
+    : `<a href="${p.keys}" target="_blank" rel="noopener">${esc(t('Где взять ключ'))}</a>`;
+}
+$('aiPreset').addEventListener('change', () => {
+  const p = AI_PRESETS[$('aiPreset').value];
+  if (p) { aiField('custom.url').value = p.url; aiField('custom.model').value = ''; $('customModels').innerHTML = ''; }
+  aiPresetHint();
+});
+async function aiModels(which, listId, stId) {
+  await aiSave();
+  const st = $(stId);
+  st.className = 'st'; st.textContent = t('Загружаю список…');
+  const r = await fetch(`/api/ai/models?for=${which}`, { method: 'POST' }).then((x) => x.json()).catch(() => ({ error: 'нет связи с сервером' }));
+  if (r.error) { st.className = 'st bad'; st.textContent = t(r.error); return; }
+  $(listId).innerHTML = r.models.map((m) => `<option value="${esc(m)}">`).join('');
+  st.className = 'st ok'; st.textContent = tf('Моделей: {n}. Выберите в поле «Модель».', { n: r.models.length });
+  const f = aiField(`${which}.model`);
+  if (!f.value && r.models.length) f.value = r.models[0];
+}
+$('customList').addEventListener('click', () => aiModels('custom', 'customModels', 'customSt'));
+$('ollamaAgain').addEventListener('click', async () => { await aiSave(); $('ollamaSt').className = 'st'; $('ollamaSt').textContent = t('проверяю…'); aiLoad(); });
+$('ollamaRun').addEventListener('click', async () => {
+  await aiSave();
+  const btn = $('ollamaRun'), st = $('ollamaSt');
+  btn.disabled = true; st.className = 'st'; st.textContent = t('Запускаю Ollama…');
+  const r = await fetch('/api/ai/ollama/start', { method: 'POST' }).then((x) => x.json()).catch(() => ({ ok: false, error: 'нет связи с сервером' }));
+  btn.disabled = false;
+  if (!r.ok) { st.className = 'st bad'; st.textContent = t(r.error || ''); return; }
+  aiLoad();
+});
 function aiCollect() {
   const o = {};
   for (const el of aiForm.elements) {

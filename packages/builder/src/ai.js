@@ -144,10 +144,72 @@ export async function suggestNames(tree, sem, { providers, cfg, cacheDir, batch 
 }
 
 // ---------------------------------------------------------------------------------------------
+// Имена экранов: «Desktop - 3» → «Тарифы» (/pricing). Только для безликих имён; на вид не влияет.
+// ---------------------------------------------------------------------------------------------
+
+const SCREEN_SYSTEM = `Ты помогаешь фронтенд-разработчику разобрать макет сайта или приложения. Для каждого экрана дай
+короткое понятное название на языке текстов экрана — как назвал бы его дизайнер (1–4 слова: «Тарифы», «Вход»,
+«Оформление заказа — шаг 2», «Список сотрудников — пусто») — и адрес страницы латиницей в kebab-case (pricing, login,
+checkout-step-2, employees-empty). Опирайся на тексты экрана (сверху вниз), страницу Figma и ширину.
+Ответ — только JSON: {"screens": {"<id>": {"title": "...", "route": "..."}}}.`;
+
+/** Тексты экрана сверху вниз (для ИИ): короткие, без повторов. */
+export function screenTexts(tree, max = 15) {
+  const out = [];
+  (function walk(n) {
+    if (!n || n.visible === false) return;
+    if (n.type === 'TEXT') { const t = String(n.text?.characters || '').replace(/\s+/g, ' ').trim(); if (t) out.push({ t: t.slice(0, 80), y: n.y, x: n.x }); }
+    (n.children || []).forEach(walk);
+  })(tree);
+  out.sort((a, b) => a.y - b.y || a.x - b.x);
+  return [...new Set(out.map((o) => o.t))].slice(0, max);
+}
+
+/** Ответ ИИ по цепочке провайдеров с кэшем на диске; null — никто не ответил. */
+async function askChain(chain, system, payload, { cacheDir, log, what }) {
+  const keyOf = (p) => cacheDir && path.join(cacheDir, 'ai', `${crypto.createHash('sha256').update(p.model + '\n' + system + '\n' + payload).digest('hex').slice(0, 32)}.json`);
+  for (const p of chain) { const f = keyOf(p); if (f && fs.existsSync(f)) return { parsed: JSON.parse(fs.readFileSync(f, 'utf8')), by: p.name }; }
+  const errors = [];
+  for (const p of chain) {
+    try {
+      log(`  ИИ (${p.name}, ${p.model}): ${what}…${p.free ? ' [бесплатный облачный план]' : p.paid ? ' [ПЛАТНЫЙ]' : ''}`);
+      const content = await chat(p, [{ role: 'system', content: system }, { role: 'user', content: payload }]);
+      const parsed = JSON.parse(content.replace(/^[\s\S]*?(\{[\s\S]*\})[\s\S]*$/, '$1'));
+      const f = keyOf(p);
+      if (f) { fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, JSON.stringify(parsed)); }
+      return { parsed, by: p.name };
+    } catch (e) { errors.push(e.message.slice(0, 160)); }
+  }
+  return { parsed: null, errors };
+}
+
+/**
+ * @param items [{ id, page, width, texts }] — экраны с безликими именами
+ * @returns Map id → { title, route }; названия проверяются (длина, не безликое), адреса — латиница kebab-case
+ */
+export async function suggestScreenNames(items, { providers = aiProviders(), cacheDir, log = () => {}, isGeneric = () => false, batch = 15 } = {}) {
+  const out = new Map();
+  const errors = [];
+  for (let i = 0; i < items.length; i += batch) {
+    const chunk = items.slice(i, i + batch);
+    const r = await askChain(providers, SCREEN_SYSTEM, JSON.stringify(chunk), { cacheDir, log, what: `названия ${chunk.length} экранов` });
+    if (!r.parsed) { errors.push(...(r.errors || [])); break; }
+    for (const [id, v] of Object.entries(r.parsed.screens || {})) {
+      if (!chunk.some((c) => c.id === id) || !v) continue;
+      const title = String(v.title || '').replace(/\s+/g, ' ').trim();
+      const route = String(v.route || '').toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40);
+      if (title.length < 2 || title.length > 48 || isGeneric(title) || /[<>{}]/.test(title)) continue;
+      out.set(id, { title, route: /^[a-z0-9]+(-[a-z0-9]+)*$/.test(route) ? route : '' });
+    }
+  }
+  return { names: out, error: out.size ? undefined : errors.join('; ') || undefined };
+}
+
+// ---------------------------------------------------------------------------------------------
 // Настройки ИИ из окна программы: ключи и модели хранятся на компьютере (<папка сборок>/.ai.json)
 // ---------------------------------------------------------------------------------------------
 
-export const AI_DEFAULTS = { ollama: { enabled: true, url: 'http://localhost:11434', model: 'qwen2.5-coder:7b' }, gemini: { key: '', model: '' }, groq: { key: '', model: '' }, openrouter: { key: '', model: '' }, custom: { url: '', model: '', key: '' } };
+export const AI_DEFAULTS = { ollama: { enabled: true, url: 'http://localhost:11434', model: 'qwen2.5-coder:7b' }, gemini: { key: '', model: '' }, groq: { key: '', model: '' }, openrouter: { key: '', model: '' }, custom: { preset: '', url: '', model: '', key: '' } };
 
 export function readAiSettings(file) {
   let s = {};
@@ -206,6 +268,50 @@ export async function ollamaStatus(url = AI_DEFAULTS.ollama.url) {
     const data = await res.json();
     return { running: true, models: (data.models || []).map((m) => m.name) };
   } catch { return { running: false }; }
+}
+
+/** Где установлена Ollama (программа из окна часто запускается без PATH терминала); null — не установлена. */
+export function ollamaFind(env = process.env, platform = process.platform, exists = fs.existsSync) {
+  const home = env.HOME || env.USERPROFILE || '';
+  const exe = platform === 'win32' ? 'ollama.exe' : 'ollama';
+  const dirs = [...String(env.PATH || '').split(path.delimiter).filter(Boolean),
+    ...(platform === 'win32' ? [path.join(env.LOCALAPPDATA || path.join(home, 'AppData', 'Local'), 'Programs', 'Ollama')]
+      : platform === 'darwin' ? ['/Applications/Ollama.app/Contents/Resources', '/usr/local/bin', '/opt/homebrew/bin', path.join(home, 'Applications/Ollama.app/Contents/Resources')]
+        : ['/usr/local/bin', '/usr/bin', path.join(home, '.local/bin')])];
+  for (const d of dirs) { const f = path.join(d, exe); if (exists(f)) return f; }
+  if (platform === 'darwin' && exists('/Applications/Ollama.app')) return '/Applications/Ollama.app';
+  return null;
+}
+
+/** Запустить установленную Ollama и дождаться ответа (до ~15 с). */
+export async function ollamaStart(url = AI_DEFAULTS.ollama.url, { find = ollamaFind, status = ollamaStatus, wait = 15000 } = {}) {
+  const bin = find();
+  if (!bin) return { ok: false, error: 'Ollama не установлена' };
+  if ((await status(url)).running) return { ok: true };
+  const { spawn } = await import('node:child_process');
+  const [cmd, args] = bin.endsWith('.app') ? ['open', ['-a', bin]]
+    : process.platform === 'darwin' && bin.includes('Ollama.app') ? ['open', ['-a', 'Ollama']] : [bin, ['serve']];
+  try { spawn(cmd, args, { detached: true, stdio: 'ignore', windowsHide: true }).unref(); } catch (e) { return { ok: false, error: e.message }; }
+  for (const t0 = Date.now(); Date.now() - t0 < wait;) {
+    await new Promise((r) => setTimeout(r, 700));
+    if ((await status(url)).running) return { ok: true };
+  }
+  return { ok: false, error: 'Ollama не ответила — запустите её вручную' };
+}
+
+/** Модели, которые отдаёт сервер, совместимый с OpenAI (GET /models): для выпадающего списка в окне. */
+export async function listModels(url, key) {
+  const base = trim(url);
+  try {
+    const res = await fetch(`${base}/models`, { headers: key ? { authorization: `Bearer ${key}`, 'x-api-key': key, 'anthropic-version': '2023-06-01' } : {}, signal: AbortSignal.timeout(8000) });
+    if (res.status === 401 || res.status === 403) return { error: 'ключ не подходит' };
+    if (!res.ok) return { error: res.status === 404 ? 'нет такой модели или адреса' : `HTTP ${res.status}` };
+    const data = await res.json();
+    return { models: [...new Set((data.data || data.models || []).map((m) => m.id || m.name).filter(Boolean))].sort() };
+  } catch (e) {
+    const c = e.cause?.code || e.name;
+    return { error: c === 'ECONNREFUSED' ? 'не запущен (нет ответа по адресу)' : /ENOTFOUND|EAI_AGAIN|ETIMEDOUT|TimeoutError/.test(c) ? 'нет связи с сервером' : e.message };
+  }
 }
 
 /** Скачать модель в Ollama; onProgress({ status, percent }). */

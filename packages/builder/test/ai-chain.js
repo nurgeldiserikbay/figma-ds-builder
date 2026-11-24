@@ -4,7 +4,8 @@ import os from 'node:os';
 import fs from 'node:fs';
 import path from 'node:path';
 import assert from 'node:assert/strict';
-import { suggestNames, aiProviders } from '../src/ai.js';
+import { suggestNames, aiProviders, suggestScreenNames, screenTexts, ollamaFind, listModels } from '../src/ai.js';
+import { genericScreenName } from '../src/screens.js';
 import { analyzeSemantics } from '../src/semantic.js';
 
 const calls = [];
@@ -63,6 +64,38 @@ assert.equal(calls.length, 0);
 // все недоступны — ошибка, но не исключение
 const r3 = await suggestNames(tree, analyzeSemantics(tree), { providers: [providers[0]], cacheDir: null });
 assert.ok(r3.error && r3.names.size === 0);
+
+// названия экранов: проверка ответа (безликое и мусор — отбрасываются, адрес — латиница kebab-case)
+{
+  const namer = await server((b, res) => {
+    const items = JSON.parse(b.messages[1].content);
+    const screens = Object.fromEntries(items.map((it, i) => [it.id, i === 0 ? { title: 'Тарифы', route: 'Pricing Page' } : i === 1 ? { title: 'Desktop - 4', route: 'x' } : { title: '<b>x</b>', route: '' }]));
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ screens }) } }] }));
+  });
+  const scrTree = { id: 's', type: 'FRAME', x: 0, y: 0, w: 100, h: 100, children: [T('b', 'Выбрать'), { ...T('a', 'Тарифы и цены'), y: -5 }, T('c', 'Выбрать')] };
+  assert.deepEqual(screenTexts(scrTree), ['Тарифы и цены', 'Выбрать'], 'тексты сверху вниз, без повторов');
+  const rs = await suggestScreenNames([{ id: '1', texts: ['Тарифы и цены'] }, { id: '2', texts: [] }, { id: '3', texts: [] }],
+    { providers: [{ name: 'Gemini', url: url(namer), model: 'm', key: 'k' }], cacheDir: null, isGeneric: genericScreenName });
+  assert.deepEqual([...rs.names], [['1', { title: 'Тарифы', route: 'pricing-page' }]], 'безликое и разметка в названии — отброшены');
+  namer.close();
+}
+
+// Ollama: поиск без PATH терминала (программа из окна), список моделей любого совместимого сервера
+assert.equal(ollamaFind({ PATH: '', HOME: '/Users/a' }, 'darwin', (f) => f === '/Applications/Ollama.app'), '/Applications/Ollama.app');
+assert.equal(ollamaFind({ PATH: '/x', HOME: '/h' }, 'linux', (f) => f === '/usr/local/bin/ollama'), '/usr/local/bin/ollama');
+assert.equal(ollamaFind({ PATH: '', LOCALAPPDATA: 'C:\\L' }, 'win32', () => false), null);
+{
+  const ms = await server((b, res, req) => {
+    if (req.headers.authorization !== 'Bearer sk') { res.writeHead(401); return res.end(); }
+    res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ data: [{ id: 'b-model' }, { id: 'a-model' }] }));
+  });
+  assert.deepEqual(await listModels(url(ms), 'sk'), { models: ['a-model', 'b-model'] });
+  assert.deepEqual(await listModels(url(ms), 'bad'), { error: 'ключ не подходит' });
+  ms.close();
+  const gone = await server(() => {}); const dead = url(gone); gone.close();
+  assert.equal((await listModels(dead, '')).error, 'не запущен (нет ответа по адресу)');
+}
 
 limited.close(); good.close();
 fs.rmSync(cacheDir, { recursive: true, force: true });

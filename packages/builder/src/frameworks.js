@@ -607,7 +607,8 @@ function writeFiles(root, files) {
   }
 }
 
-const pageKey = (p) => pascal(p.title).replace(/^C(?=\d)/, 'Page');
+// адрес страницы от ИИ (pricing) — имя компонента Pricing и маршрут #pricing; иначе — из названия
+const pageKey = (p) => pascal(p.slug || p.title).replace(/^C(?=\d)/, 'Page');
 
 export function preparePages(pages) {
   const used = new Set();

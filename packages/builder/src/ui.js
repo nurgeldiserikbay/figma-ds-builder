@@ -4,7 +4,7 @@
 //
 // Защита: слушает только 127.0.0.1; одноразовый ключ в адресе → cookie SameSite=Strict
 // (чужие сайты не могут дергать API); проверка Host против DNS rebinding; пути не выходят из папки сборок.
-import { aiProviders, readAiSettings, writeAiSettings, aiEnv, maskAi, mergeAi, ollamaStatus, ollamaPull, testProviders } from './ai.js';
+import { aiProviders, readAiSettings, writeAiSettings, aiEnv, maskAi, mergeAi, ollamaStatus, ollamaPull, ollamaFind, ollamaStart, listModels, testProviders } from './ai.js';
 import http from 'node:http';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -142,7 +142,7 @@ export async function startUi({ port = 0, open = true, home = defaultHome(), log
       // ИИ: настройки (ключи — только на этом компьютере), проверка, Ollama
       if (u.pathname === '/api/ai' && req.method === 'GET') {
         const st = readAiSettings(aiFile);
-        return send(200, { settings: maskAi(st), ollama: await ollamaStatus(st.ollama.url) });
+        return send(200, { settings: maskAi(st), ollama: { ...(await ollamaStatus(st.ollama.url)), installed: !!ollamaFind() }, platform: process.platform });
       }
       if (u.pathname === '/api/ai' && req.method === 'POST') {
         let body = '';
@@ -158,6 +158,16 @@ export async function startUi({ port = 0, open = true, home = defaultHome(), log
         const list = aiProviders(env);
         if (!list.length) return send(200, { results: [] });
         return send(200, { results: await testProviders(list) });
+      }
+      if (u.pathname === '/api/ai/ollama/start' && req.method === 'POST') {
+        return send(200, await ollamaStart(readAiSettings(aiFile).ollama.url));
+      }
+      if (u.pathname === '/api/ai/models' && req.method === 'POST') {
+        const st = readAiSettings(aiFile);
+        const which = u.searchParams.get('for') === 'ollama' ? 'ollama' : 'custom';
+        if (which === 'ollama') { const o = await ollamaStatus(st.ollama.url); return send(200, o.running ? { models: o.models } : { error: 'Ollama не запущена' }); }
+        if (!st.custom.url) return send(200, { error: 'укажите адрес' });
+        return send(200, await listModels(st.custom.url, st.custom.key));
       }
       if (u.pathname === '/api/ai/pull' && req.method === 'POST') {
         const st = readAiSettings(aiFile);

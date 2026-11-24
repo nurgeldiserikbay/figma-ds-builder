@@ -16,7 +16,7 @@ import { buildReport } from './report.js';
 import { checkGeometry } from './geometry.js';
 import { attributeDiff } from './attribute.js';
 import { refinePage, patchesCss } from './refine.js';
-import { suggestNames, aiProviders } from './ai.js';
+import { suggestNames, aiProviders, suggestScreenNames, screenTexts } from './ai.js';
 import { analyzeSemantics } from './semantic.js';
 import { analyzeDesignSystem } from './ds/analyze.js';
 import { exportFiles, toTokens } from './ds/export.js';
@@ -24,6 +24,7 @@ import { withFigma, hasFigmaSystem } from './ds/figma.js';
 import { familiesOf, facesOf, ensureFonts, buildFontsCss, defaultCacheDir } from './fonts.js';
 import { findComponents } from './components.js';
 import { componentizeTrees } from './componentize.js';
+import { screenMap, screenMapMd, genericScreenName } from './screens.js';
 import { relinkRoutes, preparePages, exportReact, exportVue, renderReact, renderVue, checkPageHtml, shippedCheckPage, projectAssetPrefix } from './frameworks.js';
 import { groupFrames, writeResponsive, textsOf } from './responsive.js';
 import { exportHtml } from './export-html.js';
@@ -324,6 +325,23 @@ async function build(args) {
       `векторы ${sec(tm.svg)} (выгружено ${tm.svgExported}, одинаковых ${tm.svgCached}), картинки ${sec(tm.images)}`);
     if (tm.slowest?.length) console.log(`  дольше всего: ${tm.slowest.map((x) => `«${x.name}» ${sec(x.ms)} (слоёв ${x.layers}, векторов ${x.vectors})`).join('; ')}`);
   }
+  // ИИ: названия экранов с безликими именами («Desktop - 3» → «Тарифы», адрес /pricing); в Figma имя — в figmaName
+  if (args.ai) {
+    const generic = frames.filter((f) => genericScreenName(f.name));
+    if (generic.length) {
+      const items = generic.map((f) => { const t = f.tree(); return { id: f.id, page: f.page || '', width: Math.round(f.width ?? t.w), texts: screenTexts(t) }; });
+      const r = await suggestScreenNames(items, { providers: aiProviders(process.env, { paid: args.aiPaid }), cacheDir: defaultCacheDir(), log: (m) => console.log(m), isGeneric: genericScreenName });
+      for (const f of generic) {
+        const v = r.names.get(f.id);
+        if (!v) continue;
+        f.figmaName = f.name;
+        f.name = v.title;
+        if (v.route) f.route = v.route;
+      }
+      console.log(r.names.size ? `ИИ: названия экранов — ${r.names.size} из ${generic.length} (${generic.filter((f) => f.figmaName).slice(0, 4).map((f) => `«${f.figmaName}» → «${f.name}»`).join(', ')}${r.names.size > 4 ? '…' : ''})`
+        : `  ⚠ ИИ не дал названия экранам${r.error ? `: ${r.error}` : ''} — остаются имена из Figma`);
+    }
+  }
   const browser = args.verify ? await openBrowser() : null;
   // картинки: WebP по размеру показа (1x/2x) — заливки в деревьях ссылаются на новые файлы
   const imageSet = await optimizeImages(browser, out, frames.map((f) => f.tree()), { log: (m) => console.log(m), cacheDir: args.cache ? path.join(defaultCacheDir(), 'images') : null });
@@ -368,7 +386,7 @@ async function build(args) {
         const absIds = meta.pinned.length ? new Set(meta.pinned) : null;
         const gen = generateFrame(tree, { mode: meta.genMode, absIds, svgText, inlineSvg: args.inlineSvg, tokens, assetUrl: (rel) => `../assets/${rel}`, title: f.name, extraCss, frameHref, semantic: args.semantic, names: meta.names ? new Map(meta.names) : null });
         slots[idx] = {
-          fw: { title: f.name, page: f.page, dir: dirName, root: gen.root, tree, width: f.width, height: f.height,
+          fw: { title: f.name, slug: f.route, page: f.page, dir: dirName, root: gen.root, tree, width: f.width, height: f.height,
             gen: { mode: meta.genMode, absIds, title: f.name, names: meta.names ? new Map(meta.names) : null } },
           result: { ...meta.result, dir: dirName, cached: true },
         };
@@ -792,6 +810,7 @@ function writeRootAgents(out, { file, results, codeOf, responsive, frames, frame
   fs.rmSync(scr, { recursive: true, force: true });
   const rows = [];
   const pageOf = new Map(frames.map((f) => [f.name + '|' + f.id, f.page]));
+  const figmaNameOf = new Map(frames.filter((f) => f.figmaName).map((f) => [f.id, f.figmaName])); // название дал ИИ
   results.forEach((r, i) => {
     const ref = path.join(out, r.dir, 'reference.png');
     let shot = '';
@@ -806,7 +825,7 @@ function writeRootAgents(out, { file, results, codeOf, responsive, frames, frame
       : r.pass === false ? `расходится${Number.isFinite(r.diff?.percent) ? ` (${r.diff.percent.toFixed(2)}% пикселей)` : ''}${(r.geometry?.failed || 0) ? `, не на месте слоёв: ${r.geometry.failed}` : ''}`
       : 'не сверялся';
     const page = pageOf.get(r.name + '|' + r.id);
-    const where = page && !String(r.name).startsWith(page) ? `${page} / ${r.name}` : r.name;
+    const where = (page && !String(r.name).startsWith(page) ? `${page} / ${r.name}` : r.name) + (figmaNameOf.has(r.id) ? ` (в Figma: «${figmaNameOf.get(r.id)}»)` : '');
     rows.push(`| ${shot ? `[${path.basename(shot)}](${shot})` : '—'} | ${where} | ${Math.round(r.width)}×${Math.round(r.height)} | ${(codeOf.get(r.dir) || []).join(', ') || '—'} | ${layout} | ${check} |`);
   });
   const passed = results.filter((r) => r.pass === true).length;
@@ -841,6 +860,15 @@ function writeRootAgents(out, { file, results, codeOf, responsive, frames, frame
     for (const n of notes.layers) L.push(`- ${n.where}: ${n.text}`);
   }
   // всплывающие окна из прототипа (Open overlay): в вёрстке — ссылка на страницу окна, агенту — сделать <dialog>
+  // карта экранов: переходы, состояния, общий каркас — из прототипа и текстов, без ИИ
+  try {
+    const mf = frames.map((f) => { const tree = f.tree(); return { id: f.id, name: f.name, page: f.page, width: f.width ?? tree.w, height: f.height ?? tree.h, tree }; });
+    const map = screenMap(mf);
+    fs.writeFileSync(path.join(out, 'screens.json'), JSON.stringify(map, null, 2));
+    const names = new Map(frames.map((f) => [f.id, f.page && !String(f.name).startsWith(f.page) ? `${f.page} / ${f.name}` : f.name]));
+    L.push(...screenMapMd(map, (id) => names.get(id) || id));
+    console.log(`Карта экранов: переходов ${map.links.length}, экранов с состояниями ${map.states.length}, общий каркас ${map.shells.length} → screens.json`);
+  } catch (e) { console.log(`  ⚠ Карта экранов не построена: ${e.message}`); }
   const overlays = overlayLinks(frames);
   if (overlays.length) {
     L.push('', '## Всплывающие окна (Open overlay в прототипе)', '',
