@@ -56,8 +56,21 @@ export function mergePackages(dirs, outDir) {
   if (fonts.size) fs.writeFileSync(path.join(outDir, 'fonts.json'), JSON.stringify([...fonts.values()].sort((a, b) => b.uses - a.uses), null, 2));
   if (comps.size) fs.writeFileSync(path.join(outDir, 'components.json'), JSON.stringify([...comps.values()], null, 2));
   const manifest = { ...first.m, frames, part: undefined, fonts: fonts.size ? 'fonts.json' : undefined, components: comps.size ? 'components.json' : undefined,
-    warnings: order.flatMap(({ m }) => m.warnings || []), parts: order.length };
+    warnings: order.flatMap(({ m }) => m.warnings || []), parts: order.length,
+    timing: sumTiming(order.map(({ m }) => m.timing).filter(Boolean)) };
   if (!manifest.warnings.length) delete manifest.warnings;
   fs.writeFileSync(path.join(outDir, 'manifest.json'), JSON.stringify(manifest, null, 2));
   return { dir: outDir, notes };
+}
+
+/** Время этапов выгрузки по частям — сумма, самые долгие фреймы — общие пять. */
+export function sumTiming(list) {
+  if (!list.length) return undefined;
+  const out = { tree: 0, names: 0, png: 0, svg: 0, svgExported: 0, svgCached: 0, images: 0, slowest: [] };
+  for (const t of list) {
+    for (const k of Object.keys(out)) if (k !== 'slowest') out[k] += t[k] || 0;
+    out.slowest.push(...(t.slowest || []));
+  }
+  out.slowest = out.slowest.sort((a, b) => b.ms - a.ms).slice(0, 5);
+  return out;
 }

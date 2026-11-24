@@ -483,6 +483,8 @@ async function buildLayoutPackage(frames, opts) {
   var shouldStop = opts.shouldStop || function () { return false; };
 
   var names = await designNames();
+  // сколько заняли этапы (мс) — в manifest.json: по нему видно, что тормозит на конкретном файле
+  var timing = { tree: 0, names: 0, png: 0, svg: 0, svgExported: 0, svgCached: 0, images: 0, slowest: [] };
   for (var i = 0; i < frames.length; i++) {
     if (shouldStop()) return { stopped: true, files: [], warnings: warnings };
     var f = frames[i];
@@ -490,39 +492,52 @@ async function buildLayoutPackage(frames, opts) {
     var t = f.absoluteTransform;
     var ctx = { images: images, vectors: [], instances: [], count: 0, fonts: fonts, errors: [], names: names, pending: {} };
     var tree;
+    var t0 = Date.now();
     try { tree = serialize(f, t[0][2], t[1][2], ctx); } catch (e) {
       warnings.push(L('Фрейм «{name}» пропущен: {err}', { name: f.name, err: e && e.message ? e.message : String(e) }));
       continue;
     }
     if (ctx.errors.length) warnings.push(L('Фрейм «{name}»: не прочитаны слои ({n}), остались только их рамки: {list}', { name: f.name, n: ctx.errors.length, list: ctx.errors.slice(0, 3).join('; ') + (ctx.errors.length > 3 ? '; …' : '') }));
+    timing.tree += Date.now() - t0;
+    var tn = Date.now();
     await resolvePending(ctx);
+    timing.names += Date.now() - tn;
     var fid = fileId(f.id);
     files.push({ path: 'frames/' + fid + '.json', data: treeJson(tree, names) });
 
     // эталон: рендер Figma
     // ровно в границах фрейма, даже если содержимое выступает за них.
     // Очень большие фреймы Figma может не отрендерить — тогда фрейм идёт без эталона (только проверка геометрии).
-    var pngOk = true;
-    try {
-      var png = await f.exportAsync({ format: 'PNG', constraint: { type: 'SCALE', value: scale }, useAbsoluteBounds: true });
-      files.push({ path: 'frames/' + fid + '.png', data: png });
-    } catch (e) {
-      pngOk = false;
-      warnings.push(L('Нет PNG для «{name}» ({w}×{h}): {err}', { name: f.name, w: Math.round(f.width), h: Math.round(f.height), err: e && e.message ? e.message : String(e) }));
-    }
-
+    // картинка экрана и векторы — одновременно: Figma готовит PNG, пока выгружаются SVG
+    var t1 = Date.now();
+    var pngJob = f.exportAsync({ format: 'PNG', constraint: { type: 'SCALE', value: scale }, useAbsoluteBounds: true })
+      .then(function (data) { timing.png += Date.now() - t1; return { data: data }; }, function (e) { timing.png += Date.now() - t1; return { err: e }; });
+    var t2 = Date.now();
     // векторы: одинаковые — один экспорт (кэш на всю выгрузку), остальные — несколько одновременно
     for (var v = 0; v < ctx.vectors.length; v += SVG_BATCH) {
       var batch = ctx.vectors.slice(v, v + SVG_BATCH);
       var got = await Promise.all(batch.map(function (node) {
         var key = vectorKey(node);
-        if (key !== null && svgCache[key]) return svgCache[key];
+        if (key !== null && svgCache[key]) { timing.svgCached++; return svgCache[key]; }
+        timing.svgExported++;
         var job = node.exportAsync({ format: 'SVG' }).catch(function () { return null; }); // пустой вектор — пропускаем
         if (key !== null && svgCacheSize < 20000) { svgCache[key] = job; svgCacheSize++; }
         return job;
       }));
       for (var b = 0; b < batch.length; b++) if (got[b]) files.push({ path: 'vectors/' + fileId(batch[b].id) + '.svg', data: got[b] });
     }
+    timing.svg += Date.now() - t2;
+    var pngRes = await pngJob;
+    var pngOk = !!pngRes.data;
+    if (pngOk) files.push({ path: 'frames/' + fid + '.png', data: pngRes.data });
+    else {
+      var e = pngRes.err;
+      warnings.push(L('Нет PNG для «{name}» ({w}×{h}): {err}', { name: f.name, w: Math.round(f.width), h: Math.round(f.height), err: e && e.message ? e.message : String(e) }));
+    }
+    var took = Date.now() - t0;
+    timing.slowest.push({ name: f.name, ms: took, layers: ctx.count, vectors: ctx.vectors.length });
+    timing.slowest.sort(function (x, y) { return y.ms - x.ms; });
+    timing.slowest.length = Math.min(timing.slowest.length, 5);
     manifestFrames.push({
       id: f.id, name: f.name, page: f.parent && f.parent.type === 'PAGE' ? f.parent.name : (figma.currentPage.name),
       width: num(f.width), height: num(f.height),
@@ -530,6 +545,7 @@ async function buildLayoutPackage(frames, opts) {
     });
   }
 
+  var ti = Date.now();
   var hashes = Object.keys(images);
   for (var h = 0; h < hashes.length; h++) {
     progress(L('Картинки: {i} из {n}', { i: h + 1, n: hashes.length }), frames.length);
@@ -539,6 +555,8 @@ async function buildLayoutPackage(frames, opts) {
       files.push({ path: 'images/' + hashes[h] + '.png', data: await img.getBytesAsync() });
     } catch (e) { /* недоступная картинка */ }
   }
+
+  timing.images = Date.now() - ti;
 
   // шрифты, которые реально используются в выгруженных макетах
   var fontList = Object.keys(fonts).map(function (k) {
@@ -565,6 +583,7 @@ async function buildLayoutPackage(frames, opts) {
     components: compNames.length ? 'components.json' : undefined,
     frames: manifestFrames,
     part: opts.part, // { id, index, total } — выгрузка частями: программа собирает части в один пакет
+    timing: timing,
     warnings: warnings.length ? warnings.map(function (w) { return w.text; }) : undefined,
   };
   files.unshift({ path: 'manifest.json', data: JSON.stringify(manifest, null, 2) });

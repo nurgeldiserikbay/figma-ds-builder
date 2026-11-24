@@ -36,6 +36,9 @@ ID узлов Figma содержат `:` и `;` — в именах файлов
   "scale": 1,
   "tokens": "tokens.json",
   "components": "components.json",
+  // время этапов выгрузки, мс (для поиска медленного): дерево, имена, PNG, SVG, картинки; пять самых долгих фреймов
+  "timing": { "tree": 0, "names": 0, "png": 0, "svg": 0, "svgExported": 0, "svgCached": 0, "images": 0,
+    "slowest": [{ "name": "Home", "ms": 0, "layers": 0, "vectors": 0 }] },
   "frames": [
     { "id": "12:34", "name": "Home / Desktop", "page": "Landing",
       "width": 1440, "height": 3200,

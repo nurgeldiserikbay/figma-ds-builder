@@ -294,6 +294,14 @@ async function build(args) {
   if (!frames.length) throw new Error('Нет фреймов для сборки');
 
   console.log(`Пакет: ${pkg.manifest.file} · фреймов: ${frames.length} · токенов цвета: ${tokens.count}`);
+  // сколько заняла выгрузка в Figma по этапам (плагин 0.3.25+): видно, что тормозит на этом файле
+  const tm = pkg.manifest.timing;
+  if (tm) {
+    const sec = (ms) => `${Math.round(ms / 1000)} с`;
+    console.log(`Выгрузка в Figma: дерево слоёв ${sec(tm.tree)}, имена компонентов и стилей ${sec(tm.names)}, PNG экранов ${sec(tm.png)}, ` +
+      `векторы ${sec(tm.svg)} (выгружено ${tm.svgExported}, одинаковых ${tm.svgCached}), картинки ${sec(tm.images)}`);
+    if (tm.slowest?.length) console.log(`  дольше всего: ${tm.slowest.map((x) => `«${x.name}» ${sec(x.ms)} (слоёв ${x.layers}, векторов ${x.vectors})`).join('; ')}`);
+  }
   const browser = args.verify ? await openBrowser() : null;
   // картинки: WebP по размеру показа (1x/2x) — заливки в деревьях ссылаются на новые файлы
   const imageSet = await optimizeImages(browser, out, frames.map((f) => f.tree()), { log: (m) => console.log(m) });
