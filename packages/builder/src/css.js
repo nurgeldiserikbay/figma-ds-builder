@@ -18,7 +18,7 @@ export function colorValue(c, opacity, ctx, variable = null, style = null) {
   // цвет привязан к переменной Figma — её имя (при прозрачности слоя значение уже другое — ищем по цвету);
   // иначе цветовой стиль Figma (Color style) — его токен
   const opaque = (opacity ?? 1) >= 1;
-  const bound = variable && opaque ? ctx?.tokens?.varRef?.(variable) : null;
+  const bound = variable && opaque ? ctx?.tokens?.varRef?.(variable, hex) : null;
   if (bound) return `var(${bound}, ${hex})`;
   const styled = style && opaque ? ctx?.tokens?.styleRef?.(style) : null;
   if (styled) return `var(${styled}, ${hex})`;

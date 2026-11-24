@@ -38,8 +38,11 @@ export function variablesToTokens(collections) {
     const web = v.codeSyntax?.WEB && String(v.codeSyntax.WEB).match(/--[A-Za-z0-9_-]+/);
     let n = web ? web[0] : slugVar(v.name);
     if (used.has(n)) n = slugVar(`${c.name} ${v.name}`);
+    for (let k = 2; used.has(n); k++) n = slugVar(`${c.name} ${v.name} ${k}`);
     used.add(n);
-    cssName.set(v.name, n);
+    // одно имя у двух переменных (локальная и библиотечная, две библиотеки) — первая остаётся по имени,
+    // остальные различаются по значению (varRef с цветом слоя)
+    if (!cssName.has(v.name)) cssName.set(v.name, n);
     list.push({ coll: c, v, css: n });
   }
   const valueOf = (v, val) => {
@@ -67,18 +70,35 @@ export function variablesToTokens(collections) {
       modes.get(key).push(`  ${css}: ${val};`);
     });
   }
-  // цвет без привязки к переменной — ищем переменную с тем же значением: смысловые (со scopes) важнее палитры
-  const resolve = (name, seen = new Set()) => {
-    const it = list.find((x) => x.v.name === name);
-    if (!it || seen.has(name)) return null;
-    seen.add(name);
-    const val = it.v.values?.[it.coll.modes?.[0]];
-    if (val && typeof val === 'object' && 'alias' in val) return resolve(val.alias, seen);
+  // цвет во всех режимах: подставлять переменную по совпадению цвета можно, только если она одинакова во всех
+  // режимах — иначе в блоке с другим режимом (data-mode="dark") var() даст другой цвет, чем в макете
+  const hexIn = (it, mode, seen = new Set()) => {
+    if (!it || seen.has(it)) return null;
+    seen.add(it);
+    const val = it.v.values?.[mode] ?? it.v.values?.[it.coll.modes?.[0]];
+    if (val && typeof val === 'object' && 'alias' in val) {
+      const t = list.find((x) => x.v.name === val.alias);
+      return t ? hexIn(t, t.coll.modes?.includes(mode) ? mode : t.coll.modes?.[0], seen) : null;
+    }
     return it.v.type === 'COLOR' && val ? normHex(hexOf(val)) : null;
   };
+  const hexes = (it) => [...new Set((it.coll.modes || []).map((m) => hexIn(it, m)).filter(Boolean))];
   const ranked = list.filter((x) => x.v.type === 'COLOR').sort((a, b) => (b.v.scopes?.length ? 1 : 0) - (a.v.scopes?.length ? 1 : 0));
-  for (const x of ranked) { const h = resolve(x.v.name); if (h && !byHex.has(h)) byHex.set(h, x.css); }
-  return { list, cssName, modes, byHex, used };
+  for (const x of ranked) { const hs = hexes(x); if (hs.length === 1 && !byHex.has(hs[0])) byHex.set(hs[0], x.css); }
+  // переменная по имени и цвету слоя: среди одноимённых — та, у которой в каком-то режиме такой цвет
+  const byName = new Map();
+  for (const x of list) { if (!byName.has(x.v.name)) byName.set(x.v.name, []); byName.get(x.v.name).push(x); }
+  const refFor = (name, hex) => {
+    const all = byName.get(name);
+    if (!all) return null;
+    if (!hex || all[0].v.type !== 'COLOR') return all[0].css;
+    // одноимённых может быть несколько; ни у одной нет такого цвета ни в одном режиме (библиотеку поменяли
+    // после макета) — честнее цвет как есть: в Figma слой выглядит именно так
+    const h = normHex(hex);
+    const hit = all.find((x) => hexes(x).includes(h));
+    return hit ? hit.css : null;
+  };
+  return { list, cssName, modes, byHex, used, refFor };
 }
 
 /** Стили эффектов Figma (styles.json) → --shadow-…: те же тени, что в макете. */
@@ -87,6 +107,7 @@ function effectTokens(styles) {
   const used = new Set();
   const r = (v) => `${Math.round((v || 0) * 100) / 100}px`;
   for (const st of styles?.effect || []) {
+    if (map.has(st.name)) continue; // одноимённые из разных частей — берём первую (самую позднюю выгрузку)
     const sh = (st.effects || []).filter((e) => e.type === 'DROP_SHADOW' || e.type === 'INNER_SHADOW')
       .map((e) => `${e.type === 'INNER_SHADOW' ? 'inset ' : ''}${r(e.x)} ${r(e.y)} ${r(e.blur)} ${r(e.spread)} ${hexOf(e.color)}`);
     if (!sh.length) continue;
@@ -102,6 +123,7 @@ function paintTokens(styles, fv) {
   const map = new Map(), lines = [];
   const used = new Set(fv ? fv.used : []);
   for (const st of styles?.paint || []) {
+    if (map.has(st.name)) continue;
     const solids = (st.paints || []).filter((p) => p.type === 'SOLID' && p.visible !== false);
     if (solids.length !== 1) continue;
     const p = solids[0];
@@ -127,7 +149,7 @@ export function loadTokens(json, variables = null, styles = null) {
     count: fv ? fv.list.length : base.count,
     fromFigma: !!fv,
     colorVar: (hex) => (fv ? fv.byHex.get(normHex(hex)) || null : base.colorVar(hex)),
-    varRef: (name) => (fv ? fv.cssName.get(name) || null : null),
+    varRef: (name, hex) => (fv ? fv.refFor(name, hex) : null),
     effectVar: (name) => fx.map.get(name) || null,
     styleRef: (name) => ps.map.get(name) || null,
     css: () => (fv ? figmaCss : base.css() + (fx.lines.length || ps.lines.length ? `:root {\n${[...ps.lines, ...fx.lines].join('\n')}\n}\n` : '')),

@@ -32,8 +32,18 @@ ok('переменные Figma → tokens.css: имена для кода, ал�
   assert.match(css, /--space-lg: 24px;/);
   assert.match(css, /--shadow-card: 0px 4px 12px 0px #00000040;/);
   assert.equal(tokens.varRef('color/bg/accent'), '--bg-accent');
-  // цвет без привязки — смысловая переменная важнее палитры
-  assert.equal(tokens.colorVar('#4338ca'), '--bg-accent');
+  // цвет без привязки — только переменная, одинаковая во всех режимах: --bg-accent в тёмном режиме белый,
+  // и в блоке data-mode="dark" var(--bg-accent) дал бы не тот цвет, что в макете
+  assert.equal(tokens.colorVar('#4338ca'), '--indigo-600');
+  // одноимённые переменные (локальная и из библиотеки) — выбирается та, у которой цвет слоя
+  const dup = loadTokens(null, [
+    { name: 'Collection 1', remote: true, modes: ['Light', 'Dark'], variables: [{ name: 'Text/Primary', type: 'COLOR', values: { Light: { r: 0.2, g: 0.2, b: 0.2, a: 1 }, Dark: { r: 1, g: 1, b: 1, a: 1 } } }] },
+    { name: 'Collection 1', remote: true, modes: ['Light', 'Dark'], variables: [{ name: 'Text/Primary', type: 'COLOR', values: { Light: { r: 0, g: 0, b: 0, a: 1 }, Dark: { r: 1, g: 1, b: 1, a: 1 } } }] },
+  ]);
+  assert.equal(dup.varRef('Text/Primary', '#333333'), '--text-primary');
+  assert.equal(dup.varRef('Text/Primary', '#000000'), '--collection-1-text-primary');
+  assert.equal(dup.varRef('Text/Primary', '#ffffff'), '--text-primary', 'в тёмном режиме цвет у обеих — любая');
+  assert.equal(dup.varRef('Text/Primary', '#ff0000'), null, 'цвета нет ни в одном режиме — без переменной');
 });
 
 const frame = () => ({

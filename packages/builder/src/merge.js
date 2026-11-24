@@ -51,8 +51,15 @@ export function mergePackages(dirs, outDir) {
     }
   }
   const first = order[0];
-  // переменные, стили, токены — из самой поздней выгрузки, где они есть (общие для файла, могли измениться)
-  for (const k of ['variables', 'styles', 'tokens']) {
+  // переменные и стили — объединение всех частей: библиотечные переменные часть выгружает только те, что
+  // встретились в её экранах; токены — из самой поздней выгрузки
+  const readPart = (k) => order.map(({ d, m }) => path.join(d, m[k] || `${k}.json`)).filter((p) => fs.existsSync(p))
+    .map((p) => { try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch { return null; } }).filter(Boolean);
+  const vparts = readPart('variables');
+  if (vparts.length) fs.writeFileSync(path.join(outDir, 'variables.json'), JSON.stringify(mergeVariables(vparts), null, 2));
+  const sparts = readPart('styles');
+  if (sparts.length) fs.writeFileSync(path.join(outDir, 'styles.json'), JSON.stringify(mergeStyles(sparts), null, 2));
+  for (const k of ['tokens']) {
     for (const { d, m } of [...order].reverse()) {
       const rel = m[k] || `${k}.json`;
       const p = path.join(d, rel);
@@ -79,5 +86,38 @@ export function sumTiming(list) {
     out.slowest.push(...(t.slowest || []));
   }
   out.slowest = out.slowest.sort((a, b) => b.ms - a.ms).slice(0, 5);
+  return out;
+}
+
+/**
+ * Переменные из нескольких частей: коллекции — по имени, библиотечности и режимам; переменная — по имени и
+ * значениям (одноимённые с разными значениями остаются обе: программа выберет по цвету слоя). Поздняя часть — первой.
+ */
+export function mergeVariables(parts) {
+  if (!parts.every(Array.isArray)) return parts[parts.length - 1]; // неизвестный формат — как раньше, поздняя часть
+  const cols = new Map();
+  for (const part of [...parts].reverse()) for (const c of part || []) {
+    const key = JSON.stringify([c.name, !!c.remote, c.modes || []]);
+    if (!cols.has(key)) cols.set(key, { ...c, variables: [], seen: new Set() });
+    const into = cols.get(key);
+    for (const v of c.variables || []) {
+      const vk = JSON.stringify([v.name, v.values]);
+      if (into.seen.has(vk)) continue;
+      into.seen.add(vk); into.variables.push(v);
+    }
+  }
+  return [...cols.values()].map(({ seen, ...c }) => c);
+}
+
+/** Стили из нескольких частей: по виду (paint, text, effect…) — объединение по имени и содержимому. */
+export function mergeStyles(parts) {
+  if (!parts.every((p) => p && typeof p === 'object' && !Array.isArray(p))) return parts[parts.length - 1];
+  const out = {};
+  for (const part of [...parts].reverse()) for (const [kind, list] of Object.entries(part || {})) {
+    if (!Array.isArray(list)) { if (!(kind in out)) out[kind] = list; continue; }
+    out[kind] ||= [];
+    const seen = new Set(out[kind].map((x) => JSON.stringify(x)));
+    for (const x of list) { const k = JSON.stringify(x); if (!seen.has(k)) { seen.add(k); out[kind].push(x); } }
+  }
   return out;
 }
