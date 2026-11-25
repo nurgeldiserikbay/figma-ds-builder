@@ -28,12 +28,14 @@ export async function openBrowser() {
   }
 }
 
-export async function renderPage(browser, htmlPath, { width, height, scale = 1, out }) {
+export async function renderPage(browser, htmlPath, { width, height, scale = 1, out, keepPage = false }) {
   const page = await browser.newPage({
     viewport: { width: Math.ceil(width), height: Math.ceil(height) },
     deviceScaleFactor: scale,
   });
-  await page.goto(pathToFileURL(htmlPath).href, { waitUntil: 'load' });
+  // файл с диска или адрес запущенного проекта (Vite, свой сервер) — тогда ждём, пока стихнет сеть
+  const remote = /^https?:\/\//i.test(htmlPath);
+  await page.goto(remote ? htmlPath : pathToFileURL(htmlPath).href, { waitUntil: remote ? 'networkidle' : 'load' });
   await page.evaluate(() => document.fonts.ready);
   const fonts = await page.evaluate(() => {
     // шрифты из npm разбиты на поднаборы символов (латиница, кириллица…): проверяем на тексте самой страницы,
@@ -67,6 +69,7 @@ export async function renderPage(browser, htmlPath, { width, height, scale = 1, 
   );
   const overflowX = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 0.5);
   if (out) fs.writeFileSync(out, await screenshot(page, { x: 0, y: 0, width, height }));
+  if (keepPage) return { fonts, boxes, overflowX, page }; // вызывающий закроет сам (check: найти элементы по месту)
   await page.close();
   return { fonts, boxes, overflowX };
 }
@@ -93,4 +96,28 @@ export async function screenshot(page, clip, { timeout = 60000, firstTimeout = t
     PNG.bitblt(part, outPng, 0, 0, Math.min(part.width, W), rows, 0, dy);
   }
   return PNG.sync.write(outPng);
+}
+
+/**
+ * Какой элемент страницы стоит на месте слоя Figma: для каждого прямоугольника (координаты макета) —
+ * элемент с наибольшим перекрытием (при равенстве — более глубокий). Работает для любой вёрстки, в том числе
+ * правленой вручную: служебные атрибуты не нужны. Ответ — короткий селектор вида div.card__image.
+ */
+export async function elementsAt(page, rects) {
+  return page.evaluate((rects) => {
+    const els = [...document.body.querySelectorAll('*')].filter((e) => !['SCRIPT', 'STYLE', 'svg', 'path', 'g'].includes(e.tagName) && !(e instanceof SVGElement));
+    const boxes = els.map((e) => { const r = e.getBoundingClientRect(); return { e, x: r.x + scrollX, y: r.y + scrollY, w: r.width, h: r.height, d: 0 }; });
+    for (const b of boxes) { let d = 0; for (let p = b.e; p; p = p.parentElement) d++; b.d = d; }
+    const sel = (e) => e.tagName.toLowerCase() + [...e.classList].slice(0, 2).map((c) => `.${c}`).join('');
+    return rects.map((r) => {
+      let best = null, score = 0;
+      for (const b of boxes) {
+        const ix = Math.min(r.x + r.w, b.x + b.w) - Math.max(r.x, b.x), iy = Math.min(r.y + r.h, b.y + b.h) - Math.max(r.y, b.y);
+        if (ix <= 0 || iy <= 0) continue;
+        const inter = ix * iy, iou = inter / (r.w * r.h + b.w * b.h - inter);
+        if (iou > score + 1e-6 || (Math.abs(iou - score) <= 1e-6 && best && b.d > best.d)) { score = iou; best = b; }
+      }
+      return best && score >= 0.5 ? sel(best.e) : null;
+    });
+  }, rects);
 }

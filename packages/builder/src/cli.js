@@ -31,6 +31,7 @@ import { exportHtml } from './export-html.js';
 import { unzipFile } from './unzip.js';
 import { mergePackages } from './merge.js';
 import { auditDesign, auditHtml, auditText, guidePage } from './design-audit.js';
+import { writeCheckManifest, checkBuild, writeCheckScripts } from './check.js';
 
 const HELP = `
 ds-build ui [--port 0] [--home папка] [--no-open]
@@ -45,6 +46,11 @@ ds-build audit <пакет.zip> [ещё части.zip …] [--out папка] [
   Анализ макета для дизайнера: что в файле Figma мешает хорошей вёрстке (Auto Layout, имена, компоненты,
   состояния, переменные, адаптивность, эффекты) — design-audit.html со ссылками на памятку. Без браузера, за секунды.
   При build этот анализ делается тоже.
+
+ds-build check <папка сборки> [--screen "Имя экрана"] [--url http://localhost:5173] [--json]
+  Проверка правок по макету: экраны из html/ (или запущенного проекта: страница — адрес#маршрут, либо {route}
+  в адресе) рендерятся и сверяются с макетом из Figma. Пишет процент расхождения, какие слои Figma расходятся и где;
+  картинки — в <папка>/.check/<экран>/ (reference, render, diff). Код 0 — всё совпало, 2 — есть расхождения.
 
 ds-build build <пакет.zip> [ещё части.zip …] [опции]
   Большой файл плагин выгружает частями («… (часть 2 из 8).zip») — передайте все части сразу.
@@ -128,6 +134,9 @@ function parseArgs(argv) {
     else if (k === '--framework') a.frameworks.push(...argv[++i].split(',').map((x) => x.trim().toLowerCase()).filter(Boolean));
     else if (k === '--delta-e') a.deltaE = parseFloat(argv[++i]);
     else if (k === '--min-uses') a.minUses = parseInt(argv[++i], 10);
+    else if (k === '--screen') a.screen = argv[++i];
+    else if (k === '--url') a.url = argv[++i];
+    else if (k === '--json') a.json = true;
     else if (k === '-h' || k === '--help') a.help = true;
     else a._.push(k);
   }
@@ -349,6 +358,7 @@ async function build(args) {
   const fwPages = [];
   const responsive = [];
   const codeOf = new Map(); // папка фрейма → файлы кода (для AGENTS.md в корне)
+  const routeOf = new Map(); // папка фрейма → маршрут страницы в React/Vue (#route)
   // текст SVG из пакета: небольшие векторы вставляются прямо в страницу
   const svgText = (rel) => { try { return fs.readFileSync(path.join(pkg.dir, rel), 'utf8'); } catch { return null; } };
 
@@ -373,6 +383,7 @@ async function build(args) {
       const dirName = safe(`${f.name}-${f.id}`);
       const fdir = path.join(out, dirName);
       fs.mkdirSync(fdir, { recursive: true });
+      fs.writeFileSync(path.join(fdir, 'tree.json'), JSON.stringify(tree)); // для ds-build check: где расходится
       const hasRef = args.verify && f.pngPath && fs.existsSync(f.pngPath);
       if (hasRef) fs.copyFileSync(f.pngPath, path.join(fdir, 'reference.png'));
       // в ключе — только куда ведут переходы этого фрейма: новые фреймы в пакете не сбрасывают кэш остальных
@@ -761,6 +772,7 @@ async function build(args) {
       for (const p of pages) for (const fw of args.frameworks.filter((f) => f !== 'html')) codeOf.set(p.dir, [...(codeOf.get(p.dir) || []), `${fw}/src/pages/${p.component}.${fw === 'react' ? 'jsx' : 'vue'}`]);
       const groupsFw = responsive.map((r) => ({ name: r.name, members: r.components.map((c) => pages[fwPages.indexOf(c)]), widths: r.widths }));
       relinkRoutes(pages, groupsFw);
+      for (const p of pages) routeOf.set(p.dir, p.route);
       // компоненты Figma (варианты, состояния) — те же классы, что в html/: деревья элементов получают классы
       // компонентов, у страниц — общий CSS компонентов + свои стили (fw.css рядом со styles.css)
       const cz = componentizeTrees(pages.map((p) => ({ root: p.root, css: fs.readFileSync(path.join(out, p.dir, 'styles.css'), 'utf8') })), (el) => htmlOf(el, 0));
@@ -809,7 +821,9 @@ async function build(args) {
   fs.writeFileSync(path.join(out, 'report.html'), buildReport({ file: pkg.manifest.file, threshold: args.threshold, textThreshold: args.textThreshold, textAreaThreshold: args.textAreaThreshold, results, responsive: responsive.map(({ components, ...r }) => r), failed: failedFrames }));
   fs.writeFileSync(path.join(out, 'report.json'), JSON.stringify({ file: pkg.manifest.file, threshold: args.threshold,
     results: results.map(({ stats, ...r }) => ({ ...r, stats })) }, null, 2));
-  writeRootAgents(out, { file: pkg.manifest.file, results, codeOf, responsive, frames: pkg.frames, frameworks: args.frameworks, threshold: args.threshold, notes: designNotes(pkg), failed: failedFrames });
+  const scripts = writeCheckScripts(out, { cli: fileURLToPath(import.meta.url) });
+  writeCheckManifest(out, { scale: pkg.scale, threshold: args.threshold, textThreshold: args.textThreshold, textAreaThreshold: args.textAreaThreshold, results, codeOf, routeOf });
+  writeRootAgents(out, { file: pkg.manifest.file, results, codeOf, responsive, frames: pkg.frames, frameworks: args.frameworks, threshold: args.threshold, notes: designNotes(pkg), failed: failedFrames, scripts });
   console.log(`Отчёт: ${path.join(out, 'report.html')}`);
   if (args.open) openFile(path.join(out, 'report.html'));
   const failed = results.filter((r) => r.pass === false).length;
@@ -820,7 +834,7 @@ async function build(args) {
  * Корень папки сборки: AGENTS.md (что здесь код, что эталон, что служебное) и screens/ — PNG макетов
  * с понятными именами: по ним агент видит все экраны и состояния, не открывая папки проверки.
  */
-function writeRootAgents(out, { file, results, codeOf, responsive, frames, frameworks, threshold, notes = { components: [], layers: [] }, failed = [] }) {
+function writeRootAgents(out, { file, results, codeOf, responsive, frames, frameworks, threshold, notes = { components: [], layers: [] }, failed = [], scripts = false }) {
   const scr = path.join(out, 'screens');
   fs.rmSync(scr, { recursive: true, force: true });
   const rows = [];
@@ -856,7 +870,18 @@ function writeRootAgents(out, { file, results, codeOf, responsive, frames, frame
     `- \`screens/\` — макеты из Figma (PNG, как в Figma): эталон всех экранов и состояний. Список — ниже.`,
     '- `design-system/` — токены: `tokens.json`, `variables.css` и описание дизайн-системы.',
     '- `report.html` — итог сверки с макетами по каждому экрану.',
-    '- **Не нужно читать:** папки экранов вида `Имя-12_34/` (`render.png`, `diff.png`, `reference.png`, `index.html` — служебные файлы проверки), `fonts.css`, `tokens.css`, `report.json`, `assets/`.',
+    '- **Не нужно читать:** папки экранов вида `Имя-12_34/` (`render.png`, `diff.png`, `reference.png`, `index.html`, `tree.json` — служебные файлы проверки), `fonts.css`, `tokens.css`, `report.json`, `check.json`, `assets/`, `.check/`.',
+    '- `.package/` — исходная выгрузка из Figma (дерево слоёв `frames/*.json`, `variables.json`, `styles.json`, `components.json`). Открывай, только если в коде не хватает данных: точное значение, имя переменной, свойство компонента.',
+    '',
+    '## Как доводить вёрстку до макета',
+    '',
+    '1. Правь код в ' + (code.length ? code.map((f) => `\`${f}/\``).join(' или ') : 'папке с кодом') + '. Макет главнее кода: правь код под макет из `screens/`, а не наоборот.',
+    scripts
+      ? '2. Проверь правку: `./check.sh --screen "Имя экрана"` (Windows: `check.cmd --screen "Имя экрана"`). Без `--screen` — все экраны. React/Vue: запусти проект (`npm run dev`) и добавь `--url http://localhost:5173`.'
+      : '2. Проверь правку: в окне DS Builder у этой сборки — «проверить правки» (или `ds-build check <эта папка> --screen "Имя экрана"`).',
+    '3. Проверка пишет процент расхождения, какие слои Figma расходятся и где (x, y, размер в координатах макета) и кладёт картинки в `.check/<экран>/`: `reference.png` — макет, `render.png` — вёрстка, `diff.png` — красным то, что отличается. Посмотри на них, поправь, проверь снова.',
+    '4. Готово, когда экран отмечен ✓. Текст до 2–4% своей площади может расходиться из-за сглаживания шрифтов — это нормально. Не правь эталон и пороги проверки.',
+    '5. Используй токены из `design-system/` (`var(--…)`) и готовые компоненты, а не цвета и размеры числами.',
     '',
     `## Экраны (сверено: совпадают ${passed} из ${withRef}${abs ? `; на координатах: ${abs}` : ''})`,
     '',
@@ -864,6 +889,16 @@ function writeRootAgents(out, { file, results, codeOf, responsive, frames, frame
     '|---|---|---|---|---|---|',
     ...rows,
   ];
+  // что именно расходится — по слоям Figma, с местом: с чего начинать доводку
+  const bad = results.filter((r) => r.pass === false && r.diff?.sources?.top?.length);
+  if (bad.length) {
+    L.push('', '## Что расходится (начни с этих мест)', '');
+    for (const r of bad.slice(0, 60)) {
+      const top = r.diff.sources.top.slice(0, 3).map((t) => `«${t.name}»${t.type === 'TEXT' ? ' (текст)' : ''}${t.box ? ` x ${t.box.x} y ${t.box.y}, ${t.box.w}×${t.box.h}` : ''}`).join('; ');
+      L.push(`- ${r.name} (${r.diff.percent.toFixed(2)}%): ${top}`);
+    }
+    if (bad.length > 60) L.push(`- …и ещё ${bad.length - 60} — в report.html`);
+  }
   if (responsive.length) {
     L.push('', '## Адаптивные страницы', '');
     for (const r of responsive) L.push(`- ${r.name}: ${r.widths.join(' / ')}px — одна страница, перестраивается между этими ширинами`);
@@ -961,6 +996,10 @@ const args = parseArgs(process.argv.slice(2));
 if (args._[0] === 'ui') {
   const { startUi } = await import('./ui.js');
   await startUi({ port: args.port || 0, open: args.noOpen !== true, home: args.home || undefined });
+} else if (args._[0] === 'check' && args._[1]) {
+  checkBuild({ dir: path.resolve(args._[1]), screen: args.screen, url: args.url, json: args.json })
+    .then((r) => { if (r.some((x) => !x.pass)) process.exitCode = 2; })
+    .catch((e) => { console.error(`Ошибка: ${e.message}`); process.exitCode = 1; });
 } else if (args.help || !['build', 'analyze', 'audit'].includes(args._[0]) || !args._[1]) {
   console.log(HELP);
   process.exit(args.help ? 0 : 1);

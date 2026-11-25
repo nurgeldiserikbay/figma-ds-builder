@@ -42,12 +42,15 @@ export function attributeDiff(tree, diffPath, { scale = 1, top = 10 } = {}) {
         if (fx >= b.x && fx < b.x + b.w && fy >= b.y && fy < b.y + b.h) { hit = L[k].node; break; }
       }
       const key = hit ? hit.id : '(вне слоёв)';
-      const e = counts.get(key) || { id: key, name: hit ? hit.name : key, type: hit ? hit.type : '', pixels: 0 };
+      const e = counts.get(key) || { id: key, name: hit ? hit.name : key, type: hit ? hit.type : '', pixels: 0, x0: fx, y0: fy, x1: fx, y1: fy };
       e.pixels++;
+      if (fx < e.x0) e.x0 = fx; if (fy < e.y0) e.y0 = fy; if (fx > e.x1) e.x1 = fx; if (fy > e.y1) e.y1 = fy;
       counts.set(key, e);
     }
   }
-  const list = [...counts.values()].sort((a, b) => b.pixels - a.pixels);
+  // место расхождения у слоя — в координатах макета (для подсказки «где чинить»)
+  const list = [...counts.values()].map(({ x0, y0, x1, y1, ...e }) => ({ ...e, box: { x: Math.round(x0), y: Math.round(y0), w: Math.round(x1 - x0 + 1 / scale), h: Math.round(y1 - y0 + 1 / scale) } }))
+    .sort((a, b) => b.pixels - a.pixels);
   const byType = {};
   for (const e of list) {
     const t = e.type === 'TEXT' ? 'текст' : e.type === 'VECTOR' || e.type === 'BOOLEAN_OPERATION' ? 'векторы' : e.type ? 'фигуры и фон' : 'вне слоёв';

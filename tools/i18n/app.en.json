@@ -193,5 +193,11 @@
  "Очередь": "Order",
  "Ollama первой — макеты не уходят в интернет": "Ollama first — designs never go online",
  "Сначала облако, Ollama — когда кончится бесплатный лимит": "Cloud first, Ollama when the free limit runs out",
- "На слабом компьютере Ollama отвечает медленно — тогда удобнее «сначала облако».": "On a weak computer Ollama answers slowly — then “cloud first” is more convenient."
+ "На слабом компьютере Ollama отвечает медленно — тогда удобнее «сначала облако».": "On a weak computer Ollama answers slowly — then “cloud first” is more convenient.",
+ "Проверка правок": "Check edits",
+ "Экраны из папки <code>html/</code> сверяются с макетом из Figma. Правили код сами или через ИИ — здесь видно, совпадает ли он с макетом и что расходится.": "Screens from the <code>html/</code> folder are compared with the Figma design. Whether you edited the code yourself or with AI, here you see if it matches the design and what differs.",
+ "Открыть картинки": "Open images",
+ "Сверить код из html/ с макетом после ваших правок или правок ИИ": "Compare the code in html/ with the design after your edits or AI edits",
+ "проверить правки": "check edits",
+ "Эта сборка сделана до версии 0.3.39 — соберите её снова, чтобы проверять правки": "This build was made before version 0.3.39 — build it again to check edits"
 }

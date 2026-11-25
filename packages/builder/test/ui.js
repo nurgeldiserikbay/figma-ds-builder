@@ -65,6 +65,18 @@ assert.equal(done.code, 0, events.slice(-2000));
 assert.equal(done.summary.frames, 2);
 assert.equal(done.summary.passed, 2);
 
+// «проверить правки»: сверка той же сборки с макетом, журнал — тем же потоком
+{
+  assert.equal(done.summary.check, true, 'у сборки есть check.json');
+  assert.equal((await req('/api/check?name=..%2Fx', { method: 'POST', headers: H })).status, 400, 'чужой путь — нельзя');
+  const c = await req(`/api/check?name=${encodeURIComponent(name)}`, { method: 'POST', headers: H });
+  assert.equal(c.status, 200, c.text);
+  const log = await new Promise((ok, fail) => {
+    http.get(`${base}/api/jobs/${JSON.parse(c.text).id}/events`, { headers: H }, (res) => { let b = ''; res.setEncoding('utf8'); res.on('data', (d) => (b += d)); res.on('end', () => ok(b)); }).on('error', fail);
+  });
+  assert.match(log, /Итог: совпадают с макетом 2 из 2/, log.slice(-1500));
+}
+
 // большой файл частями: две части загружаются по одной, сборка — одна
 {
   const src = path.join(here, '..', 'fixtures', 'sample');

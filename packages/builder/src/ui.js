@@ -67,6 +67,7 @@ function summary(home, name) {
       failed: results.filter((x) => x.pass === false).length,
       html: fs.existsSync(path.join(dir, 'html', 'index.html')),
       react: fs.existsSync(path.join(dir, 'react', 'package.json')),
+      check: fs.existsSync(path.join(dir, 'check.json')),
       vue: fs.existsSync(path.join(dir, 'vue', 'package.json')),
       ds: fs.existsSync(path.join(dir, 'design-system', 'design-system.md')),
       audit: auditScore(dir),
@@ -217,6 +218,24 @@ export async function startUi({ port = 0, open = true, home = defaultHome(), log
         list.push({ zip, file });
         uploads.set(session, list);
         return send(200, { ok: true, count: list.length });
+      }
+      // «проверить правки»: экраны сборки (html/) сверяются с макетом — после правок человека или ИИ
+      if (req.method === 'POST' && u.pathname === '/api/check') {
+        const name = u.searchParams.get('name') || '';
+        const bdir = path.resolve(home, name);
+        if (!name || /[\\/]/.test(name) || name.startsWith('.') || path.dirname(bdir) !== home) return send(400, { error: 'неверное имя сборки' });
+        if (!fs.existsSync(path.join(bdir, 'check.json'))) return send(400, { error: 'Эта сборка сделана до версии 0.3.39 — соберите её снова, чтобы проверять правки' });
+        const id = crypto.randomBytes(6).toString('hex');
+        const job = { id, name, lines: [], listeners: new Set(), done: false, code: null };
+        const push = (line) => { job.lines.push(line); for (const l of job.listeners) l(line); };
+        const child = spawn(process.execPath, [CLI, 'check', bdir], { env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' }, windowsHide: true });
+        let buf = '';
+        const onData = (d) => { buf += d; const lines = buf.split(/\r?\n/); buf = lines.pop(); lines.forEach(push); };
+        child.stdout.setEncoding('utf8').on('data', onData);
+        child.stderr.setEncoding('utf8').on('data', onData);
+        child.on('close', (code) => { if (buf) push(buf); job.done = true; job.code = code; for (const l of job.listeners) l(null); });
+        jobs.set(id, job);
+        return send(200, { id });
       }
       if (req.method === 'POST' && u.pathname === '/api/build') {
         const opts = JSON.parse(u.searchParams.get('opts') || '{}');

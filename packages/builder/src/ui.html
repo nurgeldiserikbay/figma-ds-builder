@@ -148,6 +148,7 @@
   header .lang { margin-left: 0; }
   header .aibtn { margin-left: auto; }
   dialog.ai { width: min(620px, calc(100vw - 32px)); max-height: calc(100vh - 48px); border: 1px solid var(--rule); border-radius: 12px; padding: 0; color: var(--ink); }
+  .checklog { background: var(--canvas); border: 1px solid var(--rule); border-radius: 8px; padding: 12px; font: 12px/1.5 ui-monospace, Consolas, monospace; white-space: pre-wrap; max-height: 55vh; overflow: auto; margin: 0; }
   dialog.ai::backdrop { background: rgba(20, 24, 33, 0.35); }
   dialog.ai .in { padding: 22px 24px; }
   dialog.ai h2 { margin: 0 0 4px; font-size: 19px; }
@@ -189,6 +190,17 @@
     <option value="pt">Português</option><option value="kk">Қазақша</option><option value="ru">Русский</option><option value="zh">中文</option>
   </select></label>
 </div></header>
+
+<dialog class="ai" id="checkDlg" aria-labelledby="checkTitle">
+  <form method="dialog">
+    <div class="in">
+      <h2 id="checkTitle">Проверка правок</h2>
+      <p>Экраны из папки <code>html/</code> сверяются с макетом из Figma. Правили код сами или через ИИ — здесь видно, совпадает ли он с макетом и что расходится.</p>
+      <pre class="checklog" id="checkLog"></pre>
+    </div>
+    <div class="actions"><button class="btn primary" value="close">Закрыть</button><button type="button" class="btn" id="checkOpen">Открыть картинки</button></div>
+  </form>
+</dialog>
 
 <dialog class="ai" id="aiDlg" aria-labelledby="aiTitle">
   <form method="dialog" id="aiForm">
@@ -574,6 +586,7 @@ async function loadBuilds() {
         ${b.html ? `<a href="${base}/html/index.html" target="_blank" rel="noopener">${t('вёрстка')}</a>` : ''}
         ${b.kind === 'audit' || b.kind === 'unfinished' ? '' : `<a href="${base}/report.html" target="_blank" rel="noopener">${t('отчёт')}</a>`}
         ${b.kind === 'unfinished' ? `<button type="button" data-rebuild="${esc(b.name)}">${t('собрать снова')}</button>` : ''}
+        ${b.check ? `<button type="button" data-check="${esc(b.name)}" title="${esc(t('Сверить код из html/ с макетом после ваших правок или правок ИИ'))}">${t('проверить правки')}</button>` : ''}
         ${b.pkg ? `<button type="button" data-extend="${esc(b.name)}" title="${esc(t('Добавить к этой сборке другую выгрузку того же файла: прежние экраны возьмутся готовыми, свёрстаны будут только новые'))}">${t('дополнить')}</button>` : ''}
         ${b.audit != null ? `<a href="${base}/design-audit.html" target="_blank" rel="noopener">${t('анализ макета')}</a>` : ''}
         ${b.ds ? `<a href="${base}/design-system/design-system.md" target="_blank" rel="noopener">${t('дизайн-система')}</a>` : ''}
@@ -584,6 +597,23 @@ async function loadBuilds() {
       </div></div></li>`;
   }).join('');
 }
+// проверить правки: сверка html/ с макетом, лог — в окне
+let checkName = null;
+document.addEventListener('click', async (ev) => {
+  const c = ev.target.closest('[data-check]');
+  if (!c) return;
+  checkName = c.dataset.check;
+  const log = $('checkLog');
+  log.textContent = t('Проверяю…') + '\n';
+  $('checkDlg').showModal();
+  const r = await fetch(`/api/check?name=${encodeURIComponent(checkName)}`, { method: 'POST' }).then((x) => x.json()).catch(() => ({ error: t('нет связи с программой') }));
+  if (r.error) { log.textContent = t(r.error); return; }
+  log.textContent = '';
+  const es = new EventSource(`/api/jobs/${r.id}/events`);
+  es.onmessage = (e) => { log.textContent += JSON.parse(e.data) + '\n'; log.scrollTop = log.scrollHeight; };
+  es.addEventListener('done', () => es.close());
+});
+$('checkOpen').addEventListener('click', () => checkName && fetch(`/api/open?path=${encodeURIComponent(checkName + '/.check')}`, { method: 'POST' }));
 // дополнить сборку: выбрать архивы новой выгрузки; собрать снова — тот же пакет без выгрузки
 const extendInput = Object.assign(document.createElement('input'), { type: 'file', accept: '.zip', multiple: true, hidden: true });
 document.body.append(extendInput);

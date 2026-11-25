@@ -193,5 +193,11 @@
  "Очередь": "Ordem",
  "Ollama первой — макеты не уходят в интернет": "Ollama primeiro — os layouts não vão para a internet",
  "Сначала облако, Ollama — когда кончится бесплатный лимит": "Primeiro a nuvem, Ollama quando o limite gratuito acabar",
- "На слабом компьютере Ollama отвечает медленно — тогда удобнее «сначала облако».": "Num computador fraco o Ollama responde devagar — aí «primeiro a nuvem» é mais prático."
+ "На слабом компьютере Ollama отвечает медленно — тогда удобнее «сначала облако».": "Num computador fraco o Ollama responde devagar — aí «primeiro a nuvem» é mais prático.",
+ "Проверка правок": "Verificar alterações",
+ "Экраны из папки <code>html/</code> сверяются с макетом из Figma. Правили код сами или через ИИ — здесь видно, совпадает ли он с макетом и что расходится.": "As telas da pasta <code>html/</code> são comparadas com o layout do Figma. Seja editando o código você mesmo ou com IA, aqui você vê se ele coincide com o layout e o que difere.",
+ "Открыть картинки": "Abrir imagens",
+ "Сверить код из html/ с макетом после ваших правок или правок ИИ": "Comparar o código de html/ com o layout após suas alterações ou as da IA",
+ "проверить правки": "verificar alterações",
+ "Эта сборка сделана до версии 0.3.39 — соберите её снова, чтобы проверять правки": "Esta montagem é anterior à versão 0.3.39 — monte de novo para verificar alterações"
 }

@@ -939,6 +939,13 @@ export function agentsMd(kind, { pages, comps, resp = [], routesList, css, icons
   L.push(`${verdict} ` +
     `${kind === 'html' ? 'Обычные HTML и CSS.' : `${kind === 'react' ? 'React' : 'Vue'} + Vite: \`npm install && npm run dev\`.`}`);
   L.push('');
+  // главный цикл работы: правка → проверка по макету (скрипт в корне сборки) → правка
+  L.push('## Проверка по макету после каждой правки');
+  L.push('');
+  L.push(kind === 'html'
+    ? 'Из корня сборки (на уровень выше): `./check.sh --screen "Имя экрана"` (Windows: `check.cmd …`). Пишет расхождение с макетом, слои Figma, место и CSS-селектор элемента; картинки — в `.check/<экран>/`. Готово, когда ✓.'
+    : 'Запусти `npm run dev`, затем из корня сборки (на уровень выше): `./check.sh --screen "Имя экрана" --url http://localhost:5173` (Windows: `check.cmd …`). Пишет расхождение с макетом, слои Figma, место и CSS-селектор элемента; картинки — в `.check/<экран>/`. Готово, когда ✓.');
+  L.push('');
   L.push('## Страницы');
   L.push('');
   L.push(`| ${kind === 'html' ? 'файл' : 'маршрут'} | ${kind === 'html' ? 'стили' : 'файл'} | макет Figma | ширина |`);
