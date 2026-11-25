@@ -290,6 +290,9 @@ function textData(node, ctx) {
     align: node.textAlignHorizontal,
     verticalAlign: node.textAlignVertical,
     autoResize: node.textAutoResize,
+    // «Truncate text» в Figma: текст обрезается многоточием (по высоте блока или числу строк)
+    truncation: node.textTruncation === 'ENDING' ? 'ENDING' : undefined,
+    maxLines: typeof node.maxLines === 'number' && node.maxLines > 0 ? node.maxLines : undefined,
     segments: segs.map(function (s) {
       return {
         start: s.start, end: s.end,

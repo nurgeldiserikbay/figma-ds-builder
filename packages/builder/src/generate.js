@@ -110,7 +110,8 @@ function nodeVisualCss(node, ctx) {
   if (node.clipsContent) o.overflow = 'hidden';
   // блок с нарисованным скроллбаром — прокручивается по вертикали (системная полоса скрыта)
   if (ctx.scroll?.has(node.id)) { o['overflow-x'] = 'hidden'; o['overflow-y'] = 'auto'; delete o.overflow; }
-  if (node.opacity !== undefined && node.opacity < 1) o.opacity = withVar(ctx, node.vars?.opacity, String(r2(node.opacity)));
+  // у вектора прозрачность слоя уже внутри SVG (Figma выгружает её атрибутом opacity) — иначе она удвоится
+  if (node.opacity !== undefined && node.opacity < 1 && !node.svg) o.opacity = withVar(ctx, node.vars?.opacity, String(r2(node.opacity)));
   if (node.blendMode && !['NORMAL', 'PASS_THROUGH'].includes(node.blendMode)) {
     o['mix-blend-mode'] = node.blendMode.toLowerCase().replace(/_/g, '-');
   }
@@ -228,12 +229,27 @@ function textEl(node, ctx) {
   const align = { LEFT: 'left', CENTER: 'center', RIGHT: 'right', JUSTIFIED: 'justify' }[t.align] || 'left';
   const noWrap = t.autoResize === 'WIDTH_AND_HEIGHT';
   const block = { display: 'block', width: '100%', 'text-align': align, 'white-space': noWrap ? 'pre' : 'pre-wrap', 'overflow-wrap': 'break-word', ...strut };
+  // «Truncate text» (многоточие): столько строк, сколько помещается в блок (или maxLines из Figma), дальше «…»
+  const lines = truncLines(node);
+  if (lines) Object.assign(block, { display: '-webkit-box', '-webkit-box-orient': 'vertical', '-webkit-line-clamp': String(lines), 'line-clamp': String(lines), overflow: 'hidden', 'white-space': 'pre-wrap' });
   // текст одного оформления — один span (оформление и «стойка» строки вместе); несколько — по span на кусок
   if (segs.length === 1 && !segs[0].href) {
     return { tag: 'span', cls: ctx.styles.classFor(tName(segs[0]), declarations({ ...block, ...scaled(segmentCss(segs[0], ctx)) })), text: chars, attrs: [], inline: true, kind: 'text' };
   }
   const inner = ctx.styles.classFor('text', declarations(block));
   return { tag: 'span', cls: inner, attrs: [], children: spans, inline: true, kind: 'text' };
+}
+
+/** Сколько строк показывает обрезанный многоточием текст: maxLines из Figma или высота блока / интерлиньяж. */
+export function truncLines(node) {
+  const t = node?.text;
+  if (!t || !(t.truncation === 'ENDING' || t.autoResize === 'TRUNCATE')) return 0;
+  if (t.maxLines) return t.maxLines;
+  const s0 = t.segments?.[0] || {};
+  const fs = s0.fontSize || 16, lh = s0.lineHeight;
+  // «Auto» — обычный интерлиньяж шрифта, у большинства шрифтов 1.2–1.4 кегля
+  const px = lh?.unit === 'PIXELS' ? lh.value : lh?.unit === 'PERCENT' ? (fs * lh.value) / 100 : fs * 1.33;
+  return Math.max(1, Math.round((node.h || px) / px));
 }
 
 // ---------------------------------------------------------------------------------------------

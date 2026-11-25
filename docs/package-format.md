@@ -134,6 +134,8 @@ ID узлов Figma содержат `:` и `;` — в именах файлов
     "align": "CENTER",        // LEFT | CENTER | RIGHT | JUSTIFIED
     "verticalAlign": "CENTER",// TOP | CENTER | BOTTOM
     "autoResize": "WIDTH_AND_HEIGHT", // NONE | HEIGHT | WIDTH_AND_HEIGHT | TRUNCATE
+    "truncation": "ENDING",            // «Truncate text» — многоточие в конце (нет поля — не обрезается)
+    "maxLines": 3,                      // число строк при обрезке, если задано в Figma
     "segments": [
       { "start": 0, "end": 6,
         "fontFamily": "Inter", "fontStyle": "Semi Bold", "fontWeight": 600,
