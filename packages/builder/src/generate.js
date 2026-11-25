@@ -2,6 +2,7 @@
 import { buildBox, placements, isTransformed } from './layout.js';
 import { peerMaps, clampPx } from './fluid-peer.js';
 import { analyzeSemantics, className, SEMANTIC_RESET } from './semantic.js';
+import { findScrollbars, SCROLLBAR_JS, SCROLLBAR_CSS } from './scrollbars.js';
 import {
   px, r2, withVar, fillsToCss, strokesToCss, effectsToCss, radiusToCss, segmentCss, declarations, mergeShadows, colorValue,
 } from './css.js';
@@ -107,6 +108,8 @@ function nodeVisualCss(node, ctx) {
   if (!node.svg && node.type !== 'TEXT') Object.assign(o, fillsToCss(node.fills, ctx));
   Object.assign(o, radiusToCss(node, ctx));
   if (node.clipsContent) o.overflow = 'hidden';
+  // блок с нарисованным скроллбаром — прокручивается по вертикали (системная полоса скрыта)
+  if (ctx.scroll?.has(node.id)) { o['overflow-x'] = 'hidden'; o['overflow-y'] = 'auto'; delete o.overflow; }
   if (node.opacity !== undefined && node.opacity < 1) o.opacity = withVar(ctx, node.vars?.opacity, String(r2(node.opacity)));
   if (node.blendMode && !['NORMAL', 'PASS_THROUGH'].includes(node.blendMode)) {
     o['mix-blend-mode'] = node.blendMode.toLowerCase().replace(/_/g, '-');
@@ -438,6 +441,8 @@ function buildEl(box, place, ctx, inPhrasing = false, grow = false) {
   }
 
   const all = { ...baseDecl, ...flow };
+  // нарисованная полоса прокрутки остаётся на месте, пока блок прокручивается
+  if (node && box.kind === 'node' && ctx.scrollParts?.get(node.id) === 'bar') Object.assign(all, { position: 'sticky', top: '0' });
   if (tag !== 'div' && !all.display) all.display = 'block'; // span/a/button/h* ведут себя как блок макета
   const decl = declarations(all);
   const base = box.kind === 'mask' ? (sem?.name || node.name) + '-mask' : sem?.name || (node ? node.name : 'group');
@@ -451,6 +456,8 @@ function buildEl(box, place, ctx, inPhrasing = false, grow = false) {
   // цель «Scroll to» из прототипа — якорь
   const anchor = node && box.kind === 'node' && ctx.semantic?.anchors?.get(node.id);
   if (anchor && !attrs.some(([k]) => k === 'id')) attrs.push(['id', anchor]);
+  const sp = node && box.kind === 'node' && ctx.scrollParts?.get(node.id);
+  if (sp) attrs.push([{ scroll: 'data-scroll', bar: 'data-scrollbar', thumb: 'data-scroll-thumb' }[sp], '']);
   if (node) attrs.push(['data-figma-id', node.id], ['data-name', node.name]);
   const comp = node && ctx.comps?.get(node.id);
   if (comp) {
@@ -527,7 +534,10 @@ export function generateFrame(tree, { mode = 'flow', absIds = null, fluid = fals
     }
     (n.children || []).forEach((c) => walk(c, n));
   })(tree, null);
-  const ctx = { styles, tokens, assetUrl, frameHref, semantic: sem, downgrade: new Set(), fluid, fluidSkip, svgText, inlineSvg: inlineSvgOpt, comps, peer: fluid && peer ? peerMaps(tree, peer) : null };
+  const scroll = findScrollbars(tree);
+  const scrollParts = new Map();
+  for (const [cid, { bar, thumb }] of scroll) { scrollParts.set(cid, 'scroll'); scrollParts.set(bar, 'bar'); scrollParts.set(thumb, 'thumb'); }
+  const ctx = { styles, tokens, assetUrl, frameHref, semantic: sem, downgrade: new Set(), fluid, fluidSkip, svgText, inlineSvg: inlineSvgOpt, comps, peer: fluid && peer ? peerMaps(tree, peer) : null, scroll, scrollParts };
   const root = buildBox(tree, { mode, absIds });
   const rootEl = buildEl(root, null, ctx, false, fluid);
   // не уже макета: ниже его ширины страница уменьшается целиком (zoom), а не сжимается
@@ -565,6 +575,7 @@ export function generateFrame(tree, { mode = 'flow', absIds = null, fluid = fals
     '*, *::before, *::after { margin: 0; padding: 0; }',
     'html, body { margin: 0; -webkit-font-smoothing: antialiased; text-rendering: geometricPrecision; }',
     ...(semantic ? [SEMANTIC_RESET] : []),
+    ...(scroll.size ? [SCROLLBAR_CSS] : []),
     ...styles.rules,
     '',
   ].join('\n');
@@ -580,7 +591,7 @@ ${extraCss.map((c) => `<link rel="stylesheet" href="../${c}">\n`).join('')}<link
 </head>
 <body>
 ${body}
-</body>
+${scroll.size ? `<script>\n${SCROLLBAR_JS}\n</script>\n` : ''}</body>
 </html>
 `;
   addOptionalSlots(rootEl, tree);
