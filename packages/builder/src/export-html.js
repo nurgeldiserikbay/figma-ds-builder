@@ -210,7 +210,7 @@ ${cssFiles.map((c) => `<link rel="stylesheet" href="css/${c}">`).join('\n')}
     const style = (src.match(/<style>[\s\S]*?<\/style>/) || [''])[0];
     const title = (src.match(/<title>([^<]*)<\/title>/) || [, g.name])[1];
     entries.push({ file: `${slug}.html`, title, extra: style + '\n', css, body,
-      info: { file: `${slug}.html`, title: `${g.name} (адаптивная)`, name: g.name, from: g.dir, widths: g.widths, members: g.members || [], responsive: true } });
+      info: { file: `${slug}.html`, title: g.single ? g.name : `${g.name} (адаптивная)`, name: g.name, from: g.dir, widths: g.widths, members: g.members || [], responsive: true } });
   }
 
   // компоненты Figma: общий components.css, на страницах — классы компонентов и остатки копий

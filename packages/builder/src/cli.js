@@ -623,6 +623,14 @@ async function build(args) {
     // адаптивные страницы: фреймы одной страницы под разные ширины
     if (args.responsive) {
       const groups = groupFrames(fwPages.map((p) => ({ name: p.title, page: p.page, width: p.width, texts: textsOf(p.tree) })), args.groups);
+      // экран-страница без пары под другую ширину — тоже «резиновый»: тянется шире макета, уже — уменьшается
+      // целиком (как адаптивная страница из одного макета). Окна, карточки и компоненты остаются как есть.
+      const grouped = new Set(groups.flatMap((g) => g.members));
+      fwPages.forEach((p, i) => {
+        if (grouped.has(i) || p.gen?.mode === 'absolute') return;
+        const page = (p.width >= 1024 && p.height >= 400) || (p.width >= 320 && p.width <= 480 && p.height >= 640);
+        if (page) groups.push({ name: p.title, members: [i], single: true });
+      });
       for (const g of groups) {
         const variants = g.members.map((i) => ({ ...fwPages[i], fluid: false }));
         // «резиновые» версии макетов: тот же генератор с правилами растяжения
@@ -658,6 +666,9 @@ async function build(args) {
             const probes = [...new Set([Math.round((ws[i] + hi) / 2), Math.round(hi)])].filter((w) => w > ws[i]);
             const texts = textIds(v.tree);
             const out2 = [];
+            // как текст сидит в блоке на ширине макета: если он и там выше блока (так нарисовано), это не поломка
+            const base0 = await renderPage(browser, page(), { width: ws[i], height: v.height, scale: 1, out: null });
+            const baseIh = new Map(base0.boxes.filter((b) => b.ih !== undefined).map((b) => [b.id, b.ih]));
             for (const w of probes) {
               const r = await renderPage(browser, page(), { width: w, height: v.height, scale: 1, out: null });
               const at = new Map(r.boxes.filter((b) => b.w > 0 || b.h > 0).map((b) => [b.id, b]));
@@ -673,7 +684,7 @@ async function build(args) {
               }
               if (clash) { why.push(`текст налезает: ${clash.map((t) => t.name).join(' / ')}`); bad.push(...clash.map((t) => t.id)); }
               // текст не помещается в свой блок (блок фиксированной высоты, а строк стало больше) — вылезет на соседей
-              const spill = tb.find(([t, b]) => b.ih !== undefined && b.ih > b.h + 2 && !(t.h >= b.ih - 2));
+              const spill = tb.find(([t, b]) => b.ih !== undefined && b.ih > b.h + 2 && !(t.h >= b.ih - 2) && !(baseIh.has(t.id) && b.ih <= baseIh.get(t.id) + 2));
               if (spill) { why.push(`текст не помещается в свой блок: ${spill[0].name}`); bad.push(spill[0].id); }
               // блоки на всю ширину макета (фоны секций, шапка) и на экране должны быть на всю ширину
               const bleed = (v.tree.children || []).filter((n) => n.visible !== false && n.x <= 0.5 && n.x + n.w >= v.tree.w - 0.5 && n.w > 0);
@@ -730,15 +741,22 @@ async function build(args) {
         const ok = entry.exact.every((e) => e.same) && entry.overflow.every((e) => e.ok);
         const fl = entry.fluid.filter(Boolean).length;
         const flTxt = browser ? `; между ширинами ${fl === variants.length ? 'тянется' : fl ? `тянется у ${fl} из ${variants.length} макетов` : 'макет по центру'}` : '';
-        console.log(`Адаптивная страница «${g.name}» (${entry.widths.join(' / ')}): ${browser ? (ok ? 'на каждой ширине совпадает с макетом, без горизонтальной прокрутки' : 'ЕСТЬ РАСХОЖДЕНИЯ') : 'собрана'}${flTxt} → ${dir}/`);
-        if (browser && !ok) process.exitCode = 2;
-        responsive.push({ ...entry, ok, components: g.members.map((i) => fwPages[i]) });
+        if (g.single) {
+          // один макет: на его ширине — как макет, шире — тянется (или по центру, если растяжение ломает вёрстку)
+          console.log(`  ${g.name}: ${!browser ? 'резиновая версия собрана' : !ok ? `резиновая версия не прошла проверку — в html/ фиксированная (${Object.values(entry.rejected || {})[0] || entry.overflow.filter((e) => !e.ok).map((e) => `${e.width}px: ${(e.why || ['прокрутка']).join(', ')}`).join('; ') || entry.exact.filter((e) => !e.same).map((e) => `на ширине макета ${e.percent.toFixed(3)}%`).join('')})` : fl ? 'тянется шире макета, уже — уменьшается целиком' : 'шире макета — по центру'}`);
+        } else {
+          console.log(`Адаптивная страница «${g.name}» (${entry.widths.join(' / ')}): ${browser ? (ok ? 'на каждой ширине совпадает с макетом, без горизонтальной прокрутки' : 'ЕСТЬ РАСХОЖДЕНИЯ') : 'собрана'}${flTxt} → ${dir}/`);
+          if (browser && !ok) process.exitCode = 2;
+        }
+        // один макет, не прошедший проверку, в html/ остаётся обычной страницей
+        if (g.single && (!ok || !fl)) { fs.rmSync(path.join(out, dir), { recursive: true, force: true }); continue; }
+        responsive.push({ ...entry, ok, single: !!g.single, components: g.members.map((i) => fwPages[i]) });
       }
     }
 
     // чистый HTML/CSS: самостоятельная папка html/, проверка — тот же рендер, что у рабочей вёрстки
     if (args.frameworks.includes('html') && fwPages.length) {
-      const ex = exportHtml(out, fwPages, responsive.map((r) => ({ name: r.name, dir: r.dir, widths: r.widths, members: r.components.map((c) => c.dir) })), { file: pkg.manifest.file, check: checkSummary(results) });
+      const ex = exportHtml(out, fwPages, responsive.map((r) => ({ name: r.name, dir: r.dir, widths: r.widths, single: r.single, members: r.components.map((c) => c.dir) })), { file: pkg.manifest.file, check: checkSummary(results) });
       console.log(`HTML/CSS: ${path.relative(process.cwd(), ex.root) || ex.root}`);
       for (const p of ex.pages) for (const from of p.responsive ? p.members : [p.from]) codeOf.set(from, [...(codeOf.get(from) || []), `html/${p.file}`]);
       for (const c of ex.components) blockOf.set(c.name, [...(blockOf.get(c.name) || []), c.block]);
@@ -772,7 +790,7 @@ async function build(args) {
     if (args.frameworks.some((f) => f !== 'html') && fwPages.length) {
       const pages = preparePages(fwPages);
       for (const p of pages) for (const fw of args.frameworks.filter((f) => f !== 'html')) codeOf.set(p.dir, [...(codeOf.get(p.dir) || []), `${fw}/src/pages/${p.component}.${fw === 'react' ? 'jsx' : 'vue'}`]);
-      const groupsFw = responsive.map((r) => ({ name: r.name, members: r.components.map((c) => pages[fwPages.indexOf(c)]), widths: r.widths }));
+      const groupsFw = responsive.filter((r) => !r.single).map((r) => ({ name: r.name, members: r.components.map((c) => pages[fwPages.indexOf(c)]), widths: r.widths }));
       relinkRoutes(pages, groupsFw);
       for (const p of pages) routeOf.set(p.dir, p.route);
       // компоненты Figma (варианты, состояния) — те же классы, что в html/: деревья элементов получают классы
@@ -820,7 +838,7 @@ async function build(args) {
     await browser?.close();
   }
 
-  fs.writeFileSync(path.join(out, 'report.html'), buildReport({ file: pkg.manifest.file, threshold: args.threshold, textThreshold: args.textThreshold, textAreaThreshold: args.textAreaThreshold, results, responsive: responsive.map(({ components, ...r }) => r), failed: failedFrames }));
+  fs.writeFileSync(path.join(out, 'report.html'), buildReport({ file: pkg.manifest.file, threshold: args.threshold, textThreshold: args.textThreshold, textAreaThreshold: args.textAreaThreshold, results, responsive: responsive.filter((r) => !r.single).map(({ components, ...r }) => r), failed: failedFrames }));
   fs.writeFileSync(path.join(out, 'report.json'), JSON.stringify({ file: pkg.manifest.file, threshold: args.threshold,
     results: results.map(({ stats, ...r }) => ({ ...r, stats })) }, null, 2));
   const scripts = writeCheckScripts(out, { cli: fileURLToPath(import.meta.url) });
@@ -923,8 +941,10 @@ function writeRootAgents(out, { file, results, codeOf, responsive, frames, frame
     if (usage.length > 200) L.push(`- …и ещё ${usage.length - 200} экранов`);
   }
   if (responsive.length) {
-    L.push('', '## Адаптивные страницы', '');
-    for (const r of responsive) L.push(`- ${r.name}: ${r.widths.join(' / ')}px — одна страница, перестраивается между этими ширинами`);
+    L.push('', '## Адаптивные и резиновые страницы', '');
+    for (const r of responsive.filter((x) => !x.single)) L.push(`- ${r.name}: ${r.widths.join(' / ')}px — одна страница, перестраивается между этими ширинами`);
+    const singles = responsive.filter((x) => x.single);
+    if (singles.length) L.push(`- Резиновые (один макет: шире — тянутся, уже — уменьшаются целиком): ${singles.map((x) => x.name).join(', ')}`);
   }
   // пояснения дизайнера: описания компонентов и аннотации Dev Mode — правила, которых не видно на картинке
   if (notes.components.length || notes.layers.length) {
