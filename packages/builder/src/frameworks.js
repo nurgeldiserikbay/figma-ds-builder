@@ -1,7 +1,7 @@
 // Экспорт в React и Vue из того же дерева элементов, что и HTML: разметка совпадает до элемента.
 // Компоненты — из components.js. Проверка: страницы рендерятся на сервере (React SSR, Vue SSR)
 // и сравниваются с уже проверенной HTML-версией — пиксели и геометрия.
-import { SCROLLBAR_JS } from './scrollbars.js';
+import { SCROLLBAR_JS, FLUID_JS } from './scrollbars.js';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -706,7 +706,7 @@ export function exportReact(siteDir, pages, comps, groups = [], meta = {}) {
       dependencies: { react: '^19.0.0', 'react-dom': '^19.0.0' },
       devDependencies: { vite: '^6.0.0', '@vitejs/plugin-react': '^4.3.0' } }, null, 2) + '\n',
     'vite.config.js': "import { defineConfig } from 'vite';\nimport react from '@vitejs/plugin-react';\n\nexport default defineConfig({ plugins: [react()] });\n",
-    'index.html': `<!DOCTYPE html>\n<html lang="ru">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1">\n<title>${pages[0]?.title || 'Сайт'}</title>\n</head>\n<body>\n<div id="root"></div>\n<script type="module" src="/src/main.jsx"></script>\n<script>\n${SCROLLBAR_JS}\n</script>\n</body>\n</html>\n`,
+    'index.html': `<!DOCTYPE html>\n<html lang="ru">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1">\n<title>${pages[0]?.title || 'Сайт'}</title>\n</head>\n<body>\n<div id="root"></div>\n<script type="module" src="/src/main.jsx"></script>\n<script>\n${SCROLLBAR_JS}\n${FLUID_JS}\n</script>\n</body>\n</html>\n`,
     'src/assets.js': "export const asset = (p) => import.meta.env.BASE_URL + 'assets/' + p;\n",
     'src/main.jsx': "import { createRoot } from 'react-dom/client';\nimport App from './App.jsx';\nimport './styles/fonts.css';\nimport './styles/site.css';\n\ncreateRoot(document.getElementById('root')).render(<App />);\n",
     'src/App.jsx': `import { useEffect, ${overlays ? 'useRef, ' : ''}useState } from 'react';
@@ -782,7 +782,7 @@ export function exportVue(siteDir, pages, comps, groups = [], meta = {}) {
       dependencies: { vue: '^3.5.0' },
       devDependencies: { vite: '^6.0.0', '@vitejs/plugin-vue': '^5.2.0' } }, null, 2) + '\n',
     'vite.config.js': "import { defineConfig } from 'vite';\nimport vue from '@vitejs/plugin-vue';\n\nexport default defineConfig({ plugins: [vue()] });\n",
-    'index.html': `<!DOCTYPE html>\n<html lang="ru">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1">\n<title>${pages[0]?.title || 'Сайт'}</title>\n</head>\n<body>\n<div id="app"></div>\n<script type="module" src="/src/main.js"></script>\n<script>\n${SCROLLBAR_JS}\n</script>\n</body>\n</html>\n`,
+    'index.html': `<!DOCTYPE html>\n<html lang="ru">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1">\n<title>${pages[0]?.title || 'Сайт'}</title>\n</head>\n<body>\n<div id="app"></div>\n<script type="module" src="/src/main.js"></script>\n<script>\n${SCROLLBAR_JS}\n${FLUID_JS}\n</script>\n</body>\n</html>\n`,
     'src/assets.js': "export const asset = (p) => import.meta.env.BASE_URL + 'assets/' + p;\n",
     'src/main.js': "import { createApp } from 'vue';\nimport App from './App.vue';\nimport './styles/fonts.css';\nimport './styles/site.css';\n\ncreateApp(App).mount('#app');\n",
     'src/App.vue': `<script setup>

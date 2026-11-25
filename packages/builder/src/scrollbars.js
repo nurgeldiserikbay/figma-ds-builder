@@ -51,3 +51,16 @@ export const SCROLLBAR_JS = `document.addEventListener('scroll', function (e) {
 }, true);`;
 
 export const SCROLLBAR_CSS = '[data-scroll] { scrollbar-width: none; }\n[data-scroll]::-webkit-scrollbar { display: none; }';
+
+/** Резиновая страница уже своего макета уменьшается целиком (zoom), без горизонтальной прокрутки. */
+export const FLUID_JS = `(function () {
+  function fit() {
+    document.querySelectorAll('[data-fluid]').forEach(function (el) {
+      var min = +el.getAttribute('data-fluid');
+      el.style.zoom = innerWidth < min ? String(innerWidth / min) : '';
+    });
+  }
+  addEventListener('resize', fit);
+  new MutationObserver(fit).observe(document.documentElement, { childList: true, subtree: true });
+  fit();
+})();`;

@@ -639,6 +639,7 @@ async function build(args) {
           const next = variants[variants.indexOf(v) + 1];
           const fg = generateFrame(v.tree, { ...v.gen, fluid: true, fluidSkip: v.skip, peer: next ? next.tree : null, svgText, inlineSvg: args.inlineSvg, tokens, assetUrl: (rel) => `../assets/${rel}`, extraCss, frameHref, semantic: args.semantic });
           fs.writeFileSync(path.join(out, v.dir, 'fluid.html'), fg.html);
+          v.fluidRoot = fg.root; // для React/Vue: страница из одного макета — тоже резиновая
           // поправки после сверки (межбуквенные и т. п.) — те же, что у фиксированной вёрстки этого макета
           const fixed = fs.existsSync(path.join(out, v.dir, 'styles.css')) ? fs.readFileSync(path.join(out, v.dir, 'styles.css'), 'utf8') : '';
           const mark = fixed.indexOf('/* Поправки после сверки');
@@ -750,6 +751,8 @@ async function build(args) {
         }
         // один макет, не прошедший проверку, в html/ остаётся обычной страницей
         if (g.single && (!ok || !fl)) { fs.rmSync(path.join(out, dir), { recursive: true, force: true }); continue; }
+        // проверенная резиновая версия одного макета — она же в React/Vue (проверка там — по той же картинке)
+        if (g.single && variants[0].fluidRoot) fwPages[g.members[0]] = { ...fwPages[g.members[0]], root: variants[0].fluidRoot, cssFile: 'fluid.css', fluid: true };
         responsive.push({ ...entry, ok, single: !!g.single, components: g.members.map((i) => fwPages[i]) });
       }
     }
@@ -795,7 +798,7 @@ async function build(args) {
       for (const p of pages) routeOf.set(p.dir, p.route);
       // компоненты Figma (варианты, состояния) — те же классы, что в html/: деревья элементов получают классы
       // компонентов, у страниц — общий CSS компонентов + свои стили (fw.css рядом со styles.css)
-      const cz = componentizeTrees(pages.map((p) => ({ root: p.root, css: fs.readFileSync(path.join(out, p.dir, 'styles.css'), 'utf8') })), (el) => htmlOf(el, 0));
+      const cz = componentizeTrees(pages.map((p) => ({ root: p.root, css: fs.readFileSync(path.join(out, p.dir, p.cssFile || 'styles.css'), 'utf8') })), (el) => htmlOf(el, 0));
       // порядок: сначала компоненты, потом страница (своё у копий должно перекрывать модификаторы)
       pages.forEach((p, i) => fs.writeFileSync(path.join(out, p.dir, 'fw.css'), `${cz.css}\n${cz.pageCss[i]}`));
       const comps = findComponents(pages);

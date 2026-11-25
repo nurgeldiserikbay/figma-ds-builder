@@ -302,7 +302,43 @@ export function analyzeSemantics(tree) {
 
   applyLinks(tree, out, set, inInput);
   applyForms(tree, out, inInput);
+  unifyRepeats(tree, out);
   return out;
+}
+
+const TEXT_TAGS = /^(p|span|h[1-6])$/;
+/**
+ * Одинаковые места в копиях одного компонента (карточки, пункты) — один тег: заголовок карточки не бывает
+ * в одной копии <h3>, а в соседней <span>. Место — путь имён слоёв от экземпляра компонента и кегль.
+ * Берётся самый частый тег (заголовок — при равенстве); <h1> на странице один и копиям не раздаётся.
+ */
+function unifyRepeats(tree, out) {
+  const groups = new Map();
+  (function walk(n, inst, pathFromInst) {
+    if (n.visible === false) return;
+    if (n.type === 'INSTANCE' && n.component?.name) { inst = n.component.name; pathFromInst = []; }
+    else if (inst) pathFromInst = [...pathFromInst, n.name];
+    if (n.type === 'TEXT' && inst && out.has(n.id) && TEXT_TAGS.test(out.get(n.id).tag)) {
+      const key = `${inst}\u0000${pathFromInst.join('/')}\u0000${Math.round(firstSize(n))}`;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(n.id);
+    }
+    (n.children || []).forEach((c) => walk(c, inst, pathFromInst));
+  })(tree, null, []);
+  for (const ids of groups.values()) {
+    if (ids.length < 2) continue;
+    const tags = ids.map((id) => out.get(id).tag);
+    if (new Set(tags).size === 1) continue;
+    const count = new Map();
+    tags.filter((t) => t !== 'h1').forEach((t) => count.set(t, (count.get(t) || 0) + 1));
+    if (!count.size) continue;
+    const best = [...count].sort((a, b) => b[1] - a[1] || (/^h/.test(b[0]) ? 1 : 0) - (/^h/.test(a[0]) ? 1 : 0) || a[0].localeCompare(b[0]))[0][0];
+    for (const id of ids) {
+      const e = out.get(id);
+      if (e.tag === 'h1') continue; // главный заголовок страницы остаётся
+      e.tag = best;
+    }
+  }
 }
 
 const LINKABLE = new Set(['div', 'a', 'button', 'span', 'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6']);

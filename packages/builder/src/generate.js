@@ -541,7 +541,10 @@ export function generateFrame(tree, { mode = 'flow', absIds = null, fluid = fals
   const root = buildBox(tree, { mode, absIds });
   const rootEl = buildEl(root, null, ctx, false, fluid);
   // не уже макета: ниже его ширины страница уменьшается целиком (zoom), а не сжимается
-  if (fluid) rootEl.style = `${rootEl.style ? rootEl.style + ' ' : ''}width: 100%; min-width: ${px(tree.w)};${tree.layout && tree.layout.mode !== 'NONE' && hugsHeight(tree) ? ' height: auto;' : ''}`;
+  if (fluid) {
+    rootEl.style = `${rootEl.style ? rootEl.style + ' ' : ''}width: 100%; min-width: ${px(tree.w)};${tree.layout && tree.layout.mode !== 'NONE' && hugsHeight(tree) ? ' height: auto;' : ''}`;
+    rootEl.attrs.push(['data-fluid', String(Math.round(tree.w))]); // уже этой ширины — уменьшается целиком (FLUID_JS)
+  }
   const body = htmlOf(rootEl, 1);
 
   // полнота: каждый видимый слой должен попасть в вёрстку (кроме вобранных фонов и содержимого векторов)

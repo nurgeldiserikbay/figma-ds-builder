@@ -1,7 +1,7 @@
 {
   "name": "ds-builder-desktop",
   "productName": "DS Builder",
-  "version": "0.3.41",
+  "version": "0.3.42",
   "description": "Вёрстка из макета Figma с проверкой пиксель в пиксель — программа с окном",
   "author": "nurgeldiserikbay",
   "license": "MIT",
