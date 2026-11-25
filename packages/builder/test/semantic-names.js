@@ -40,7 +40,7 @@ console.log('смысловые теги по именам слоёв (header, n
   assert.equal(s2.get('v').attrs.placeholder, 'Ваша почта');
   assert.notEqual(s2.get('i')?.tag, 'button', 'поле ввода — не кнопка');
   const { html } = generateFrame(tree2, { mode: 'flow', assetUrl: (r) => r, title: 'F' });
-  assert.match(html, /<input [^>]*type="email" placeholder="Ваша почта"[^>]*>/);
+  assert.match(html, /<input [^>]*type="email"[^>]*placeholder="Ваша почта"[^>]*>/);
   assert.doesNotMatch(html, /<\/input>/);
   console.log('поле ввода → <input type="email" placeholder> — OK');
 }

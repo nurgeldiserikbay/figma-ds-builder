@@ -93,7 +93,7 @@ function variantClassJs(va) {
   return `[${parts.join(', ')}].filter(Boolean).join(' ')`;
 }
 function reactAttrJs(a, name, plain) {
-  if (plain) return `${{ for: 'htmlFor', tabindex: 'tabIndex', readonly: 'readOnly', maxlength: 'maxLength', autocomplete: 'autoComplete' }[a] || a}={${name}}`;
+  if (plain) return `${JSX_NAMES[a] || a}={${name}}`;
   if (a === 'aria-current') return `aria-current={${name} ? 'page' : undefined}`;
   return `${a}={${name}}`;
 }
@@ -153,7 +153,9 @@ function htmlProp(v, c, hint) {
 // ---------------------------------------------------------------------------------------------
 
 /** Атрибут JSX: в строке "…" JSX не понимает экранирования — кавычки и \\ только через {"…"}. */
-const jsxAttr = (k, v) => (/["\\\n{}<>&]/.test(String(v)) ? `${k}={${jsStr(v)}}` : `${k}="${v}"`);
+// имена атрибутов в JSX; значение поля — defaultValue (value без onChange React считает ошибкой)
+const JSX_NAMES = { for: 'htmlFor', tabindex: 'tabIndex', readonly: 'readOnly', maxlength: 'maxLength', autocomplete: 'autoComplete', value: 'defaultValue' };
+const jsxAttr = (k0, v) => { const k = JSX_NAMES[k0] || k0; return /["\\\n{}<>&]/.test(String(v)) ? `${k}={${jsStr(v)}}` : `${k}="${v}"`; };
 
 /**
  * Действие ссылки из прототипа в React/Vue: окно (Open overlay → <dialog> поверх страницы), «Назад»/«Закрыть»
@@ -290,6 +292,7 @@ function jsx(el, c, depth, p = [], noShow = false) {
     attrs.push(act.back ? 'onClick={(e) => { e.preventDefault(); closeOrBack(e); }}' : `onClick={(e) => { e.preventDefault(); openOverlay('${act.open}'); }}`);
   }
   const kids = el.children || [];
+  if (el.content !== undefined) attrs.push(jsxAttr('value', el.content)); // <textarea>: значение — defaultValue
   if (!kids.length) return `${pad}<${el.tag} ${attrs.join(' ')} />`;
   const prevHint = c.hint;
   c.hint = dataName(el) || prevHint; // имя иконки — по слою Figma вокруг неё («icon/check» → iconCheck)
@@ -439,7 +442,7 @@ function vueTpl(el, c, depth, p = [], noShow = false) {
     attrs.push(act.back ? '@click.prevent="closeOrBack"' : `@click.prevent="openOverlay('${act.open}')"`);
   }
   const kids = el.children || [];
-  if (!kids.length) return el.void ? `${pad}<${el.tag} ${attrs.join(' ')} />` : `${pad}<${el.tag} ${attrs.join(' ')}></${el.tag}>`;
+  if (!kids.length) return el.void ? `${pad}<${el.tag} ${attrs.join(' ')} />` : `${pad}<${el.tag} ${attrs.join(' ')}>${el.content !== undefined ? escAttr(el.content) : ''}</${el.tag}>`;
   const prevHint = c.hint;
   c.hint = dataName(el) || prevHint;
   const inner = kids.map((k, i) => vueTpl(k, c, depth + 1, [...p, i])).filter((x) => x !== null).join('\n');

@@ -353,7 +353,7 @@ function buildEl(box, place, ctx, inPhrasing = false, grow = false) {
   if (ctx.downgrade?.has(node?.id)) tag = 'div';
   // внутри button/a/h*/p допустимы только строчные элементы: вложенная кнопка или ссылка
   // заставила бы HTML-парсер закрыть внешнюю и перестроить дерево
-  if (inPhrasing && tag !== 'input') tag = 'span';
+  if (inPhrasing && tag !== 'input' && tag !== 'textarea') tag = 'span';
   // список, разложенный по рядам через обёртки, остаётся div (li должны быть прямыми детьми ul)
   if (tag === 'ul' && (box.children || []).some((c) => c.kind !== 'node')) {
     tag = 'div';
@@ -405,14 +405,14 @@ function buildEl(box, place, ctx, inPhrasing = false, grow = false) {
     if (node.svg && node.svgSpace === 'box') kids.push(svgImg(node, ctx, node.svgBox || { x: 0, y: 0, w: box.rect.w, h: box.rect.h }));
     // дети повёрнутого слоя — со своими матрицами, внутри рамки
     children.forEach((c, i) => kids.push(buildEl(c, places[i], ctx, childPhrasing)));
-  } else if (node?.type === 'TEXT' && box.kind === 'node' && tag === 'input') {
+  } else if (node?.type === 'TEXT' && box.kind === 'node' && (tag === 'input' || tag === 'textarea')) {
     // поле ввода: текст макета — подсказка (placeholder); шрифт и цвет — на самом <input>
     const seg = node.text?.segments?.[0] || node.text?.style || {};
     const sc = segmentCss(seg, ctx);
     for (const k of ['font-family', 'font-size', 'font-weight', 'font-style', 'line-height', 'letter-spacing', 'color', 'text-transform']) if (sc[k]) flow[k] = sc[k];
     flow['text-align'] = { CENTER: 'center', RIGHT: 'right' }[node.text?.align] || 'left';
     kids = [];
-    voidEl = true;
+    voidEl = tag === 'input'; // у <textarea> значение — содержимое тега
   } else if (node?.type === 'TEXT' && box.kind === 'node') {
     const va = { TOP: 'flex-start', CENTER: 'center', BOTTOM: 'flex-end' }[node.text?.verticalAlign] || 'flex-start';
     Object.assign(flow, { display: 'flex', 'flex-direction': 'column', 'justify-content': va });
@@ -445,12 +445,12 @@ function buildEl(box, place, ctx, inPhrasing = false, grow = false) {
   const attrs = [];
   for (const [k, v] of Object.entries(sem?.attrs || {})) {
     if (tag === 'div' && k !== 'role' && k !== 'aria-label') continue;
-    if (tag === 'span' && ['href', 'target', 'rel', 'action'].includes(k)) continue; // ссылка внутри ссылки стала span
+    if (tag === 'span' && ['href', 'target', 'rel', 'action', 'for'].includes(k)) continue; // ссылка внутри ссылки стала span
     attrs.push([k, k === 'href' ? resolveHref(v, ctx) : v]);
   }
   // цель «Scroll to» из прототипа — якорь
   const anchor = node && box.kind === 'node' && ctx.semantic?.anchors?.get(node.id);
-  if (anchor) attrs.push(['id', anchor]);
+  if (anchor && !attrs.some(([k]) => k === 'id')) attrs.push(['id', anchor]);
   if (node) attrs.push(['data-figma-id', node.id], ['data-name', node.name]);
   const comp = node && ctx.comps?.get(node.id);
   if (comp) {
@@ -462,7 +462,7 @@ function buildEl(box, place, ctx, inPhrasing = false, grow = false) {
   const mode = node?.modes && Object.values(node.modes)[0];
   if (mode) attrs.push(['data-mode', String(mode).toLowerCase().replace(/[^a-z0-9]+/g, '-')]);
   return {
-    tag, cls, style: placementStyle(place), attrs, children: kids, inlineChildren: inlineKids, void: voidEl || undefined,
+    tag, cls, style: placementStyle(place), attrs, children: kids, inlineChildren: inlineKids, void: voidEl || undefined, content: sem?.content,
     id: node?.id, name: sem?.name || (node ? node.name : 'group'), kind: box.kind, component: node?.component || null,
     figmaProps: (box.kind === 'node' && node?.propRefs) || null,
   };
@@ -477,6 +477,7 @@ export function htmlOf(el, depth = 1) {
   for (const [k, v] of el.attrs) attrs.push(`${k}="${esc(v)}"`);
   const open = `${pad}<${el.tag} ${attrs.join(' ')}>`;
   if (el.void) return open; // <input> без закрывающего тега
+  if (el.content !== undefined) return `${open}${esc(el.content)}</${el.tag}>`; // <textarea>: значение — текст внутри
   const kids = (el.children || []).filter((k) => k.kind !== 'opt');
   if (!kids.length) return `${open}</${el.tag}>`;
   if (el.inlineChildren) return `${open}${kids.map(inlineHtml).join('')}</${el.tag}>`;

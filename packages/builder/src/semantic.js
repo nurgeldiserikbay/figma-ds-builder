@@ -36,9 +36,14 @@ function signature(n, depth = 0) {
 
 const INPUT_RE = /(^|[\s/_-])(input|text ?field|textfield|field|form ?field|search|email|e-mail|поле|поиск|ввод)([\s/_-]|$)/i;
 /** Поле ввода: блок с именем input/field/поле… (или экземпляр такого компонента) и текстом-значением в окрашенной рамке. */
-export function inputValueOf(n, parentName = '') {
+export function inputValueOf(n, parentName = '') { return fieldOf(n, parentName)?.text || null; }
+
+const SELECT_RE = /(^|[\s/_-])(select|dropdown|drop-down|combo ?box|picker|выпадающ|список|выбор)/i;
+/** Поле формы: текст-значение, его рамка и вид — input, textarea (высокая рамка) или выпадающий список. */
+export function fieldOf(n, parentName = '') {
   if (n.type === 'TEXT' || !visible(n)) return null;
-  const named = INPUT_RE.test(n.name || '') || INPUT_RE.test(n.component?.name || '')
+  const sel = SELECT_RE.test(n.name || '') || SELECT_RE.test(n.component?.name || '');
+  const named = sel || INPUT_RE.test(n.name || '') || INPUT_RE.test(n.component?.name || '')
     || (n.type === 'COMPONENT' && INPUT_RE.test(parentName || '')); // вариант в наборе «Input»
   if (!named) return null;
   const t = texts(n);
@@ -51,10 +56,36 @@ export function inputValueOf(n, parentName = '') {
   };
   for (const v of t) {
     const b = boxOf(n, v.id);
-    if (b && b.h >= 28 && b.h <= 72 && chars(v) <= 60) return v;
+    if (!b || b.h < 28) continue;
+    // справа от текста — стрелка вниз (иконка без текста в правой трети): выпадающий список
+    const chevron = (n.children || []).some(function has(c) {
+      return visible(c) && c.id !== v.id && !texts(c).length && (c.svg || c.type === 'VECTOR' || /chevron|arrow|caret|стрелк/i.test(c.name || ''))
+        && c.w <= 32 && c.h <= 32 && c.x > n.w * 0.6 || (c.children || []).some(has);
+    }) && /select|выбер|choose/i.test(v.text?.characters || '');
+    if (b.h <= 72 && chars(v) <= 60) return { text: v, box: b, kind: sel || chevron ? 'select' : 'input' };
+    // высокая рамка и многострочный или фиксированный по высоте текст — textarea
+    if (b.h > 72 && b.h <= 400 && !sel && v.text?.autoResize !== 'WIDTH_AND_HEIGHT') return { text: v, box: b, kind: 'textarea' };
   }
   return null;
 }
+
+// контраст текста и фона поля (WCAG): серый текст на фоне поля — подсказка, контрастный — уже введённое значение
+const solidOf = (n) => (n?.fills || []).find((f) => f.type === 'SOLID' && f.visible !== false)?.color || null;
+const lum = (c) => { const ch = (v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4); return 0.2126 * ch(c.r) + 0.7152 * ch(c.g) + 0.0722 * ch(c.b); };
+const PH_WORDS = /^(введите|укажите|выберите|ваш|ваша|ваше|ваши|поиск|найти|например|enter|type|your|search|select|choose|e\.?g\.?|write|add)\b|…$|\.\.\.$/i;
+function looksLikePlaceholder(textNode, box, tree) {
+  const s = (textNode.text?.characters || '').trim();
+  if (/[|│▏]\s*$/.test(s)) return false; // курсор в конце — текст уже вводят
+  if (PH_WORDS.test(s)) return true;
+  const tc = solidOf(textNode.text?.segments?.[0]) || solidOf(textNode);
+  const bg = solidOf(box) || solidOf(tree) || { r: 1, g: 1, b: 1 };
+  if (!tc) return true;
+  const [a, b] = [lum(tc), lum(bg)].sort((x, y) => y - x);
+  // приглушённый текст (обычно серый, контраст ниже 7:1) — подсказка, почти чёрный — введённое значение
+  return (a + 0.05) / (b + 0.05) < 7 || (tc.a ?? 1) < 0.7;
+}
+/** Текст поля без курсора из макета («Mosc |» → «Mosc»). */
+export const stripCaret = (s) => String(s || '').replace(/\s*[|│▏]\s*$/, '').trim();
 const inputType = (n, v) => {
   const s = `${n.name} ${n.component?.name || ''} ${v.text?.characters || ''}`;
   if (/mail|почт/i.test(s)) return 'email';
@@ -174,11 +205,34 @@ export function analyzeSemantics(tree) {
     const kids = (n.children || []).filter(visible);
 
     // поле ввода: значение — <input> с подсказкой (placeholder), сам блок — не кнопка
-    const val = !inInput.has(n.id) && !phrasing.has(n.id) ? inputValueOf(n, parent?.name) : null;
-    if (val) {
+    const field = !inInput.has(n.id) && !phrasing.has(n.id) ? fieldOf(n, parent?.name) : null;
+    if (field) {
+      const val = field.text;
       (function mark(x) { inInput.add(x.id); (x.children || []).forEach(mark); })(n);
-      const ph = (val.text?.characters || '').trim();
-      set(val, 'input', isGenericName(val.name) ? 'input' : null, { type: inputType(n, val), placeholder: ph, 'aria-label': ph });
+      const raw = (val.text?.characters || '').trim();
+      const txt = stripCaret(raw);
+      // подпись над полем (тот же родитель, вплотную сверху, начинается у левого края) — <label for>
+      const sibs = (parent?.children || []).filter(visible);
+      // текст выше по порядку слоёв уже мог стать <p>/<h*> — подпись поля важнее
+      const free = (c) => !out.has(c.id) || /^(p|span|h[1-6])$/.test(out.get(c.id).tag);
+      const label = sibs.find((c) => c !== n && c.type === 'TEXT' && chars(c) <= 60 && free(c)
+        && n.y - (c.y + c.h) >= -1 && n.y - (c.y + c.h) <= 16 && Math.abs(c.x - n.x) <= 24)
+        || texts(n).find((c) => c !== val && chars(c) <= 60 && c.y + c.h <= val.y - 2 && free(c)); // подпись внутри компонента поля
+      const id = `field-${String(n.id).replace(/[^a-z0-9]+/gi, '-')}`;
+      const placeholder = looksLikePlaceholder(val, field.box, tree) || raw !== txt && !txt;
+      const named = label ? {} : { 'aria-label': (placeholder ? txt : '') || n.name || 'Поле' };
+      if (label) set(label, 'label', isGenericName(label.name) ? 'label' : null, { for: id });
+      if (field.kind === 'select') {
+        // вид — как в макете (нативный <select> рисует свою стрелку); смысл — выпадающий список
+        set(n, 'button', isGenericName(n.name) ? 'select' : null, { type: 'button', id, role: 'combobox', 'aria-haspopup': 'listbox', 'aria-expanded': 'false', ...(label ? {} : { 'aria-label': txt || n.name }) });
+        markPhrasing(n);
+      } else {
+        const tag = field.kind === 'textarea' ? 'textarea' : 'input';
+        const attrs = { ...(tag === 'input' ? { type: inputType(n, val) } : {}), id, ...named };
+        if (placeholder) attrs.placeholder = txt; else if (tag === 'input') attrs.value = txt;
+        set(val, tag, isGenericName(val.name) ? (tag === 'textarea' ? 'textarea' : 'input') : null, attrs);
+        if (tag === 'textarea' && !placeholder) out.get(val.id).content = txt;
+      }
     }
     if (n !== tree && !out.has(n.id) && !inInput.has(n.id) && isButtonLike(n)) {
       set(n, 'button', isGenericName(n.name) ? 'button' : null, { type: 'button' });
@@ -361,6 +415,10 @@ export const SEMANTIC_RESET = [
   'form { display: block; margin: 0; }',
   // поле ввода: вид задаёт рамка из макета, у самого <input> — только шрифт и цвет подсказки
   'input { font: inherit; color: inherit; background: none; border: 0; padding: 0; margin: 0; outline: none; display: block; min-width: 0; }',
-  'input::placeholder { color: inherit; opacity: 1; }',
+  'textarea { font: inherit; color: inherit; background: none; border: 0; padding: 0; margin: 0; outline: none; display: block; min-width: 0; resize: none; overflow: hidden; }',
+  'input::placeholder, textarea::placeholder { color: inherit; opacity: 1; }',
+  'label { display: block; cursor: default; }',
+  // фокус с клавиатуры виден всегда (мышью — нет): на сверку по макету не влияет
+  'a:focus-visible, button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }',
   'button { font: inherit; color: inherit; background: none; border: 0; padding: 0; margin: 0; text-align: inherit; cursor: pointer; display: block; }',
 ].join('\n');
