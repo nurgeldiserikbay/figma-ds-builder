@@ -359,6 +359,7 @@ async function build(args) {
   const responsive = [];
   const codeOf = new Map(); // папка фрейма → файлы кода (для AGENTS.md в корне)
   const routeOf = new Map(); // папка фрейма → маршрут страницы в React/Vue (#route)
+  const blockOf = new Map(); // компонент Figma → класс компонента в html/ (components.css)
   // текст SVG из пакета: небольшие векторы вставляются прямо в страницу
   const svgText = (rel) => { try { return fs.readFileSync(path.join(pkg.dir, rel), 'utf8'); } catch { return null; } };
 
@@ -740,6 +741,7 @@ async function build(args) {
       const ex = exportHtml(out, fwPages, responsive.map((r) => ({ name: r.name, dir: r.dir, widths: r.widths, members: r.components.map((c) => c.dir) })), { file: pkg.manifest.file, check: checkSummary(results) });
       console.log(`HTML/CSS: ${path.relative(process.cwd(), ex.root) || ex.root}`);
       for (const p of ex.pages) for (const from of p.responsive ? p.members : [p.from]) codeOf.set(from, [...(codeOf.get(from) || []), `html/${p.file}`]);
+      for (const c of ex.components) blockOf.set(c.name, [...(blockOf.get(c.name) || []), c.block]);
       if (ex.components.length) console.log(`  компоненты: ${ex.components.map((c) => `${c.block} ×${c.copies}`).join(', ')} → html/css/components.css`);
       if (browser) {
         // параллельно, как и фреймы
@@ -823,7 +825,7 @@ async function build(args) {
     results: results.map(({ stats, ...r }) => ({ ...r, stats })) }, null, 2));
   const scripts = writeCheckScripts(out, { cli: fileURLToPath(import.meta.url) });
   writeCheckManifest(out, { scale: pkg.scale, threshold: args.threshold, textThreshold: args.textThreshold, textAreaThreshold: args.textAreaThreshold, results, codeOf, routeOf });
-  writeRootAgents(out, { file: pkg.manifest.file, results, codeOf, responsive, frames: pkg.frames, frameworks: args.frameworks, threshold: args.threshold, notes: designNotes(pkg), failed: failedFrames, scripts });
+  writeRootAgents(out, { file: pkg.manifest.file, results, codeOf, responsive, frames: pkg.frames, frameworks: args.frameworks, threshold: args.threshold, notes: designNotes(pkg), failed: failedFrames, scripts, blockOf });
   console.log(`Отчёт: ${path.join(out, 'report.html')}`);
   if (args.open) openFile(path.join(out, 'report.html'));
   const failed = results.filter((r) => r.pass === false).length;
@@ -834,7 +836,7 @@ async function build(args) {
  * Корень папки сборки: AGENTS.md (что здесь код, что эталон, что служебное) и screens/ — PNG макетов
  * с понятными именами: по ним агент видит все экраны и состояния, не открывая папки проверки.
  */
-function writeRootAgents(out, { file, results, codeOf, responsive, frames, frameworks, threshold, notes = { components: [], layers: [] }, failed = [], scripts = false }) {
+function writeRootAgents(out, { file, results, codeOf, responsive, frames, frameworks, threshold, notes = { components: [], layers: [] }, failed = [], scripts = false, blockOf = new Map() }) {
   const scr = path.join(out, 'screens');
   fs.rmSync(scr, { recursive: true, force: true });
   const rows = [];
@@ -881,7 +883,8 @@ function writeRootAgents(out, { file, results, codeOf, responsive, frames, frame
       : '2. Проверь правку: в окне DS Builder у этой сборки — «проверить правки» (или `ds-build check <эта папка> --screen "Имя экрана"`).',
     '3. Проверка пишет процент расхождения, какие слои Figma расходятся и где (x, y, размер в координатах макета) и кладёт картинки в `.check/<экран>/`: `reference.png` — макет, `render.png` — вёрстка, `diff.png` — красным то, что отличается. Посмотри на них, поправь, проверь снова.',
     '4. Готово, когда экран отмечен ✓. Текст до 2–4% своей площади может расходиться из-за сглаживания шрифтов — это нормально. Не правь эталон и пороги проверки.',
-    '5. Используй токены из `design-system/` (`var(--…)`) и готовые компоненты, а не цвета и размеры числами.',
+    '5. Используй токены из `design-system/` (`var(--…)`) и готовые компоненты (список по экранам — ниже), а не цвета и размеры числами и не копии разметки.',
+    '6. Сохраняй смысловые теги и атрибуты: `<button>`, `<a>`, `<label for>`, `<input>`, `aria-*`, `data-scroll` (прокрутка) и `data-figma-id` (к ним привязаны поправки в CSS).',
     '',
     `## Экраны (сверено: совпадают ${passed} из ${withRef}${abs ? `; на координатах: ${abs}` : ''})`,
     '',
@@ -898,6 +901,26 @@ function writeRootAgents(out, { file, results, codeOf, responsive, frames, frame
       L.push(`- ${r.name} (${r.diff.percent.toFixed(2)}%): ${top}`);
     }
     if (bad.length > 60) L.push(`- …и ещё ${bad.length - 60} — в report.html`);
+  }
+  // что использовать в каждом экране: компоненты Figma (и их классы в html/) и токены — чтобы не писать числами
+  const usage = results.map((r) => {
+    const read = (f) => { try { return fs.readFileSync(path.join(out, r.dir, f), 'utf8'); } catch { return ''; } };
+    const count = (re, text) => { const m = new Map(); for (const x of text.matchAll(re)) m.set(x[1], (m.get(x[1]) || 0) + 1); return [...m].sort((a, b) => b[1] - a[1]); };
+    const htmlFile = (codeOf.get(r.dir) || []).find((f) => f.startsWith('html/'));
+    let page = '';
+    try { page = htmlFile ? fs.readFileSync(path.join(out, htmlFile), 'utf8') : ''; } catch { /* нет html/ */ }
+    // класс компонента именно на этой странице (у одного компонента Figma может быть несколько классов-форм)
+    const cls = (n) => (blockOf.get(n) || []).filter((b) => new RegExp(`class="${b}[" ]`).test(page));
+    return { r, cls, comps: count(/data-component="([^"]+)"/g, read('index.html')), toks: count(/var\((--[\w-]+)/g, read('styles.css')) };
+  }).filter((u) => u.comps.length || u.toks.length);
+  if (usage.length) {
+    L.push('', '## Экраны: компоненты и токены', '', 'Что уже есть для каждого экрана. Правь и дополняй через них, а не числами и копиями: компонент — класс из `html/css/components.css` (в React/Vue — компонент из `src/components/`), токен — `var(--…)` из `design-system/`.', '');
+    for (const { r, comps, toks, cls } of usage.slice(0, 200)) {
+      const cs = comps.slice(0, 8).map(([n, k]) => { const b = cls(n); return `${n}${b.length ? ` (${b.map((x) => `.${x}`).join(', ')})` : ''} ×${k}`; }).join(', ');
+      const ts = toks.slice(0, 10).map(([n]) => `\`${n}\``).join(', ');
+      L.push(`- **${r.name}**: ${cs ? `компоненты — ${cs}` : 'компонентов нет'}${ts ? `; токены — ${ts}` : ''}`);
+    }
+    if (usage.length > 200) L.push(`- …и ещё ${usage.length - 200} экранов`);
   }
   if (responsive.length) {
     L.push('', '## Адаптивные страницы', '');
