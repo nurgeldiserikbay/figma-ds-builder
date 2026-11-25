@@ -199,5 +199,6 @@
  "Открыть картинки": "Abrir imágenes",
  "Сверить код из html/ с макетом после ваших правок или правок ИИ": "Comparar el código de html/ con el diseño tras tus cambios o los de la IA",
  "проверить правки": "comprobar cambios",
- "Эта сборка сделана до версии 0.3.39 — соберите её снова, чтобы проверять правки": "Esta compilación es anterior a la versión 0.3.39: vuelve a compilarla para comprobar cambios"
+ "Эта сборка сделана до версии 0.3.39 — соберите её снова, чтобы проверять правки": "Esta compilación es anterior a la versión 0.3.39: vuelve a compilarla para comprobar cambios",
+ "Доводить ИИ<small>экраны, которые не сошлись с макетом: ИИ предлагает правки стилей, сверка оставляет только те, что улучшили</small>": "Pulir con IA<small>pantallas que no coinciden con el diseño: la IA propone ajustes de estilo y la comprobación conserva solo los que mejoran</small>"
 }

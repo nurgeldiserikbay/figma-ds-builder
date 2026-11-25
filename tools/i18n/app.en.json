@@ -199,5 +199,6 @@
  "Открыть картинки": "Open images",
  "Сверить код из html/ с макетом после ваших правок или правок ИИ": "Compare the code in html/ with the design after your edits or AI edits",
  "проверить правки": "check edits",
- "Эта сборка сделана до версии 0.3.39 — соберите её снова, чтобы проверять правки": "This build was made before version 0.3.39 — build it again to check edits"
+ "Эта сборка сделана до версии 0.3.39 — соберите её снова, чтобы проверять правки": "This build was made before version 0.3.39 — build it again to check edits",
+ "Доводить ИИ<small>экраны, которые не сошлись с макетом: ИИ предлагает правки стилей, сверка оставляет только те, что улучшили</small>": "Polish with AI<small>screens that didn't match the design: AI suggests style fixes, the check keeps only the ones that helped</small>"
 }

@@ -25,7 +25,7 @@ const trim = (u) => u.replace(/\/+$/, '');
 /** Провайдеры по порядку. Облачные — только при наличии ключа; платный — только с paid. */
 export function aiProviders(env = process.env, { paid = false } = {}) {
   // DS_AI_ONLY=1 — только свой сервер (как раньше); иначе свой — первым, дальше обычная цепочка
-  const own = env.DS_AI_URL && { name: 'свой сервер', url: trim(env.DS_AI_URL), model: env.DS_AI_MODEL || 'qwen2.5-coder:7b', key: env.DS_AI_KEY || '', local: !env.DS_AI_KEY };
+  const own = env.DS_AI_URL && { name: 'свой сервер', url: trim(env.DS_AI_URL), model: env.DS_AI_MODEL || 'qwen2.5-coder:7b', key: env.DS_AI_KEY || '', local: !env.DS_AI_KEY, vision: env.DS_AI_VISION === '1' };
   if (own && env.DS_AI_ONLY === '1') return [own];
   const list = [
     own,
@@ -165,6 +165,38 @@ export function screenTexts(tree, max = 15) {
   })(tree);
   out.sort((a, b) => a.y - b.y || a.x - b.x);
   return [...new Set(out.map((o) => o.t))].slice(0, max);
+}
+
+/** Модель понимает картинки (по имени; DS_AI_VISION=1 у своего сервера — явно). */
+export function canSee(p) {
+  return !!p.vision || /vision|[-_.]vl\b|vl[-:]|llava|gpt-4o|gpt-4\.1|gpt-5|claude|gemini|gemma-?3|pixtral|llama-4|scout|maverick|minicpm-v|moondream/i.test(p.model || '');
+}
+
+/**
+ * Ответ ИИ (JSON) на готовые сообщения — по цепочке провайдеров, с кэшем на диске. Сообщения с картинками
+ * (image_url) провайдер может не принять — тогда тот же вопрос без картинок (textOnly).
+ */
+export async function askJson(chain, messages, { cacheDir, log = () => {}, what = 'запрос', textOnly = null } = {}) {
+  const keyOf = (p, m) => cacheDir && path.join(cacheDir, 'ai', `${crypto.createHash('sha256').update(p.model + '\n' + JSON.stringify(m)).digest('hex').slice(0, 32)}.json`);
+  const variants = (p) => (!textOnly ? [messages] : canSee(p) ? [messages, textOnly] : [textOnly]);
+  for (const p of chain) for (const m of variants(p)) { const f = keyOf(p, m); if (f && fs.existsSync(f)) return { parsed: JSON.parse(fs.readFileSync(f, 'utf8')), by: p.name }; }
+  const errors = [];
+  for (const p of chain) {
+    for (const m of variants(p)) {
+      try {
+        log(`  ИИ (${p.name}, ${p.model}): ${what}…${p.free ? ' [бесплатный облачный план]' : p.paid ? ' [ПЛАТНЫЙ]' : ''}`);
+        const content = await chat(p, m);
+        const parsed = JSON.parse(content.replace(/^[\s\S]*?(\{[\s\S]*\})[\s\S]*$/, '$1'));
+        const f = keyOf(p, m);
+        if (f) { fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, JSON.stringify(parsed)); }
+        return { parsed, by: p.name };
+      } catch (e) {
+        errors.push(e.message.slice(0, 160));
+        if (!/HTTP 4(00|13|15|22)|image|vision|content/i.test(e.message)) break; // не про картинки — к следующему провайдеру
+      }
+    }
+  }
+  return { parsed: null, errors };
 }
 
 /** Ответ ИИ по цепочке провайдеров с кэшем на диске; null — никто не ответил. */

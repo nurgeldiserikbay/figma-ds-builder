@@ -32,6 +32,7 @@ import { unzipFile } from './unzip.js';
 import { mergePackages } from './merge.js';
 import { auditDesign, auditHtml, auditText, guidePage } from './design-audit.js';
 import { writeCheckManifest, checkBuild, writeCheckScripts } from './check.js';
+import { aiFixFrame } from './ai-fix.js';
 
 const HELP = `
 ds-build ui [--port 0] [--home папка] [--no-open]
@@ -120,6 +121,8 @@ function parseArgs(argv) {
     else if (k === '--no-semantic') a.semantic = false;
     else if (k === '--ai') a.ai = true;
     else if (k === '--ai-paid') { a.ai = true; a.aiPaid = true; }
+    else if (k === '--ai-fix') a.aiFix = true;
+    else if (k === '--ai-fix-max') { a.aiFix = true; a.aiFixMax = parseInt(argv[++i], 10) || 0; }
     else if (k === '--fonts') a.fonts = argv[++i];
     else if (k === '--open') a.open = true;
     else if (k === '--no-responsive') a.responsive = false;
@@ -367,11 +370,12 @@ async function build(args) {
   // не пересобирается — берётся готовый результат. Ключ учитывает всё, что влияет на вёрстку и проверку.
   const cacheRoot = path.join(defaultCacheDir(), 'frames');
   const optKey = crypto.createHash('sha256').update(JSON.stringify([
-    programHash(), args.layout, args.threshold, args.textThreshold, args.textAreaThreshold, args.refine, args.semantic, args.inlineSvg, args.ai, args.verify, !!args.allowAbsolute,
+    programHash(), args.layout, args.threshold, args.textThreshold, args.textAreaThreshold, args.refine, args.semantic, args.inlineSvg, args.ai, args.verify, !!args.allowAbsolute, !!args.aiFix,
     tokens.css(), extraCss, fs.existsSync(path.join(out, 'fonts.css')) ? fs.readFileSync(path.join(out, 'fonts.css'), 'utf8').replace(/url\([^)]*\)/g, '') : '', pkg.scale,
   ])).digest('hex');
   const slots = [];
   const failedFrames = [];
+  const aiFixBudget = { left: args.aiFix ? (args.aiFixMax || 40) : 0, queue: Promise.resolve() };
   let cached = 0, doneCount = 0;
   // переходы прототипа «Navigate to» → страница фрейма из этой сборки (папки фреймов лежат рядом)
   const frameDirs = new Map(frames.map((f) => [f.id, safe(`${f.name}-${f.id}`)]));
@@ -552,6 +556,31 @@ async function build(args) {
       }
       // запасной вариант дорабатываем один раз — уже выбранный
       if (browser && hasRef && !chosen.refined) { await refineAttempt(chosen); chosen.ok = okOf(chosen); }
+      // доводка ИИ (--ai-fix): только экраны, которые алгоритм не довёл; по одному экрану за раз (лимиты ИИ)
+      if (args.aiFix && browser && hasRef && !chosen.ok && chosen.diff?.sources && aiFixBudget.left > 0) {
+        aiFixBudget.left--;
+        await (aiFixBudget.queue = aiFixBudget.queue.then(async () => {
+          const render = async () => {
+            const re = await renderPage(browser, path.join(chosen.dir, 'index.html'), { width: f.width, height: f.height, scale: pkg.scale, out: path.join(chosen.dir, 'render.png') });
+            chosen.geometry = checkGeometry(tree, re.boxes);
+            chosen.diff = comparePng(path.join(fdir, 'reference.png'), path.join(chosen.dir, 'render.png'), path.join(chosen.dir, 'diff.png'));
+            chosen.percent = chosen.diff.percent;
+            if (chosen.diff.mismatched) chosen.diff.sources = attributeDiff(tree, path.join(chosen.dir, 'diff.png'), { scale: pkg.scale, top: 30 });
+            return { percent: chosen.percent, geometryFailed: chosen.geometry?.failed || 0, sources: chosen.diff.sources };
+          };
+          try {
+            const r = await aiFixFrame({ browser, htmlPath: path.join(chosen.dir, 'index.html'), cssPath: path.join(chosen.dir, 'styles.css'), refPath: path.join(fdir, 'reference.png'), renderPath: path.join(chosen.dir, 'render.png'),
+              tree, scale: pkg.scale, render, base: { percent: chosen.percent, geometryFailed: chosen.geometry?.failed || 0, sources: chosen.diff.sources },
+              providers: aiProviders(process.env, { paid: args.aiPaid }), cacheDir: defaultCacheDir(), log: (m) => console.log(m) });
+            if (r.error) { console.log(`  ИИ-доводка недоступна: ${r.error.slice(0, 200)}`); aiFixBudget.left = 0; }
+            else {
+              chosen.aiFix = r;
+              chosen.ok = okOf(chosen);
+              console.log(`  ИИ-доводка${r.by ? ` (${r.by})` : ''}: ${r.fixes.length ? `${r.before.toFixed(2)}% → ${r.after.toFixed(2)}%, правок ${r.fixes.length}` : 'правки не улучшили — оставлено как было'}${r.rejected ? `, отклонено ${r.rejected}` : ''}`);
+            }
+          } catch (e) { console.log(`  ИИ-доводка: ошибка ${String(e.message).slice(0, 160)} — оставлено как было`); }
+        }));
+      }
       chosen.chosen = true;
 
       // выбранный вариант кладём в папку фрейма
@@ -570,7 +599,7 @@ async function build(args) {
         gen: { mode: chosen.mode === 'absolute' ? 'absolute' : 'flow', absIds: chosen.pinned.length ? new Set(chosen.pinned) : null, title: f.name, names } };
       slots[idx].result = ({
         name: f.name, id: f.id, width: f.width, height: f.height, dir: dirName,
-        mode: chosen.mode, stats: chosen.gen.stats, fonts: chosen.fonts, diff: chosen.diff, geometry: chosen.geometry, refine: chosen.refine, pixels: pixelSplit(chosen.diff, textArea), pass,
+        mode: chosen.mode, stats: chosen.gen.stats, fonts: chosen.fonts, diff: chosen.diff, geometry: chosen.geometry, refine: chosen.refine, aiFix: chosen.aiFix, pixels: pixelSplit(chosen.diff, textArea), pass,
         pinned: chosen.pinned,
         attempts: attempts.map((a) => ({ mode: a.mode, pinned: a.pinned.length, percent: a.percent, geometryFailed: a.geometry?.failed ?? null, chosen: a.chosen })),
       });
@@ -905,6 +934,7 @@ function writeRootAgents(out, { file, results, codeOf, responsive, frames, frame
     '3. Проверка пишет процент расхождения, какие слои Figma расходятся и где (x, y, размер в координатах макета) и кладёт картинки в `.check/<экран>/`: `reference.png` — макет, `render.png` — вёрстка, `diff.png` — красным то, что отличается. Посмотри на них, поправь, проверь снова.',
     '4. Готово, когда экран отмечен ✓. Текст до 2–4% своей площади может расходиться из-за сглаживания шрифтов — это нормально. Не правь эталон и пороги проверки.',
     '5. Используй токены из `design-system/` (`var(--…)`) и готовые компоненты (список по экранам — ниже), а не цвета и размеры числами и не копии разметки.',
+    ...(results.some((r) => r?.aiFix?.fixes?.length) ? ['6. Блок «Правки ИИ» в конце `styles.css` у некоторых экранов подобрал ИИ при сборке (сверка подтвердила, что стало ближе к макету). Можно перенести их в нормальные стили или заменить на токены.'] : []),
     '6. Сохраняй смысловые теги и атрибуты: `<button>`, `<a>`, `<label for>`, `<input>`, `aria-*`, `data-scroll` (прокрутка) и `data-figma-id` (к ним привязаны поправки в CSS).',
     '',
     `## Экраны (сверено: совпадают ${passed} из ${withRef}${abs ? `; на координатах: ${abs}` : ''})`,

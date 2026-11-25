@@ -87,6 +87,7 @@ export function buildArgs(zips, out, o = {}) {
   const fw = ['html', 'react', 'vue'].filter((f) => o[f]);
   if (fw.length) a.push('--framework', fw.join(','));
   if (o.ai) a.push('--ai');
+  if (o.aiFix) a.push('--ai-fix');
   if (o.semantic === false) a.push('--no-semantic');
   if (o.responsive === false) a.push('--no-responsive');
   if (o.layout && ['auto', 'flow', 'absolute'].includes(o.layout)) a.push('--layout', o.layout);

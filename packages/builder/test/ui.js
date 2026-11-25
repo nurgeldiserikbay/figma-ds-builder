@@ -29,6 +29,7 @@ function req(p, { method = 'GET', headers = {}, body } = {}) {
 
 assert.deepEqual(buildArgs('a.zip', 'o', { html: true, jobs: '6' }).slice(-2), ['--jobs', '6'], 'число фреймов одновременно');
 assert.ok(!buildArgs('a.zip', 'o', { jobs: '' }).includes('--jobs'), 'авто — без --jobs');
+assert.ok(buildArgs('a.zip', 'o', { aiFix: true }).includes('--ai-fix'), 'доводка ИИ');
 assert.ok(!buildArgs('a.zip', 'o', { jobs: '999; rm' }).includes('--jobs'), 'мусор — без --jobs');
 assert.equal((await req('/')).status, 403, 'без ключа — нельзя');
 assert.equal((await req(`/?t=${token}`, { headers: { host: `evil.example:${new URL(url).port}` } })).status, 403, 'чужой Host — нельзя');
