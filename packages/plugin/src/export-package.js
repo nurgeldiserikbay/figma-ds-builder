@@ -82,6 +82,9 @@ function paints(list, ctx) {
     else if (p.type === 'IMAGE' && p.imageHash) {
       base.src = 'images/' + p.imageHash + '.png';
       base.scaleMode = p.scaleMode;
+      // обрезка (Crop): какая часть картинки видна — матрица 2×3 в долях картинки; плитка — масштаб
+      if (p.scaleMode === 'CROP' && p.imageTransform) base.imageTransform = p.imageTransform.map(function (r) { return r.map(function (v) { return Math.round(v * 1e6) / 1e6; }); });
+      if (p.scaleMode === 'TILE' && p.scalingFactor) base.scalingFactor = p.scalingFactor;
       ctx.images[p.imageHash] = true;
     } else continue;
     out.push(base);

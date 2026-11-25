@@ -49,13 +49,29 @@ function paintLayer(p, ctx) {
     // WebP по размеру показа (images.js): 1x и 2x — браузер берёт нужный по плотности экрана
     const set = p.set && p.set.x1 !== p.set.x2
       ? `image-set(url("${ctx.assetUrl(p.set.x1)}") 1x, url("${ctx.assetUrl(p.set.x2)}") 2x)` : null;
+    const crop = cropCss(p);
     return {
       image: set || `url("${ctx.assetUrl(p.set ? p.set.x1 : p.src)}")`,
-      size,
+      size: crop ? crop.size : size,
+      position: crop ? crop.position : undefined,
       repeat: p.scaleMode === 'TILE' ? 'repeat' : 'no-repeat',
     };
   }
   return null;
+}
+
+/**
+ * Обрезка картинки (Crop): imageTransform [[a, b, tx], [c, d, ty]] — видимая часть в долях картинки
+ * (от tx до tx + a по ширине, от ty до ty + d по высоте). Картинка в CSS — в 1/a и 1/d размера слоя,
+ * сдвиг в процентах: (слой − картинка) · p = −tx/a · слой → p = tx / (1 − a). Поворот в обрезке — не переносим.
+ */
+export function cropCss(p) {
+  const m = p.scaleMode === 'CROP' && p.imageTransform;
+  if (!m || Math.abs(m[0][1]) > 1e-6 || Math.abs(m[1][0]) > 1e-6 || !(m[0][0] > 0) || !(m[1][1] > 0)) return null;
+  const [a, tx] = [m[0][0], m[0][2]], [d, ty] = [m[1][1], m[1][2]];
+  const pct = (v) => `${Math.round(v * 1e4) / 1e4}%`;
+  const pos = (t, k) => (Math.abs(1 - k) < 1e-6 ? '0%' : pct((t / (1 - k)) * 100));
+  return { size: `${pct(100 / a)} ${pct(100 / d)}`, position: `${pos(tx, a)} ${pos(ty, d)}` };
 }
 
 /** Заливки → background. Figma: массив снизу вверх; CSS: первый слой сверху. */
@@ -67,7 +83,7 @@ export function fillsToCss(fills, ctx) {
   const out = { 'background-image': top.map((l) => l.image).join(', ') };
   if (top.some((l) => l.size)) {
     out['background-size'] = top.map((l) => l.size || 'auto').join(', ');
-    out['background-position'] = top.map(() => 'center').join(', ');
+    out['background-position'] = top.map((l) => l.position || 'center').join(', ');
     out['background-repeat'] = top.map((l) => l.repeat || 'no-repeat').join(', ');
   }
   return out;

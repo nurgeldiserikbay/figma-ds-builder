@@ -165,6 +165,9 @@ ID узлов Figma содержат `:` и `;` — в именах файлов
 { "type": "GRADIENT_LINEAR", "css": "linear-gradient(90deg, #3B82F6 0%, #8B5CF6 100%)", "opacity": 1,
   "stopVariables": ["brand/blue", null] }  // переменные на точках градиента (по порядку), если есть
 { "type": "IMAGE", "src": "images/ab12cd.png", "scaleMode": "FILL", "opacity": 1 }  // FILL | FIT | CROP | TILE
+{ "type": "IMAGE", "src": "images/cd34ef.png", "scaleMode": "CROP",
+  "imageTransform": [[0.5, 0, 0.25], [0, 0.6, 0.1]] }  // Crop: видимая часть в долях картинки (x от 0.25 до 0.75…)
+{ "type": "IMAGE", "src": "images/ef56ab.png", "scaleMode": "TILE", "scalingFactor": 0.5 }  // масштаб плитки
 ```
 
 Цвета — в диапазоне 0..1, как в Figma API. В `variables.json` у переменной есть `codeSyntax`
