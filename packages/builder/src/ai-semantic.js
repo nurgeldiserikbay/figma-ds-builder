@@ -3,7 +3,7 @@
 // диктора, понятные имена классов. Вид страницы он не меняет — только теги, атрибуты и имена. Правки проверяются:
 // страница выглядит так же (сверка с макетом не хуже) и стала правильнее (проверка HTML и доступности не хуже).
 import { askJson } from './ai.js';
-import { className } from './semantic.js';
+import { className, isGenericName } from './semantic.js';
 
 export const SEM_TAGS = new Set(['div', 'span', 'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'button', 'a', 'ul', 'ol', 'li', 'nav', 'header', 'footer', 'main', 'section', 'article', 'aside', 'form', 'figure', 'figcaption', 'strong', 'em', 'small']);
 const ROLES = new Set(['dialog', 'img', 'search', 'tab', 'tablist', 'tabpanel', 'switch', 'checkbox', 'radio', 'radiogroup', 'progressbar', 'status', 'alert', 'group', 'toolbar', 'menu', 'menuitem']);
@@ -16,7 +16,10 @@ const SYSTEM = `Ты опытный верстальщик и специалис
 - заголовки: один h1 на экран, дальше по порядку без пропусков; подписи и мелкий текст — не заголовки;
 - списки одинаковых карточек/пунктов — ul > li; окно — role="dialog" с aria-label; группа вкладок — tablist/tab;
 - у полей ввода (input/textarea) — тип и aria-label, если нет подписи; placeholder/value менять только местами;
-- понятные имена классов вместо «frame-18952» (латиница, по смыслу: card, toolbar, upload-zone).
+- понятные имена классов вместо «frame-18952» (латиница, по смыслу: card, toolbar, upload-zone), не названия тегов;
+- заголовок окна или раздела — заголовок (h1/h2…), а не кнопка; кнопка — то, что выглядит нажимаемым (с фоном, рамкой) или иконка-действие;
+- aria-label — только если без него непонятно (иконка без текста, поле без подписи), на языке текстов экрана, конкретно
+  («Close», «Delete photo»), не общими словами («Image», «Button»); у кнопки с текстом aria-label не нужен.
 Не меняй то, что уже правильно. Не придумывай тексты, кроме aria-label. Только элементы из схемы.
 Ответ — только JSON: {"edits": [{"id": "<id>", "tag": "<тег>", "name": "<класс>", "attrs": {"aria-label": "…"}, "why": "коротко"}]}
 (поля tag, name, attrs — по необходимости).`;
@@ -43,7 +46,14 @@ export function semanticOutline(tree, sem, { max = 260 } = {}) {
 }
 
 /** Правки ИИ → проверенные изменения тегов/атрибутов/имён (только известные id, теги и атрибуты из белого списка). */
+const BAD_NAMES = /^(container|wrapper|wrap|element|elem|block|box|frame|group|layer|item\d*|component|inner|outer|content|node|div\d*|btn|text|label)$/;
+const GENERIC_LABEL = /^(image|img|picture|photo|icon|button|btn|link|element|container|block|изображение|картинка|фото|иконка|кнопка|ссылка|элемент|блок)$/i;
+const norm = (t) => String(t || '').toLowerCase().replace(/\s+/g, ' ').trim();
+const ownText = (n) => { const t = []; (function w(x) { if (x.text) t.push(x.text.characters || ''); (x.children || []).forEach(w); })(n); return t.join(' '); };
+const scriptOf = (t) => { const c = (String(t).match(/[а-яё]/gi) || []).length, l = (String(t).match(/[a-z]/gi) || []).length; return c + l < 3 ? null : c > l ? 'cyr' : 'lat'; };
+
 export function sanitizeEdits(edits, tree, sem) {
+  const lang = scriptOf(ownText(tree).slice(0, 2000));
   const nodes = new Map();
   (function walk(n) { nodes.set(n.id, n); (n.children || []).forEach(walk); })(tree);
   const out = new Map();
@@ -58,10 +68,12 @@ export function sanitizeEdits(edits, tree, sem) {
     // поля ввода строит генератор из слоя текста — их тег не меняем и в поле ничего не превращаем
     if (tag && tag !== cur.tag && !isField && !isRoot && SEM_TAGS.has(tag)) {
       if (n.type === 'TEXT' && /^(ul|ol|nav|header|footer|main|section|article|aside|form|figure)$/.test(tag)) continue;
+      // голый текст без фона и рамки кнопкой не бывает (заголовок окна ИИ любит принять за кнопку); ссылкой — может
+      if (n.type === 'TEXT' && tag === 'button') continue;
       ch.tag = tag;
     }
     const name = e.name ? className(e.name) : '';
-    if (name && name !== cur.name && name.length <= 40) ch.name = name;
+    if (name && name !== cur.name && name.length <= 40 && !SEM_TAGS.has(name) && !BAD_NAMES.test(name) && !isGenericName(name)) ch.name = name;
     const attrs = {};
     const text = (n.text?.characters || '').replace(/\s*[|│▏]\s*$/, '').trim();
     for (const [k0, v0] of Object.entries(e.attrs || {})) {
@@ -69,11 +81,25 @@ export function sanitizeEdits(edits, tree, sem) {
       if (/[<>"]/.test(v) || v.length > 80) continue;
       if (isRoot && k !== 'role' && k !== 'aria-label') continue;
       const tagNow = ch.tag || cur.tag;
-      if (k === 'aria-label' && v) attrs[k] = v;
-      else if (k === 'role' && ROLES.has(v) && (!isRoot || v === 'dialog')) attrs[k] = v;
+      if (k === 'aria-label' && v) {
+        // общие слова, повтор собственного текста и подпись на другом языке, чем экран, — не помогают
+        if (GENERIC_LABEL.test(v) || norm(v) === norm(ownText(n)) || (lang && scriptOf(v) && scriptOf(v) !== lang)) continue;
+        attrs[k] = v;
+      } else if (k === 'role' && ROLES.has(v) && (!isRoot || v === 'dialog')) {
+        // role="img" прячет содержимое от диктора — только для картинки без текста и кнопок внутри
+        if (v === 'img' && (ownText(n) || (n.children || []).some((c) => c.type !== 'VECTOR' && !c.svg && (c.children?.length || c.text)))) continue;
+        attrs[k] = v;
+      }
       else if (k === 'type' && TYPES[tagNow]?.has(v)) attrs[k] = v;
       else if ((k === 'placeholder' || k === 'value') && isField && v === text) attrs[k] = v;
       else if (k === 'href' && tagNow === 'a' && (v === '#' || /^#[\w-]+$/.test(v))) attrs[k] = v;
+    }
+    // роль без понятной подписи: окно подписываем его заголовком (первый текст внутри), картинку — не берём
+    if (attrs.role === 'img' && !attrs['aria-label']) delete attrs.role;
+    if (attrs.role === 'dialog' && !attrs['aria-label']) {
+      let title = '';
+      (function w(x) { if (!title && x.text && (x.text.characters || '').trim().length <= 60) title = x.text.characters.trim(); (x.children || []).forEach(w); })(n);
+      if (title) attrs['aria-label'] = title; else delete attrs.role;
     }
     if (Object.keys(attrs).length) ch.attrs = attrs;
     if (Object.keys(ch).length) out.set(n.id, { ...ch, why: short(e.why, 120), was: cur.tag, layer: n.name });
@@ -156,7 +182,7 @@ export async function aiSemanticFrame({ tree, sem, base, regenerate, rollback, p
     const issues = cur.issues.length ? `\nНайденные проверкой проблемы: ${JSON.stringify(cur.issues.slice(0, 20))}` : '';
     const payload = `Экран «${tree.name}» ${Math.round(tree.w)}×${Math.round(tree.h)}.${issues}\nСхема:\n${semanticOutline(tree, semNow)}`
       + (tried.length ? `\nУже пробовали и откатили (не повторяй): ${JSON.stringify(tried.slice(-10))}` : '');
-    const r = await askJson(providers, [{ role: 'system', content: SYSTEM }, { role: 'user', content: payload }], { cacheDir, log, what: `смысл «${tree.name}»${round ? `, раунд ${round + 1}` : ''}` });
+    const r = await askJson(providers, [{ role: 'system', content: SYSTEM }, { role: 'user', content: payload }], { cacheDir, log, what: `смысл «${tree.name}»${round ? `, раунд ${round + 1}` : ''}`, localTimeout: 300000 }); // своя модель на слабом железе думает долго
     if (!r.parsed) { if (round === 0) return { error: (r.errors || []).join('; ') || 'ИИ не ответил' }; break; }
     by = r.by;
     const edits = sanitizeEdits(r.parsed.edits, tree, semNow);

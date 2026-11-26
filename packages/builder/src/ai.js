@@ -176,7 +176,7 @@ export function canSee(p) {
  * Ответ ИИ (JSON) на готовые сообщения — по цепочке провайдеров, с кэшем на диске. Сообщения с картинками
  * (image_url) провайдер может не принять — тогда тот же вопрос без картинок (textOnly).
  */
-export async function askJson(chain, messages, { cacheDir, log = () => {}, what = 'запрос', textOnly = null } = {}) {
+export async function askJson(chain, messages, { cacheDir, log = () => {}, what = 'запрос', textOnly = null, localTimeout = 0 } = {}) {
   const keyOf = (p, m) => cacheDir && path.join(cacheDir, 'ai', `${crypto.createHash('sha256').update(p.model + '\n' + JSON.stringify(m)).digest('hex').slice(0, 32)}.json`);
   const variants = (p) => (!textOnly ? [messages] : canSee(p) ? [messages, textOnly] : [textOnly]);
   for (const p of chain) for (const m of variants(p)) { const f = keyOf(p, m); if (f && fs.existsSync(f)) return { parsed: JSON.parse(fs.readFileSync(f, 'utf8')), by: p.name }; }
@@ -185,7 +185,7 @@ export async function askJson(chain, messages, { cacheDir, log = () => {}, what 
     for (const m of variants(p)) {
       try {
         log(`  ИИ (${p.name}, ${p.model}): ${what}…${p.free ? ' [бесплатный облачный план]' : p.paid ? ' [ПЛАТНЫЙ]' : ''}`);
-        const content = await chat(p, m);
+        const content = await chat(p, m, p.local && localTimeout ? { timeout: localTimeout } : undefined);
         const parsed = JSON.parse(content.replace(/^[\s\S]*?(\{[\s\S]*\})[\s\S]*$/, '$1'));
         const f = keyOf(p, m);
         if (f) { fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, JSON.stringify(parsed)); }

@@ -36,6 +36,24 @@ assert.deepEqual([...ed.keys()], ['r', 'g']);
 assert.deepEqual(ed.get('r'), { attrs: { role: 'dialog', 'aria-label': 'Настройки' }, why: '', was: sem.get('r')?.tag || 'div', layer: 'Окно' });
 assert.equal(ed.get('g').name, 'settings-list');
 assert.deepEqual(ed.get('g').attrs, { role: 'group' }, 'onclick и кавычки — нельзя');
+// ответ слабой локальной модели на реальном экране: заголовок окна — не кнопка, имена-теги, общие и чужие по языку подписи
+{
+  const t = { id: 'R', name: 'Crop', type: 'FRAME', x: 0, y: 0, w: 400, h: 300, children: [
+    { id: 'W', name: 'Frame 18980', type: 'FRAME', x: 0, y: 0, w: 400, h: 300, children: [
+      { id: 'T', name: 'Crop media file', type: 'TEXT', x: 20, y: 20, w: 200, h: 30, text: { characters: 'Crop media file' } },
+      { id: 'P', name: 'Frame 18978', type: 'FRAME', x: 20, y: 60, w: 300, h: 160, fills: [{ type: 'IMAGE' }], children: [] },
+      { id: 'B', name: '1920/Button', type: 'FRAME', x: 20, y: 240, w: 80, h: 40, children: [{ id: 'Bt', name: 'Save', type: 'TEXT', x: 30, y: 250, w: 40, h: 20, text: { characters: 'Save' } }] },
+    ] }] };
+  const sm = new Map([['T', { tag: 'p', name: 'crop' }], ['B', { tag: 'button', name: 'button', attrs: { type: 'button' } }]]);
+  const r = sanitizeEdits([
+    { id: 'T', tag: 'button', name: 'button', attrs: { 'aria-label': 'Crop media file' } },
+    { id: 'P', name: 'div', attrs: { role: 'img', 'aria-label': 'Изображение' } },
+    { id: 'W', name: 'div', attrs: { role: 'dialog', 'aria-label': 'Обрезка изображения' } },
+    { id: 'B', name: 'button', attrs: { 'aria-label': 'Save' } },
+  ], t, sm);
+  assert.deepEqual([...r.keys()], ['W'], 'из четырёх правок полезна одна');
+  assert.deepEqual(r.get('W').attrs, { role: 'dialog', 'aria-label': 'Crop media file' }, 'окно подписано своим заголовком, на языке экрана');
+}
 const s2 = applySemEdits(sem, tree, new Map([['c1', { tag: 'button' }], ['c2', { tag: 'a' }]]));
 assert.deepEqual(s2.get('c1').attrs, { type: 'button' });
 assert.equal(s2.get('c2').attrs.href, '#');

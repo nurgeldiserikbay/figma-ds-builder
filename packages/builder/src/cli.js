@@ -591,7 +591,16 @@ async function build(args) {
               regenerate: async (edits) => { write(edits); return measure(); },
               rollback: async (edits) => { write(edits); await measure(); },
               providers: aiProviders(process.env, { paid: args.aiPaid }), cacheDir: defaultCacheDir(), log: (m) => console.log(m) });
-            if (r.error) { console.log(`  ИИ-смысл недоступен: ${r.error.slice(0, 200)}`); aiFixBudget.semLeft = 0; aiFixBudget.left = 0; return; }
+            if (r.error) {
+              // ИИ не запущен — дальше не пробуем; не успел ответить (большой экран, медленная модель) — следующие экраны пробуем, до 3 сбоев подряд
+              const down = /ECONNREFUSED|fetch failed|ENOTFOUND|401|403|ключ/i.test(r.error);
+              aiFixBudget.semErrors = (aiFixBudget.semErrors || 0) + 1;
+              chosen.aiSem = { error: r.error.slice(0, 300), edits: [], issuesBefore: [], issuesAfter: [] };
+              console.log(`  ИИ-смысл: ${r.error.slice(0, 200)}${down || aiFixBudget.semErrors >= 3 ? ' — дальше без ИИ' : ''}`);
+              if (down || aiFixBudget.semErrors >= 3) { aiFixBudget.semLeft = 0; if (down) aiFixBudget.left = 0; }
+              return;
+            }
+            aiFixBudget.semErrors = 0;
             chosen.aiSem = r;
             if (r.edits.length) { chosen.gen = lastGen; chosen.semEdits = new Map(r.edits.map(({ id, why, was, layer, ...ch }) => [id, ch])); }
             chosen.ok = okOf(chosen);
@@ -615,7 +624,13 @@ async function build(args) {
             const r = await aiFixFrame({ browser, htmlPath: path.join(chosen.dir, 'index.html'), cssPath: path.join(chosen.dir, 'styles.css'), refPath: path.join(fdir, 'reference.png'), renderPath: path.join(chosen.dir, 'render.png'),
               tree, scale: pkg.scale, render, base: { percent: chosen.percent, geometryFailed: chosen.geometry?.failed || 0, sources: chosen.diff.sources },
               providers: aiProviders(process.env, { paid: args.aiPaid }), cacheDir: defaultCacheDir(), log: (m) => console.log(m) });
-            if (r.error) { console.log(`  ИИ-доводка недоступна: ${r.error.slice(0, 200)}`); aiFixBudget.left = 0; }
+            if (r.error) {
+              const down = /ECONNREFUSED|fetch failed|ENOTFOUND|401|403|ключ/i.test(r.error);
+              aiFixBudget.fixErrors = (aiFixBudget.fixErrors || 0) + 1;
+              chosen.aiFix = { error: r.error.slice(0, 300), fixes: [], rejected: 0 };
+              console.log(`  ИИ-доводка: ${r.error.slice(0, 200)}${down || aiFixBudget.fixErrors >= 3 ? ' — дальше без ИИ' : ''}`);
+              if (down || aiFixBudget.fixErrors >= 3) aiFixBudget.left = 0;
+            }
             else {
               chosen.aiFix = r;
               chosen.ok = okOf(chosen);
