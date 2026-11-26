@@ -23,13 +23,14 @@ const tree = { id: 'r', name: 'Профиль', type: 'FRAME', x: 0, y: 0, w: 40
     { id: 'chev', name: 'chevron-down', type: 'VECTOR', x: 288, y: 412, w: 20, h: 20, visible: true, svg: 'vectors/chev.svg', fills: fill(0, 0, 0) }]),
 ] };
 
-const { html, root } = generateFrame(tree, { mode: 'flow', assetUrl: (r) => r, title: 'Формы' });
+const { html, css, root } = generateFrame(tree, { mode: 'flow', assetUrl: (r) => r, title: 'Формы' });
 const tagOf = (id) => html.match(new RegExp(`<(\\w+)[^>]*data-figma-id="${id}"[^>]*>`))?.[0] || '';
 
 assert.match(tagOf('lbl1'), /^<label [^>]*for="field-f1"/, 'подпись над полем — label');
 assert.match(tagOf('v1'), /^<input [^>]*id="field-f1"[^>]*value="UX\/UI designer"/, 'тёмный текст — значение');
 assert.doesNotMatch(tagOf('v1'), /placeholder|aria-label/, 'с подписью aria-label не нужен');
 assert.match(tagOf('v2'), /value="Mosc"/, 'курсор из макета убран');
+assert.match(css, /:has\(> input:focus-visible\)[^{]*\{ outline: 2px/, 'фокус — на рамке поля, не на input внутри');
 assert.match(tagOf('v3'), /placeholder="Введите почту"/, 'серый текст — подсказка');
 assert.match(tagOf('v3'), /aria-label="Введите почту"/, 'поле без подписи — aria-label');
 assert.match(tagOf('v4'), /^<textarea [^>]*placeholder="Несколько слов о себе"/, 'высокое поле — textarea');
@@ -46,3 +47,18 @@ for (const [fw, out] of [['React', (await renderReact(pages, comps)).Forms], ['V
   assert.match(out, /<textarea [^>]*placeholder="Несколько слов о себе"/, `${fw}: textarea`);
 }
 console.log('Поля формы: label, value/placeholder, курсор, textarea, выпадающий список — OK');
+
+// окно «Video link»: иконка закрытия — кнопка с подписью; поле без подписи и с безликим именем — имя по заголовку
+{
+  const modal = { id: 'm', name: 'Добавление ссылки', type: 'FRAME', x: 0, y: 0, w: 592, h: 237, visible: true, fills: fill(1, 1, 1), children: [
+    text('mt', 'Video link', 24, 24, 120, 0.1),
+    { id: 'mx', name: 'Icons', type: 'INSTANCE', component: { name: 'Icons', variant: { Style: 'circle-x', State: 'Default' } }, x: 544, y: 26, w: 24, h: 24, visible: true,
+      children: [{ id: 'mxv', name: 'Vector', type: 'VECTOR', x: 546, y: 28, w: 20, h: 20, visible: true, svg: 'vectors/x.svg', fills: [] }] },
+    box('mf', 'Field', 80, 40, [text('mv', 'https://example.com', 36, 88, 300, 0.1)]),
+  ] };
+  const { html: h } = generateFrame(modal, { mode: 'flow', assetUrl: (r) => r, title: 'Окно', svgText: () => '<svg width="20" height="20"></svg>' });
+  const tag = (id) => h.match(new RegExp(`<(\\w+)[^>]*data-figma-id="${id}"[^>]*>`))?.[0] || '';
+  assert.match(tag('mx'), /^<button [^>]*aria-label="Close"/, 'иконка закрытия — кнопка');
+  assert.match(tag('mv'), /aria-label="Video link"/, 'имя поля — по заголовку окна');
+  console.log('Окно: кнопка закрытия и имя поля — OK');
+}

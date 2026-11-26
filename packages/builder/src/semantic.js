@@ -95,6 +95,30 @@ const inputType = (n, v) => {
   return 'text';
 };
 
+const ICON_ACTIONS = [
+  [/(^|[^a-z])(close|circle-x|x-circle|cross|закрыть)([^a-z]|$)|^x$/i, 'Close'],
+  [/trash|delete|remove|bin|удалить/i, 'Delete'],
+  [/edit|pencil|изменить|редакт/i, 'Edit'],
+  [/refresh|replace|reload|repeat|swap|заменить/i, 'Replace'],
+  [/burger|hamburger|menu|меню/i, 'Menu'],
+  [/more|dots|kebab|ещё/i, 'More'],
+  [/search|поиск/i, 'Search'],
+  [/(^|[^a-z])(play)([^a-z]|$)/i, 'Play'],
+];
+/** Иконка-действие: маленький квадратный слой без текста, имя или вариант говорит, что делает. */
+function iconAction(n) {
+  if (n.type === 'TEXT' || !visible(n) || texts(n).length) return null;
+  if (n.w < 16 || n.h < 16 || n.w > 56 || n.h > 56 || Math.abs(n.w - n.h) > 4) return null;
+  const words = (x) => [x.name, x.component?.name, ...Object.values(x.component?.variant || {})].filter(Boolean).join(' ');
+  const act = (x) => (ICON_ACTIONS.find(([re]) => re.test(words(x))) || [])[1] || null;
+  if (act(n)) return act(n);
+  // «Icon Button» с иконкой внутри — действие по иконке
+  if (!/icon.?(button|btn)|кнопка.?иконк/i.test(words(n))) return null;
+  let found = null;
+  (function f(x) { if (!found && x !== n) found = act(x); (x.children || []).forEach(f); })(n);
+  return found || 'Button';
+}
+
 function isButtonLike(n) {
   if (n.type === 'TEXT' || !visible(n) || n.transform) return false;
   if (/button|btn|кнопк/i.test(n.name || '') || /button|btn/i.test(n.component?.name || '')) return true;
@@ -220,7 +244,14 @@ export function analyzeSemantics(tree) {
         || texts(n).find((c) => c !== val && chars(c) <= 60 && c.y + c.h <= val.y - 2 && free(c)); // подпись внутри компонента поля
       const id = `field-${String(n.id).replace(/[^a-z0-9]+/gi, '-')}`;
       const placeholder = looksLikePlaceholder(val, field.box, tree) || raw !== txt && !txt;
-      const named = label ? {} : { 'aria-label': (placeholder ? txt : '') || n.name || 'Поле' };
+      // без подписи и с безликим именем слоя («Field», «Input») — имя поля по ближайшему тексту над ним (заголовок окна)
+      const above = () => {
+        const t = texts(tree).filter((c) => c !== val && !inInput.has(c.id) && chars(c) <= 60 && c.y + c.h <= n.y + 1 && n.y - (c.y + c.h) <= 120
+          && c.x < n.x + n.w && c.x + c.w > n.x).sort((a, b) => (b.y + b.h) - (a.y + a.h))[0];
+        return t ? (t.text?.characters || '').trim() : '';
+      };
+      const plain = isGenericName(n.name) || /^(text\s*)?(field|input)(\s*\d+)?$|^(поле|инпут)(\s*ввода)?$/i.test(String(n.name).trim());
+      const named = label ? {} : { 'aria-label': (placeholder ? txt : '') || (plain && above()) || n.name || 'Поле' };
       if (label) set(label, 'label', isGenericName(label.name) ? 'label' : null, { for: id });
       if (field.kind === 'select') {
         // вид — как в макете (нативный <select> рисует свою стрелку); смысл — выпадающий список
@@ -234,9 +265,18 @@ export function analyzeSemantics(tree) {
         if (tag === 'textarea' && !placeholder) out.get(val.id).content = txt;
       }
     }
-    if (n !== tree && !out.has(n.id) && !inInput.has(n.id) && isButtonLike(n)) {
-      set(n, 'button', isGenericName(n.name) ? 'button' : null, { type: 'button' });
+    // кнопка внутри кнопки недопустима (вложенная «Icon Button» в «Add button» — часть внешней)
+    if (n !== tree && !out.has(n.id) && !inInput.has(n.id) && !phrasing.has(n.id) && isButtonLike(n)) {
+      const action = texts(n).length ? null : iconAction(n);
+      set(n, 'button', isGenericName(n.name) ? 'button' : null, { type: 'button', ...(texts(n).length ? {} : { 'aria-label': action || n.name }) });
       markPhrasing(n);
+    } else if (n !== tree && !out.has(n.id) && !inInput.has(n.id) && !phrasing.has(n.id)) {
+      // иконка-действие («Icons / circle-x», «trash», «edit») без текста — кнопка с подписью для экранного диктора
+      const action = iconAction(n);
+      if (action) {
+        set(n, 'button', isGenericName(n.name) || /^icons?$/i.test(n.name) ? 'icon-button' : null, { type: 'button', 'aria-label': action });
+        markPhrasing(n);
+      }
     }
 
     // навигация: строка из ≥3 коротких текстов (или групп с одним текстом), одна высота
@@ -455,6 +495,9 @@ export const SEMANTIC_RESET = [
   'input::placeholder, textarea::placeholder { color: inherit; opacity: 1; }',
   'label { display: block; cursor: default; }',
   // фокус с клавиатуры виден всегда (мышью — нет): на сверку по макету не влияет
-  'a:focus-visible, button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }',
+  'a:focus-visible, button:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }',
+  // поле ввода в макете — рамка вокруг input: фокус показываем на ней (по её скруглению), а не на самом input внутри
+  'input:focus-visible, textarea:focus-visible { outline: none; }',
+  ':has(> input:focus-visible), :has(> textarea:focus-visible) { outline: 2px solid currentColor; outline-offset: 2px; }',
   'button { font: inherit; color: inherit; background: none; border: 0; padding: 0; margin: 0; text-align: inherit; cursor: pointer; display: block; }',
 ].join('\n');

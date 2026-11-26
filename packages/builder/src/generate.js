@@ -105,7 +105,7 @@ function nodeVisualCss(node, ctx) {
     height: px(node.h),
     'flex-shrink': '0',
   };
-  if (!node.svg && node.type !== 'TEXT') Object.assign(o, fillsToCss(node.fills, ctx));
+  if (!node.svg && node.type !== 'TEXT') Object.assign(o, fillsToCss(node.fills, ctx, node));
   Object.assign(o, radiusToCss(node, ctx));
   if (node.clipsContent) o.overflow = 'hidden';
   // блок с нарисованным скроллбаром — прокручивается по вертикали (системная полоса скрыта)
@@ -389,7 +389,7 @@ function buildEl(box, place, ctx, inPhrasing = false, grow = false) {
   if (box.bg) {
     // фон, вобранный из нижнего прямоугольника
     const bg = box.bg;
-    baseDecl = mergeShadows(baseDecl, fillsToCss(bg.fills, ctx), radiusToCss(bg, ctx), strokesToCss(bg, ctx), effectsToCss(bg, ctx));
+    baseDecl = mergeShadows(baseDecl, fillsToCss(bg.fills, ctx, bg), radiusToCss(bg, ctx), strokesToCss(bg, ctx), effectsToCss(bg, ctx));
     if (bg.type === 'ELLIPSE') baseDecl['border-radius'] = '50%';
   }
 

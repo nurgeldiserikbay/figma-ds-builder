@@ -9,6 +9,7 @@ import { openBrowser } from '../src/render.js';
 
 assert.equal(cropCss({ scaleMode: 'FILL', imageTransform: [[1, 0, 0], [0, 1, 0]] }), null);
 assert.deepEqual(cropCss({ scaleMode: 'CROP', imageTransform: [[0.5, 0, 0.25], [0, 0.5, 0.5]] }), { size: '200% 200%', position: '50% 100%' });
+assert.deepEqual(cropCss({ scaleMode: 'CROP', imageTransform: [[1, 0, -0.01694], [0, 1, -0.053239]] }, { w: 170, h: 171 }), { size: '100% 100%', position: '2.88px 9.1px' }, 'масштаб 1: сдвиг в пикселях');
 
 // картинка 200×100 с разными цветами в каждой клетке 50×50; видимая часть — x 50…150, y 50…100
 const W = 200, H = 100, img = new PNG({ width: W, height: H });

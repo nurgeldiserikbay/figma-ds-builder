@@ -28,7 +28,7 @@ export function colorValue(c, opacity, ctx, variable = null, style = null) {
 
 const visible = (p) => p && p.visible !== false && (p.opacity ?? 1) > 0;
 
-function paintLayer(p, ctx) {
+function paintLayer(p, ctx, box) {
   const op = p.opacity ?? 1;
   if (p.type === 'SOLID') {
     const c = colorValue(p.color, op, ctx, p.variable, p.style);
@@ -49,7 +49,7 @@ function paintLayer(p, ctx) {
     // WebP по размеру показа (images.js): 1x и 2x — браузер берёт нужный по плотности экрана
     const set = p.set && p.set.x1 !== p.set.x2
       ? `image-set(url("${ctx.assetUrl(p.set.x1)}") 1x, url("${ctx.assetUrl(p.set.x2)}") 2x)` : null;
-    const crop = cropCss(p);
+    const crop = cropCss(p, box);
     return {
       image: set || `url("${ctx.assetUrl(p.set ? p.set.x1 : p.src)}")`,
       size: crop ? crop.size : size,
@@ -65,18 +65,20 @@ function paintLayer(p, ctx) {
  * (от tx до tx + a по ширине, от ty до ty + d по высоте). Картинка в CSS — в 1/a и 1/d размера слоя,
  * сдвиг в процентах: (слой − картинка) · p = −tx/a · слой → p = tx / (1 − a). Поворот в обрезке — не переносим.
  */
-export function cropCss(p) {
+export function cropCss(p, box) {
   const m = p.scaleMode === 'CROP' && p.imageTransform;
   if (!m || Math.abs(m[0][1]) > 1e-6 || Math.abs(m[1][0]) > 1e-6 || !(m[0][0] > 0) || !(m[1][1] > 0)) return null;
   const [a, tx] = [m[0][0], m[0][2]], [d, ty] = [m[1][1], m[1][2]];
   const pct = (v) => `${Math.round(v * 1e4) / 1e4}%`;
-  const pos = (t, k) => (Math.abs(1 - k) < 1e-6 ? '0%' : pct((t / (1 - k)) * 100));
-  return { size: `${pct(100 / a)} ${pct(100 / d)}`, position: `${pos(tx, a)} ${pos(ty, d)}` };
+  // масштаб 1: картинка ровно в слой, процент сдвига не работает (слой − картинка = 0) — сдвиг в пикселях
+  const pos = (t, k, len) => (Math.abs(1 - k) >= 1e-6 ? pct((t / (1 - k)) * 100)
+    : Math.abs(t) < 1e-6 || !len ? '0%' : `${Math.round(-t * len * 100) / 100}px`);
+  return { size: `${pct(100 / a)} ${pct(100 / d)}`, position: `${pos(tx, a, box?.w)} ${pos(ty, d, box?.h)}` };
 }
 
 /** Заливки → background. Figma: массив снизу вверх; CSS: первый слой сверху. */
-export function fillsToCss(fills, ctx) {
-  const layers = (fills || []).filter(visible).map((p) => paintLayer(p, ctx)).filter(Boolean);
+export function fillsToCss(fills, ctx, box) {
+  const layers = (fills || []).filter(visible).map((p) => paintLayer(p, ctx, box)).filter(Boolean);
   if (!layers.length) return {};
   if (layers.length === 1 && layers[0].solid) return { background: layers[0].solid };
   const top = [...layers].reverse();
