@@ -73,7 +73,7 @@ export function sanitizeEdits(edits, tree, sem) {
       ch.tag = tag;
     }
     const name = e.name ? className(e.name) : '';
-    if (name && name !== cur.name && name.length <= 40 && !SEM_TAGS.has(name) && !BAD_NAMES.test(name) && !isGenericName(name)) ch.name = name;
+    if (name && !isRoot && name !== cur.name && name.length <= 40 && !SEM_TAGS.has(name) && !BAD_NAMES.test(name) && !isGenericName(name)) ch.name = name;
     const attrs = {};
     const text = (n.text?.characters || '').replace(/\s*[|│▏]\s*$/, '').trim();
     for (const [k0, v0] of Object.entries(e.attrs || {})) {

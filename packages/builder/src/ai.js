@@ -71,7 +71,31 @@ function candidates(tree, sem) {
   return out;
 }
 
-export async function chat(cfg, messages, { timeout = cfg.local ? 120000 : 60000 } = {}) {
+/**
+ * Сколько ждать при 429: Retry-After или «try again in 12.3s / 1m5s» из ответа (Groq, OpenAI). Лимит в минуту —
+ * ждём и повторяем; лимит на день (ждать дольше 90 с) — ошибка, цепочка идёт к следующему провайдеру.
+ */
+export function waitFor429(headers, body) {
+  const ra = Number(headers?.get?.('retry-after'));
+  if (Number.isFinite(ra) && ra > 0) return ra * 1000;
+  const ms = String(body).match(/try again in\s*([\d.]+)\s*ms/i);
+  if (ms) return +ms[1];
+  const m = String(body).match(/try again in\s*(?:(\d+)h)?\s*(?:(\d+)m(?!s))?\s*(?:([\d.]+)s)?/i);
+  if (m && (m[1] || m[2] || m[3])) return ((+m[1] || 0) * 3600 + (+m[2] || 0) * 60 + (+m[3] || 0)) * 1000;
+  return null;
+}
+
+export async function chat(cfg, messages, opts = {}) {
+  for (let attempt = 0; ; attempt++) {
+    try { return await chatOnce(cfg, messages, opts); } catch (e) {
+      if (!e.wait || e.wait > 90000 || attempt >= 3) throw e;
+      opts.log?.(`  ${cfg.name}: лимит запросов в минуту — жду ${Math.ceil(e.wait / 1000)} с`);
+      await new Promise((r) => setTimeout(r, e.wait + 500));
+    }
+  }
+}
+
+async function chatOnce(cfg, messages, { timeout = cfg.local ? 120000 : 60000 } = {}) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeout);
   try {
@@ -81,7 +105,12 @@ export async function chat(cfg, messages, { timeout = cfg.local ? 120000 : 60000
       body: JSON.stringify({ model: cfg.model, messages, temperature: 0, response_format: { type: 'json_object' } }),
       signal: ctrl.signal,
     });
-    if (!res.ok) throw new Error(`${cfg.name}: HTTP ${res.status} ${(await res.text()).slice(0, 160)}`);
+    if (!res.ok) {
+      const body = await res.text();
+      const err = new Error(`${cfg.name}: HTTP ${res.status} ${body.slice(0, 160)}`);
+      if (res.status === 429) err.wait = waitFor429(res.headers, body);
+      throw err;
+    }
     const data = await res.json();
     return data.choices?.[0]?.message?.content || '';
   } catch (e) {
@@ -185,7 +214,7 @@ export async function askJson(chain, messages, { cacheDir, log = () => {}, what 
     for (const m of variants(p)) {
       try {
         log(`  ИИ (${p.name}, ${p.model}): ${what}…${p.free ? ' [бесплатный облачный план]' : p.paid ? ' [ПЛАТНЫЙ]' : ''}`);
-        const content = await chat(p, m, p.local && localTimeout ? { timeout: localTimeout } : undefined);
+        const content = await chat(p, m, { log, ...(p.local && localTimeout ? { timeout: localTimeout } : {}) });
         const parsed = JSON.parse(content.replace(/^[\s\S]*?(\{[\s\S]*\})[\s\S]*$/, '$1'));
         const f = keyOf(p, m);
         if (f) { fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, JSON.stringify(parsed)); }

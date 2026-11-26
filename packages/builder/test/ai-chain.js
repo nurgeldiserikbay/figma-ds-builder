@@ -4,7 +4,7 @@ import os from 'node:os';
 import fs from 'node:fs';
 import path from 'node:path';
 import assert from 'node:assert/strict';
-import { suggestNames, aiProviders, suggestScreenNames, screenTexts, ollamaFind, listModels } from '../src/ai.js';
+import { suggestNames, aiProviders, suggestScreenNames, screenTexts, ollamaFind, listModels, chat, waitFor429 } from '../src/ai.js';
 import { genericScreenName } from '../src/screens.js';
 import { analyzeSemantics } from '../src/semantic.js';
 
@@ -108,3 +108,28 @@ assert.equal(ollamaFind({ PATH: '', LOCALAPPDATA: 'C:\\L' }, 'win32', () => fals
 limited.close(); good.close();
 fs.rmSync(cacheDir, { recursive: true, force: true });
 console.log(`ИИ-цепочка: лимит → следующий провайдер, кэш, откат без ИИ — OK (${[...r.names.values()].join(', ')})`);
+
+// лимит в минуту (Groq: «try again in 0.3s») — подождать и повторить; лимит на день — сразу ошибка
+assert.equal(waitFor429(null, 'Rate limit reached. Please try again in 1m5.5s.'), 65500);
+assert.equal(waitFor429(null, 'try again in 250ms'), 250);
+assert.equal(waitFor429({ get: () => '7' }, ''), 7000);
+{
+  let calls = 0;
+  const srv = await new Promise((ok) => {
+    const x = http.createServer((req, res) => {
+      req.resume();
+      req.on('end', () => {
+        if (calls++ === 0) { res.writeHead(429); res.end('{"error":{"message":"Rate limit reached for tokens per minute. Please try again in 0.2s."}}'); return; }
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ choices: [{ message: { content: '{"ok":true}' } }] }));
+      });
+    }).listen(0, '127.0.0.1', () => ok(x));
+  });
+  const logs = [];
+  const out = await chat({ name: 'Groq', model: 'm', url: `http://127.0.0.1:${srv.address().port}/v1` }, [{ role: 'user', content: 'x' }], { log: (m) => logs.push(m) });
+  assert.equal(out, '{"ok":true}');
+  assert.equal(calls, 2);
+  assert.match(logs[0], /жду 1 с/);
+  srv.close();
+  console.log('ИИ: лимит в минуту — подождать и повторить — OK');
+}
