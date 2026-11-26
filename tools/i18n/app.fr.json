@@ -200,5 +200,5 @@
  "Сверить код из html/ с макетом после ваших правок или правок ИИ": "Comparer le code de html/ à la maquette après vos modifications ou celles de l’IA",
  "проверить правки": "vérifier les modifications",
  "Эта сборка сделана до версии 0.3.39 — соберите её снова, чтобы проверять правки": "Cette version date d’avant la 0.3.39 : relancez la génération pour vérifier les modifications",
- "Доводить ИИ<small>экраны, которые не сошлись с макетом: ИИ предлагает правки стилей, сверка оставляет только те, что улучшили</small>": "Peaufiner avec l’IA<small>écrans qui ne correspondent pas à la maquette : l’IA propose des corrections de style, la vérification ne garde que celles qui améliorent</small>"
+ "Доводить ИИ<small>ИИ проверяет смысл (кнопки, поля, заголовки, подписи, имена классов) и правит стили экранов, не сошедшихся с макетом; остаются только правки, прошедшие сверку</small>": "Peaufiner avec l’IA<small>l’IA vérifie le sens (boutons, champs, titres, libellés, noms de classes) et corrige les styles des écrans qui ne correspondent pas à la maquette ; seules les modifications validées par la vérification sont gardées</small>"
 }

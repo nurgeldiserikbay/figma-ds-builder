@@ -1,6 +1,6 @@
 {
   "name": "@figma-ds-builder/plugin",
-  "version": "0.3.46",
+  "version": "0.3.47",
   "private": true,
   "type": "module",
   "description": "Плагин Figma: PNG макетов и пакет для вёрстки (дерево, шрифты, переменные, стили)",

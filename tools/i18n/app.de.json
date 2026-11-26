@@ -200,5 +200,5 @@
  "Сверить код из html/ с макетом после ваших правок или правок ИИ": "Code in html/ nach deinen oder KI-Änderungen mit dem Design vergleichen",
  "проверить правки": "Änderungen prüfen",
  "Эта сборка сделана до версии 0.3.39 — соберите её снова, чтобы проверять правки": "Dieser Build stammt von vor Version 0.3.39 – erstelle ihn neu, um Änderungen zu prüfen",
- "Доводить ИИ<small>экраны, которые не сошлись с макетом: ИИ предлагает правки стилей, сверка оставляет только те, что улучшили</small>": "Mit KI nachbessern<small>Screens, die nicht zum Entwurf passen: die KI schlägt Stilkorrekturen vor, der Abgleich behält nur die, die helfen</small>"
+ "Доводить ИИ<small>ИИ проверяет смысл (кнопки, поля, заголовки, подписи, имена классов) и правит стили экранов, не сошедшихся с макетом; остаются только правки, прошедшие сверку</small>": "Mit KI nachbessern<small>die KI prüft die Bedeutung (Buttons, Felder, Überschriften, Beschriftungen, Klassennamen) und korrigiert Stile von Screens, die nicht zum Entwurf passen; es bleiben nur Änderungen, die den Abgleich bestehen</small>"
 }

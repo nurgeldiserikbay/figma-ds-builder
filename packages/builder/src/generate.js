@@ -3,6 +3,7 @@ import { buildBox, placements, isTransformed } from './layout.js';
 import { peerMaps, clampPx } from './fluid-peer.js';
 import { analyzeSemantics, className, SEMANTIC_RESET } from './semantic.js';
 import { findScrollbars, SCROLLBAR_JS, SCROLLBAR_CSS } from './scrollbars.js';
+import { applySemEdits } from './ai-semantic.js';
 import {
   px, r2, withVar, fillsToCss, strokesToCss, effectsToCss, radiusToCss, segmentCss, declarations, mergeShadows, colorValue,
 } from './css.js';
@@ -533,11 +534,14 @@ function inlineHtml(el) {
  * Генерирует страницу для одного фрейма.
  * @returns {{ html: string, css: string, stats: object }}
  */
-export function generateFrame(tree, { mode = 'flow', absIds = null, fluid = false, fluidSkip = null, peer = null, svgText = null, inlineSvg: inlineSvgOpt = true, tokens, assetUrl, title, extraCss = [], semantic = true, names = null, frameHref = null }) {
+export function generateFrame(tree, { mode = 'flow', absIds = null, fluid = false, fluidSkip = null, peer = null, svgText = null, inlineSvg: inlineSvgOpt = true, tokens, assetUrl, title, extraCss = [], semantic = true, names = null, semEdits = null, frameHref = null }) {
   const styles = new StyleRegistry();
-  const sem = semantic ? analyzeSemantics(tree) : null;
+  let sem = semantic ? analyzeSemantics(tree) : null;
   // имена от ИИ (если включён) — только для безликих слоёв; теги остаются алгоритмическими
   if (sem && names) for (const [id, name] of names) { const e = sem.get(id); if (e) e.name = className(name); }
+  const semBase = sem;
+  // правки смысла от ИИ (--ai-fix), уже проверенные сверкой: теги, атрибуты, имена классов
+  if (sem && semEdits?.size) sem = applySemEdits(sem, tree, semEdits);
   // компоненты Figma: экземпляры и варианты наборов — data-component / data-variant (для общего CSS компонентов)
   const comps = new Map();
   (function walk(n, parent) {
@@ -614,7 +618,7 @@ ${scroll.size ? `<script>\n${SCROLLBAR_JS}\n</script>\n` : ''}</body>
 </html>
 `;
   addOptionalSlots(rootEl, tree);
-  return { html, css, stats, root: rootEl, rules: styles.rules };
+  return { html, css, stats, root: rootEl, rules: styles.rules, sem: semBase };
 }
 
 /**

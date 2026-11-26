@@ -33,6 +33,7 @@ import { mergePackages } from './merge.js';
 import { auditDesign, auditHtml, auditText, guidePage } from './design-audit.js';
 import { writeCheckManifest, checkBuild, writeCheckScripts } from './check.js';
 import { aiFixFrame } from './ai-fix.js';
+import { aiSemanticFrame, lintSemantics } from './ai-semantic.js';
 
 const HELP = `
 ds-build ui [--port 0] [--home папка] [--no-open]
@@ -375,7 +376,7 @@ async function build(args) {
   ])).digest('hex');
   const slots = [];
   const failedFrames = [];
-  const aiFixBudget = { left: args.aiFix ? (args.aiFixMax || 40) : 0, queue: Promise.resolve() };
+  const aiFixBudget = { left: args.aiFix ? (args.aiFixMax || 40) : 0, semLeft: args.aiFix ? (args.aiFixMax || 40) : 0, queue: Promise.resolve() };
   let cached = 0, doneCount = 0;
   // переходы прототипа «Navigate to» → страница фрейма из этой сборки (папки фреймов лежат рядом)
   const frameDirs = new Map(frames.map((f) => [f.id, safe(`${f.name}-${f.id}`)]));
@@ -401,10 +402,10 @@ async function build(args) {
         for (const name of fs.readdirSync(hit)) if (name !== 'meta.json') fs.copyFileSync(path.join(hit, name), path.join(fdir, name));
         // дерево элементов для React/Vue и адаптивности — тем же генератором (миллисекунды)
         const absIds = meta.pinned.length ? new Set(meta.pinned) : null;
-        const gen = generateFrame(tree, { mode: meta.genMode, absIds, svgText, inlineSvg: args.inlineSvg, tokens, assetUrl: (rel) => `../assets/${rel}`, title: f.name, extraCss, frameHref, semantic: args.semantic, names: meta.names ? new Map(meta.names) : null });
+        const gen = generateFrame(tree, { mode: meta.genMode, absIds, svgText, inlineSvg: args.inlineSvg, tokens, assetUrl: (rel) => `../assets/${rel}`, title: f.name, extraCss, frameHref, semantic: args.semantic, names: meta.names ? new Map(meta.names) : null, semEdits: meta.semEdits ? new Map(meta.semEdits) : null });
         slots[idx] = {
           fw: { title: f.name, slug: f.route, page: f.page, dir: dirName, root: gen.root, tree, width: f.width, height: f.height,
-            gen: { mode: meta.genMode, absIds, title: f.name, names: meta.names ? new Map(meta.names) : null } },
+            gen: { mode: meta.genMode, absIds, title: f.name, names: meta.names ? new Map(meta.names) : null, semEdits: meta.semEdits ? new Map(meta.semEdits) : null } },
           result: { ...meta.result, dir: dirName, cached: true },
         };
         cached++;
@@ -557,6 +558,47 @@ async function build(args) {
       }
       // запасной вариант дорабатываем один раз — уже выбранный
       if (browser && hasRef && !chosen.refined) { await refineAttempt(chosen); chosen.ok = okOf(chosen); }
+      // смысл от ИИ (--ai-fix): теги, подписи, имена классов; вид страницы не меняется — проверяется сверкой
+      if (args.aiFix && browser && args.semantic && aiFixBudget.semLeft > 0) {
+        aiFixBudget.semLeft--;
+        await (aiFixBudget.queue = aiFixBudget.queue.then(async () => {
+          const htmlP = path.join(chosen.dir, 'index.html'), cssP = path.join(chosen.dir, 'styles.css');
+          const curCss = fs.readFileSync(cssP, 'utf8');
+          if (!curCss.startsWith(chosen.gen.css)) return;
+          const suffix = curCss.slice(chosen.gen.css.length); // поправки автодоработки остаются (они по data-figma-id)
+          const absIds = chosen.pinned.length ? new Set(chosen.pinned) : null;
+          let lastGen = chosen.gen;
+          const write = (edits) => {
+            lastGen = generateFrame(tree, { mode: chosen.mode, absIds, svgText, inlineSvg: args.inlineSvg, tokens, assetUrl: (rel) => `../assets/${rel}`, title: f.name, extraCss, frameHref, semantic: args.semantic, names, semEdits: edits });
+            fs.writeFileSync(htmlP, lastGen.html);
+            fs.writeFileSync(cssP, lastGen.css + suffix);
+          };
+          const measure = async () => {
+            const re = await renderPage(browser, htmlP, { width: f.width, height: f.height, scale: pkg.scale, out: path.join(chosen.dir, 'render.png'), keepPage: true });
+            const issues = await lintSemantics(re.page);
+            await re.page.close();
+            chosen.geometry = checkGeometry(tree, re.boxes);
+            if (hasRef) {
+              chosen.diff = comparePng(path.join(fdir, 'reference.png'), path.join(chosen.dir, 'render.png'), path.join(chosen.dir, 'diff.png'), soft);
+              chosen.percent = chosen.diff.percent;
+              if (chosen.diff.mismatched) chosen.diff.sources = attributeDiff(tree, path.join(chosen.dir, 'diff.png'), { scale: pkg.scale, top: 30 });
+            }
+            return { percent: hasRef ? chosen.percent : 0, geometryFailed: chosen.geometry?.failed || 0, issues };
+          };
+          try {
+            const base = await measure();
+            const r = await aiSemanticFrame({ tree, sem: chosen.gen.sem, base,
+              regenerate: async (edits) => { write(edits); return measure(); },
+              rollback: async (edits) => { write(edits); await measure(); },
+              providers: aiProviders(process.env, { paid: args.aiPaid }), cacheDir: defaultCacheDir(), log: (m) => console.log(m) });
+            if (r.error) { console.log(`  ИИ-смысл недоступен: ${r.error.slice(0, 200)}`); aiFixBudget.semLeft = 0; aiFixBudget.left = 0; return; }
+            chosen.aiSem = r;
+            if (r.edits.length) { chosen.gen = lastGen; chosen.semEdits = new Map(r.edits.map(({ id, why, was, layer, ...ch }) => [id, ch])); }
+            chosen.ok = okOf(chosen);
+            console.log(`  ИИ-смысл${r.by ? ` (${r.by})` : ''}: ${r.edits.length ? `правок ${r.edits.length}, проблем проверки ${r.issuesBefore.length} → ${r.issuesAfter.length}` : 'правок не принято'}${r.rejected ? `, отклонено ${r.rejected}` : ''}`);
+          } catch (e) { console.log(`  ИИ-смысл: ошибка ${String(e.message).slice(0, 160)} — оставлено как было`); }
+        }));
+      }
       // доводка ИИ (--ai-fix): только экраны, которые алгоритм не довёл; по одному экрану за раз (лимиты ИИ)
       if (args.aiFix && browser && hasRef && !chosen.ok && chosen.diff?.sources && aiFixBudget.left > 0) {
         aiFixBudget.left--;
@@ -597,10 +639,10 @@ async function build(args) {
       const pass = browser ? !!chosen.ok : null;
       slots[idx] = {};
       slots[idx].fw = { title: f.name, page: f.page, dir: dirName, root: chosen.gen.root, tree, width: f.width, height: f.height,
-        gen: { mode: chosen.mode === 'absolute' ? 'absolute' : 'flow', absIds: chosen.pinned.length ? new Set(chosen.pinned) : null, title: f.name, names } };
+        gen: { mode: chosen.mode === 'absolute' ? 'absolute' : 'flow', absIds: chosen.pinned.length ? new Set(chosen.pinned) : null, title: f.name, names, semEdits: chosen.semEdits || null } };
       slots[idx].result = ({
         name: f.name, id: f.id, width: f.width, height: f.height, dir: dirName,
-        mode: chosen.mode, stats: chosen.gen.stats, fonts: chosen.fonts, diff: chosen.diff, geometry: chosen.geometry, refine: chosen.refine, aiFix: chosen.aiFix, pixels: pixelSplit(chosen.diff, textArea), pass,
+        mode: chosen.mode, stats: chosen.gen.stats, fonts: chosen.fonts, diff: chosen.diff, geometry: chosen.geometry, refine: chosen.refine, aiFix: chosen.aiFix, aiSem: chosen.aiSem ? { ...chosen.aiSem, issuesBefore: chosen.aiSem.issuesBefore.length, issuesAfter: chosen.aiSem.issuesAfter } : undefined, pixels: pixelSplit(chosen.diff, textArea), pass,
         pinned: chosen.pinned,
         attempts: attempts.map((a) => ({ mode: a.mode, pinned: a.pinned.length, percent: a.percent, geometryFailed: a.geometry?.failed ?? null, chosen: a.chosen })),
       });
@@ -616,7 +658,7 @@ async function build(args) {
         fs.mkdirSync(hit, { recursive: true });
         for (const name of ['index.html', 'styles.css', 'render.png', 'diff.png']) if (fs.existsSync(path.join(fdir, name))) fs.copyFileSync(path.join(fdir, name), path.join(hit, name));
         const fwg = slots[idx].fw.gen;
-        fs.writeFileSync(path.join(hit, 'meta.json'), JSON.stringify({ result: slots[idx].result, genMode: fwg.mode, pinned: chosen.pinned, names: names ? [...names] : null, status: `${modeLabel} · ${status}` }));
+        fs.writeFileSync(path.join(hit, 'meta.json'), JSON.stringify({ result: slots[idx].result, genMode: fwg.mode, pinned: chosen.pinned, names: names ? [...names] : null, semEdits: chosen.semEdits ? [...chosen.semEdits] : null, status: `${modeLabel} · ${status}` }));
       }
     };
 
