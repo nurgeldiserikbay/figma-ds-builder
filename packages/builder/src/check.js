@@ -4,7 +4,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { openBrowser, renderPage, elementsAt } from './render.js';
-import { comparePng } from './diff.js';
+import { comparePng, imageBoxes } from './diff.js';
 import { attributeDiff } from './attribute.js';
 
 /** Сводка для проверки — пишется при сборке (check.json в корне). */
@@ -71,13 +71,13 @@ export async function checkBuild({ dir, screen = null, url = null, json = false,
       catch (e) { res.push({ ...s, error: `не открылась страница: ${String(e.message).split('\n')[0]}` }); continue; }
       const ref = path.join(dir, s.dir, 'reference.png');
       fs.copyFileSync(ref, path.join(sd, 'reference.png'));
-      const d = comparePng(ref, png, diffPng);
+      const treeFile = path.join(dir, s.dir, 'tree.json');
+      const tree = fs.existsSync(treeFile) ? JSON.parse(fs.readFileSync(treeFile, 'utf8')) : null;
+      const d = comparePng(ref, png, diffPng, { images: tree ? imageBoxes(tree) : [], scale: m.scale || 1 });
       // дробный размер макета (1375.29) даёт разницу в 1 px — это не ошибка вёрстки
       const dim = (f) => { const b = fs.readFileSync(f); return [b.readUInt32BE(16), b.readUInt32BE(20)]; };
       const [rw, rh] = dim(ref), [aw, ah] = dim(png);
       const realSize = Math.abs(rw - aw) > (m.scale || 1) || Math.abs(rh - ah) > (m.scale || 1);
-      const treeFile = path.join(dir, s.dir, 'tree.json');
-      const tree = fs.existsSync(treeFile) ? JSON.parse(fs.readFileSync(treeFile, 'utf8')) : null;
       const src = d.mismatched && tree ? attributeDiff(tree, diffPng, { scale: m.scale || 1, top: 8 }) : null;
       // какой элемент кода на месте слоя: по положению слоя в макете (служебные атрибуты не нужны)
       if (src?.top.length) {

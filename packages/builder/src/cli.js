@@ -11,7 +11,7 @@ import { optimizeImages, applyImageSet } from './images.js';
 import { loadTokens } from './tokens.js';
 import { generateFrame, htmlOf } from './generate.js';
 import { openBrowser, renderPage } from './render.js';
-import { comparePng } from './diff.js';
+import { comparePng, imageBoxes } from './diff.js';
 import { buildReport } from './report.js';
 import { checkGeometry } from './geometry.js';
 import { attributeDiff } from './attribute.js';
@@ -428,6 +428,7 @@ async function build(args) {
       // автодоработка: подбор поправок для слоёв с наибольшим расхождением.
       // Запускаем и при прохождении порога: сдвиг строки на 1–2px укладывается в допуск для текста, но исправляется поправкой.
       // Самая дорогая часть проверки — поэтому на запасных попытках раскладки не делается, только на выбранной.
+      const soft = { images: imageBoxes(tree), scale: pkg.scale }; // фото: допуск на сглаживание Figma
       const refineAttempt = async (att) => {
         att.refined = true;
         const attemptDir = att.dir;
@@ -447,7 +448,7 @@ async function build(args) {
         });
         att.geometry = checkGeometry(tree, re.boxes);
         const before = att.percent;
-        att.diff = comparePng(path.join(fdir, 'reference.png'), path.join(attemptDir, 'render.png'), path.join(attemptDir, 'diff.png'));
+        att.diff = comparePng(path.join(fdir, 'reference.png'), path.join(attemptDir, 'render.png'), path.join(attemptDir, 'diff.png'), soft);
         att.percent = att.diff.percent;
         if (att.diff.mismatched) att.diff.sources = attributeDiff(tree, path.join(attemptDir, 'diff.png'), { scale: pkg.scale });
         // поправки вместе сделали хуже (или сдвинули блоки) — откат
@@ -477,7 +478,7 @@ async function build(args) {
           att.fonts = rendered.fonts;
           att.geometry = checkGeometry(tree, rendered.boxes);
           if (hasRef) {
-            att.diff = comparePng(path.join(fdir, 'reference.png'), path.join(attemptDir, 'render.png'), path.join(attemptDir, 'diff.png'));
+            att.diff = comparePng(path.join(fdir, 'reference.png'), path.join(attemptDir, 'render.png'), path.join(attemptDir, 'diff.png'), soft);
             att.percent = att.diff.percent;
             if (att.diff.mismatched) att.diff.sources = attributeDiff(tree, path.join(attemptDir, 'diff.png'), { scale: pkg.scale, top: 30 });
             if (refineNow) await refineAttempt(att);
@@ -563,7 +564,7 @@ async function build(args) {
           const render = async () => {
             const re = await renderPage(browser, path.join(chosen.dir, 'index.html'), { width: f.width, height: f.height, scale: pkg.scale, out: path.join(chosen.dir, 'render.png') });
             chosen.geometry = checkGeometry(tree, re.boxes);
-            chosen.diff = comparePng(path.join(fdir, 'reference.png'), path.join(chosen.dir, 'render.png'), path.join(chosen.dir, 'diff.png'));
+            chosen.diff = comparePng(path.join(fdir, 'reference.png'), path.join(chosen.dir, 'render.png'), path.join(chosen.dir, 'diff.png'), soft);
             chosen.percent = chosen.diff.percent;
             if (chosen.diff.mismatched) chosen.diff.sources = attributeDiff(tree, path.join(chosen.dir, 'diff.png'), { scale: pkg.scale, top: 30 });
             return { percent: chosen.percent, geometryFailed: chosen.geometry?.failed || 0, sources: chosen.diff.sources };
